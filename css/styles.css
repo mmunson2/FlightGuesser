@@ -5,6 +5,9 @@ html, body { margin: 0; height: 100%; background: #14161a; color: #e8e6e1;
 .bar { display: flex; align-items: baseline; gap: 1rem; padding: .6rem 1rem;
   border-bottom: 1px solid #2a2d33; }
 .bar h1 { margin: 0; font-size: 1.3rem; font-weight: 600; }
+/* One line, so a long name or hint never changes the header's height
+   and shifts the 3D view under the pointer. */
+.bar h1 { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 main { flex: 1; display: flex; min-height: 0; }
 .stage { flex: 1; position: relative; }
 .stage canvas { display: block; }

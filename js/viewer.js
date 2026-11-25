@@ -155,7 +155,7 @@
   hideBtn.addEventListener('click', () => hide(selection));
 
   function sync() {
-    for (const m of meshes) m.visible = !m.userData.hidden && !m.userData.reaching;
+    for (const m of meshes) m.visible = !m.userData.hidden && !m.userData.faded;
     for (const [sys, box] of Object.entries(boxes)) {
       const own = meshes.filter((m) => m.userData.part.system === sys);
       const shown = own.filter((m) => m.visible).length;
@@ -298,6 +298,9 @@
   // Click to pick (only targets: context and glass let clicks through).
   const ray = new THREE.Raycaster();
   const picked = document.getElementById('picked');
+  // The header is one line: the whole text shows on hover.
+  new MutationObserver(() => { picked.title = picked.textContent; })
+    .observe(picked, { childList: true, characterData: true, subtree: true });
   const partName = (mesh) => t('part.' + mesh.userData.part.id);
   // In the header, a part of a group says which: "Left aileron (ailerons)".
   const pickedName = (mesh) => {
@@ -875,27 +878,46 @@
 
   goView(Object.keys(SCENE_DATA.views)[0]);
   // In the seat the yokes are in the way of the lower panel: while the
-  // pointer is over one, both go, as if reaching past them. The ray tests
-  // the yokes' shape even while hidden, so they come back once it leaves.
+  // pointer is over one, both fade out, as if reaching past them, and fade
+  // back once it leaves. The ray tests the yokes' shape even while they're
+  // gone; clicks go through them from the moment the fade starts.
   const yokes = meshById.control_wheels;
-  let hoverAt = null;
+  const FADE_OUT = 0.12, FADE_IN = 0.2;   // seconds
+  const meshRaycast = THREE.Mesh.prototype.raycast;
+  const noRaycast = () => {};
+  let hoverAt = null, fade = 1, fadeT = performance.now();
   renderer.domElement.addEventListener('pointermove', (e) => { hoverAt = e; });
   renderer.domElement.addEventListener('pointerleave', () => { hoverAt = null; });
   function reachPastYokes() {
     if (!yokes) return;
-    let reaching = yokes.userData.reaching;
-    if (rig.mode !== 'seat') reaching = false;
-    else if (!hoverAt) reaching = false;
+    const now = performance.now(), dt = Math.min(0.1, (now - fadeT) / 1000);
+    fadeT = now;
+    let reaching = !!yokes.userData.reaching;
+    if (rig.mode !== 'seat' || !hoverAt) reaching = false;
     // Not mid-drag: a knob turned behind the yoke keeps it out of the way.
     else if (hoverAt.buttons === 0) {
+      camera.updateMatrixWorld();
       const r = renderer.domElement.getBoundingClientRect();
       ray.setFromCamera({ x: ((hoverAt.clientX - r.left) / r.width) * 2 - 1,
                           y: -((hoverAt.clientY - r.top) / r.height) * 2 + 1 }, camera);
-      reaching = ray.intersectObject(yokes, false).length > 0;
+      const hits = [];
+      meshRaycast.call(yokes, ray, hits);
+      reaching = hits.length > 0;
     }
-    if (reaching !== !!yokes.userData.reaching) {
-      yokes.userData.reaching = reaching;
-      yokes.visible = !yokes.userData.hidden && !reaching;
+    yokes.userData.reaching = reaching;
+    // Picking (here, js/g1000-panel.js) skips the yokes while reaching.
+    yokes.raycast = reaching ? noRaycast : meshRaycast;
+    const was = fade;
+    fade = reaching ? Math.max(0, fade - dt / FADE_OUT) : Math.min(1, fade + dt / FADE_IN);
+    if (fade === was) return;
+    // Out of the way altogether once faded out.
+    yokes.userData.faded = fade === 0;
+    yokes.visible = !yokes.userData.hidden && fade > 0;
+    const opacity = yokes.userData.baseOpacity * fade;
+    for (const m of yokes.material) {
+      const solid = opacity >= 1;
+      if (m.transparent === solid) { m.transparent = !solid; m.depthWrite = solid; m.needsUpdate = true; }
+      m.opacity = opacity;
     }
   }
   renderer.setAnimationLoop(() => {

@@ -246,17 +246,16 @@ def play_camera(browser):
     page.keyboard.up("KeyW")
     if page.evaluate("FLIGHT_DEBUG.rig.mode") != "seat" or page.evaluate(pos) != seat or page.is_visible("#cam-mode"):
         problems.append("camera: Operate didn't seat the pilot, or W moved them, or the mode toggle shows")
-    # A point on the yokes, on screen.
+    # A whole pixel on the yokes (a vertex on their outline can miss by a
+    # fraction of one).
     at = page.evaluate("""() => {
-      const D = FLIGHT_DEBUG, y = D.meshById().control_wheels, p = y.geometry.attributes.position;
-      const r = D.renderer.domElement.getBoundingClientRect(), v = new D.THREE.Vector3();
-      for (let i = 0; i < p.count; i += 7) {
-        v.fromBufferAttribute(p, i).project(D.camera);
-        if (Math.abs(v.x) < 0.8 && Math.abs(v.y) < 0.8 && v.z < 1) {
-          const x = r.left + (v.x + 1) / 2 * r.width, yy = r.top + (1 - v.y) / 2 * r.height;
-          const ray = new D.THREE.Raycaster();
-          ray.setFromCamera({ x: v.x, y: v.y }, D.camera);
-          if (ray.intersectObject(y, false).length) return [x, yy];
+      const D = FLIGHT_DEBUG, y = D.meshById().control_wheels;
+      D.camera.updateMatrixWorld();   // the seat may not have been drawn yet
+      const r = D.renderer.domElement.getBoundingClientRect(), ray = new D.THREE.Raycaster();
+      for (let py = Math.ceil(r.top) + 5; py < r.bottom; py += 10) {
+        for (let px = Math.ceil(r.left) + 5; px < r.right; px += 10) {
+          ray.setFromCamera({ x: ((px - r.left) / r.width) * 2 - 1, y: -((py - r.top) / r.height) * 2 + 1 }, D.camera);
+          if (ray.intersectObject(y, false).length) return [px, py];
         }
       }
       return null;
