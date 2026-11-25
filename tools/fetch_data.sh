@@ -9,11 +9,15 @@
 #   ...Textures/*.png the G1000 and panel textures, for tools/labels.py
 #   schematics/*.pdf  the maintenance manual, POH, Lycoming parts catalog and
 #                     operator manual the extras are drawn from
+#   nasr/*_CSV.zip    the FAA's NASR 28-day subscription (APT, FRQ, NAV),
+#                     for build/wa_nav.py (NASR_DATE)
 # A new FAA cycle: change DIAGRAM_PDF in build/airport.py and CYCLE here,
-# then `make fetch model`.
+# then `make fetch model`; for NASR, NASR_DATE here and in build/wa_nav.py,
+# then `make fetch nav`.
 set -eu
 DATA=${1:-$HOME/Projects/datasets}
 CYCLE=2611
+NASR_DATE=29_Oct_2026
 C172=https://raw.githubusercontent.com/c172p-team/c172p/master
 FG=https://gitlab.com/flightgear/fgdata/-/raw/next/Aircraft/Instruments-3d/FG1000/GDU104X
 
@@ -58,4 +62,7 @@ get "https://sanfernando35.cap.gov/media/documents/c172gfc700poh_F8505EA32059C.p
 get "https://kerrville.cap.gov/media/cms/C172SP_IM_2005_navIII_B45C89F810DC8.pdf" "$S/c172sp-im-2005.pdf"
 get "https://www.lycoming.com/sites/default/files/file/2025-06/PC-IO-360-L2A.pdf" "$S/lycoming-PC-IO-360-L2A.pdf"
 get "https://chapters.eaa.org/eaa245/-/media/3B5A3308519148D58C389A05AEEC001F.ashx" "$S/lycoming-60297-12-operator.pdf"
+for k in APT FRQ NAV; do
+  get "https://nfdc.faa.gov/webContent/28DaySub/extra/${NASR_DATE}_${k}_CSV.zip" "$DATA/nasr/${NASR_DATE}_${k}_CSV.zip"
+done
 echo "source data in $DATA is complete"
