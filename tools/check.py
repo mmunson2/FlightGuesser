@@ -678,7 +678,8 @@ G1000_CHECKS = r"""() => {
   // Airspace alerts: inside Paine's Class D gives INSIDE ARSPC and a
   // flashing ADVISORY; the softkey acknowledges and opens the window.
   G.reset();
-  const al = s.alerts, msg = (id) => al.messages.find((m) => m.id === id);
+  // (s.alerts is replaced by each reset, so look it up every time.)
+  const al = s.alerts, msg = (id) => s.alerts.messages.find((m) => m.id === id);
   const at = (p, extra) => { Object.assign(s, p, extra); run(1.5); };
   at({ lat: G.fms.byId.KPAE.lat, lon: G.fms.byId.KPAE.lon }, { trueAlt: 1500 });
   expect(msg('inside')?.about === 'EVERETT CLASS D' && al.unseen, `inside KPAE D: ${JSON.stringify(al)}`);
@@ -705,6 +706,76 @@ G1000_CHECKS = r"""() => {
   // Heading for Paine from 8 NM south at 2,000 ft: ARSPC AHEAD.
   at(G.fms.project(G.fms.byId.KPAE, 180, 8), { trueAlt: 2000, hdg: 0, roll: 0, manual: { pitch: 2, roll: 0 } });
   expect(msg('ahead')?.about === 'EVERETT CLASS D' && !msg('inside'), `toward KPAE: ${JSON.stringify(al.messages)}`);
+
+  // Annunciations (POH section 7): none at the start; each failure gives
+  // its own, at the POH's thresholds.
+  const cas = () => s.alerts.cas.map((c) => c.id).join();
+  const fresh = (fn) => { G.reset(); if (fn) fn(); };
+  fresh(); run(2);
+  expect(cas() === '' && G.alerts.pending() !== 'warning', `annunciations at the start: ${cas()}`);
+  // LOW VOLTS below 1,000 RPM (POH note), out again at cruise power.
+  s.power = 0.1; run(2);
+  expect(cas() === 'lowVolts' && s.sys.rpm < 1000 && G.alerts.pending() === 'warning', `idle: ${cas()} at ${s.sys.rpm} RPM`);
+  G.press('softkey:11', 'pfd');
+  expect(s.alerts.cas[0].acked && G.alerts.pending() !== 'warning', 'the WARNING softkey should acknowledge');
+  s.power = 0.8; run(2);
+  expect(cas() === '', `back at cruise power: ${cas()}`);
+  // Alternator: LOW VOLTS at once (battery 24 V), discharge on M BATT;
+  // about 35 minutes later the standby battery takes over: STBY BATT.
+  fresh(() => G.fail('alternator')); run(2);
+  expect(cas() === 'lowVolts' && s.sys.ampsM < 0, `alternator failed: ${cas()}, ${s.sys.ampsM} A`);
+  expect(run(3000, () => cas().includes('stby')) && s.sys.voltsM <= 20.1 && s.sys.ampsS < -0.5,
+    `no STBY BATT: ${cas()}, ${s.sys.voltsM.toFixed(1)} V`);
+  // Overvoltage: HIGH VOLTS, then the ACU trips the alternator: LOW VOLTS.
+  fresh(() => G.fail('overvolt')); run(1);
+  expect(cas() === 'highVolts', `overvoltage: ${cas()}`);
+  run(4);
+  expect(cas() === 'lowVolts' && s.sys.acuTripped, `after the ACU trip: ${cas()}`);
+  // Oil pressure 20 PSI or less; low vacuum; CO 50 PPM or more.
+  fresh(() => G.fail('oil'));
+  expect(run(60, () => cas().includes('oil')) && s.sys.oilPsi <= 20, `oil: ${s.sys.oilPsi.toFixed(0)} PSI`);
+  fresh(() => G.fail('vacuum'));
+  expect(run(10, () => cas() === 'vac'), `vacuum: ${cas()} at ${s.sys.vac.toFixed(1)}`);
+  fresh(() => G.fail('co'));
+  expect(run(40, () => cas() === 'co') && s.sys.coPpm >= 50, `CO: ${cas()}`);
+  // LOW FUEL L: under 5 gal for more than 60 seconds, the left tank only.
+  fresh(() => { s.fuelL = 5.3; G.fail('leakL'); });
+  run(50);
+  expect(s.fuelL < 5 && !cas().includes('fuelL'), `LOW FUEL L too early: ${s.fuelL.toFixed(2)} gal`);
+  run(70);
+  expect(cas() === 'fuelL', `left leak: ${cas()}`);
+  // Cautions acknowledge after warnings: WARNING, then CAUTION.
+  G.fail('oil', true);
+  run(40);
+  expect(G.alerts.pending() === 'warning', `pending ${G.alerts.pending()}`);
+  G.press('softkey:11', 'pfd');
+  expect(G.alerts.pending() === 'caution', `after WARNING: ${G.alerts.pending()}`);
+  G.press('softkey:11', 'pfd');
+  expect(s.alerts.cas.every((c) => c.acked), 'after CAUTION all acknowledged');
+  // Both tanks dry: the engine stops; no fuel flow, oil pressure gone.
+  fresh(() => { s.fuelL = s.fuelR = 0.002; });
+  run(30);
+  expect(!s.sys.running && G.fuelFlow() === 0 && cas().includes('oil') && cas().includes('lowVolts'), `fuel exhaustion: ${cas()}`);
+  // PTRM: the autopilot disconnects and won't engage again.
+  fresh(() => G.press('ap'));
+  G.fail('trim'); run(1);
+  G.press('ap');
+  expect(!a().ap, 'PTRM: the autopilot should be off and stay off');
+  // MAXSPD: the autopilot diving in PIT holds the speed under Vne.
+  fresh(() => { G.press('ap'); s.power = 1; for (let i = 0; i < 30; i++) G.press('nose_dn'); });
+  let fastest = 0, maxspd = false;
+  run(120, () => { fastest = Math.max(fastest, s.ias); maxspd ||= a().maxspd; return false; });
+  expect(maxspd && fastest < G.SPEEDS.vne + 3, `overspeed: MAXSPD ${maxspd}, fastest ${fastest.toFixed(0)} KIAS`);
+
+  // Messages: WPT ARRIVAL within 10 seconds of the waypoint, TIMER EXPIRD,
+  // and the database's 28-day expiry.
+  fresh(() => G.fms.directTo('KAWO'));
+  Object.assign(s, G.fms.project(G.fms.byId.KAWO, G.navSolution('GPS').courseTrue + 180, 0.25));
+  run(1);
+  expect(msg('wpt')?.about === 'KAWO' && msg('wpt').title === 'WPT ARRIVAL', `WPT ARRIVAL: ${JSON.stringify(s.alerts.messages)}`);
+  s.ref.timer.expired = true; run(1);
+  expect(msg('timer')?.title === 'TIMER EXPIRD', 'TIMER EXPIRD message');
+  expect(G.DB_EXPIRES === Date.UTC(2026, 10, 26), `database expiry ${new Date(G.DB_EXPIRES).toISOString()}`);
 
   // Nearest Frequencies: sections in order, nearest first; ENT tunes COM.
   G.reset();

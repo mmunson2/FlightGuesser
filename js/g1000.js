@@ -12,9 +12,11 @@
 // js/g1000-pages.js the MFD's page groups (with Nearest Frequencies and
 // Airspaces) and the PFD's Nearest window, through js/g1000-menu.js the
 // MENU key's Page Menus and Map Setup, and through js/g1000-timer.js the
-// Timer/References window, and through js/g1000-alerts.js the airspace
-// alerts and the Alerts window. What it doesn't: VNAV, procedures and GPS
-// approaches, LOC/GS, alerts other than airspace, the MFD's IFR and setup pages,
+// Timer/References window, through js/g1000-systems.js the engine,
+// electrical, fuel, vacuum and CO systems (and their failures), and
+// through js/g1000-alerts.js the POH's annunciations, the messages and
+// the Alerts window. What it doesn't: VNAV, procedures and GPS
+// approaches, LOC/GS, hardware-fault messages, aural alerts, the MFD's IFR and setup pages,
 // failures, wind. Headings, bugs, courses
 // and bearings are magnetic (see magVarAt); the simulation underneath is
 // true. The airplane is a few lines of kinematics, not a flight model.
@@ -119,7 +121,16 @@ window.G1000 = (function () {
   // state.pageMenu; the map's settings in state.mapSet.
   // Messages, the airspace alerts and the Alerts window
   // (js/g1000-alerts.js), in state.alerts; their settings in state.alertSet.
-  const alerts = G1000_ALERTS.create({ state, pages });
+  // The airplane's systems: engine, oil, vacuum, electrical, fuel tanks,
+  // CO (js/g1000-systems.js), in state.sys; failures in state.sys.failed.
+  const systems = G1000_SYSTEMS.create({ state });
+  // The navigation database runs out 28 days after its cycle starts.
+  const cycle = /effective (\d+) (\w+) (\d{4})/.exec(WA_NAV.source);
+  const DB_EXPIRES = cycle ? Date.parse(`${cycle[1]} ${cycle[2]} ${cycle[3]} 00:00 UTC`) + 28 * 86400000 : null;
+  const alerts = G1000_ALERTS.create({
+    state, pages, annunciations: () => systems.annunciations(), gpsNav: () => fms.navSolution(),
+    gs: () => tas(), dbExpires: DB_EXPIRES,
+  });
   // The PFD's Timer/References window (js/g1000-timer.js), in state.ref.
   const timer = G1000_TIMER.create({ state, note: (text) => note(text), indicatedAlt: () => indicatedAlt() });
   const menus = G1000_MENU.create({ state, fms, pages, timer, note: (text) => note(text), ranges: RANGES });
@@ -150,7 +161,7 @@ window.G1000 = (function () {
       // and its range (an index into RANGES).
       pfdMap: { layout: 'Map Off', range: 4 },
       // Usable fuel on board, gallons (both tanks).
-      fuel: 48,
+      fuel: 48, fuelL: 24, fuelR: 24, sys: systems.fresh(),
       // A line of text for the last thing the mock can't do yet.
       note: null,
       fms: fms.fresh(),
@@ -168,7 +179,10 @@ window.G1000 = (function () {
   const indicatedAlt = () => state.trueAlt + (state.baro - ACTUAL_BARO) * 1000;
   const tas = () => state.ias * (1 + 0.02 * state.trueAlt / 1000);
   // Fuel flow (GPH): made up from power and altitude, not the POH's tables.
-  const fuelFlow = () => 2 + 9 * state.power * (1 - state.trueAlt / 30000);
+  // None with the engine stopped.
+  const fuelFlow = () => (state.sys.running ? 2 + 9 * state.power * (1 - state.trueAlt / 30000) : 0);
+  // The power the engine makes: none once it has stopped.
+  const power = () => (state.sys.running ? state.power : 0);
   const note = (text) => { state.note = { text, until: state.t + 4 }; };
 
   // ---- Navigation: the active CDI source's deviation ----
@@ -298,6 +312,8 @@ window.G1000 = (function () {
     switch (key) {
       case 'ap':
         if (a.ap) apDisconnect();
+        // PTRM: the POH says not to engage the autopilot again.
+        else if (state.sys.failed.trim) note('PTRM: pitch trim failure. Do not engage the autopilot');
         else { fdOn(); a.ap = true; }
         return;
       case 'fd':
@@ -549,10 +565,14 @@ window.G1000 = (function () {
     if (a.vert === 'FLC') {
       // The path angle power allows at the reference speed, plus a pull
       // toward the speed.
-      const veq = 50 + 75 * state.power;
+      const veq = 50 + 75 * power();
       const sinG = clamp((0.045 * (veq - a.ref.ias) + 0.25 * (state.ias - a.ref.ias)) / 19, -0.3, 0.3);
       pitchCmd = deg(Math.asin(sinG)) + alpha;
     }
+    // Overspeed protection (MAXSPD): with the autopilot flying a vertical
+    // mode, the nose comes up to keep the speed under Vne.
+    a.maxspd = a.ap && state.ias > SPEEDS.vne - 5;
+    if (a.maxspd) pitchCmd = Math.max(pitchCmd, state.pitch + (state.ias - (SPEEDS.vne - 5)) * 0.4);
     pitchCmd = clamp(pitchCmd, -10, 15);
     a.cmd = { roll: rollCmd, pitch: pitchCmd };
 
@@ -566,7 +586,8 @@ window.G1000 = (function () {
     }
 
     const gamma = state.pitch - alpha;
-    const veq = 50 + 75 * state.power;
+    // Engine stopped: no thrust, so only a descent keeps the speed up.
+    const veq = state.sys.running ? 50 + 75 * state.power : 0;
     state.ias = clamp(state.ias + (0.045 * (veq - state.ias) - 19 * Math.sin(rad(gamma))) * dt, 35, 170);
     state.vs = T * 101.27 * Math.sin(rad(gamma));
     state.trueAlt += (state.vs / 60) * dt;
@@ -581,7 +602,9 @@ window.G1000 = (function () {
     pages.step(dt);
     timer.step(dt);
     alerts.step(dt);
-    state.fuel = Math.max(0, state.fuel - (fuelFlow() / 3600) * dt);
+    systems.step(dt, fuelFlow());
+    // A pitch trim fault disconnects the autopilot (PTRM).
+    if (state.sys.failed.trim && a.ap) apDisconnect();
     alerter();
   }
 
@@ -620,7 +643,8 @@ window.G1000 = (function () {
   return {
     state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, AIRSPACE, COMMS, WA_SOURCE: WA_NAV.source, magVarAt, toMag, toTrue,
     // The airplane's magnetic heading, as the HSI shows it.
-    magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, airportSize, fuelFlow,
+    magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, systems, airportSize, fuelFlow,
+    FAILURES: G1000_SYSTEMS.FAILURES, fail: (id, on) => systems.fail(id, on), DB_EXPIRES,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, tas, navModeName,
     tick(dt) {
       // Big gaps (a background tab) are skipped, small steps keep it stable.

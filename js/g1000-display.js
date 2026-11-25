@@ -598,24 +598,42 @@ window.G1000_DISPLAY = (function () {
         || (menu === 'pfd' && !!s.fms.win.pfd && ({ 'Tmr/Ref': 'tmr', Nearest: 'nrst' })[label] === s.fms.win.pfd.type)
         || (menu === 'pfd' && label === 'OBS' && !!s.fms.obs)
         || (menu === 'map-layout' && label === s.pfdMap.layout);
-      if (label === 'Alerts' && display === 'pfd') return alertsKey(ctx, s, i * w, y, w);
+      if (label === 'Alerts' && display === 'pfd') return alertsKey(ctx, s, G, i * w, y, w);
       if (on) box(ctx, i * w + 3, y + 3, w - 6, 28, { fill: C.cyan, stroke: null });
       text(ctx, label, i * w + w / 2, y + 17, { size: label.length > 7 ? 15 : 18, align: 'center',
         color: on ? C.black : live.includes(i) ? C.white : '#5b6068' });
     });
   }
-  // The PFD's ALERTS softkey: ADVISORY, flashing white and black, while a
-  // message is unacknowledged; lit while the Alerts window is open.
-  function alertsKey(ctx, s, x, y, w) {
-    if (s.alerts.unseen) {
-      const lit = Math.floor(s.t * 2) % 2 === 0;
-      box(ctx, x + 3, y + 3, w - 6, 28, { fill: lit ? C.white : C.black, stroke: null });
-      text(ctx, 'ADVISORY', x + w / 2, y + 17, { size: 14, align: 'center', color: lit ? C.black : C.white });
+  // The PFD's ALERTS softkey: the most urgent unacknowledged level,
+  // flashing (WARNING red, CAUTION amber, ADVISORY white, each on black);
+  // lit while the Alerts window is open.
+  const LEVEL_KEY = { warning: ['WARNING', C.red], caution: ['CAUTION', C.yellow], advisory: ['ADVISORY', C.white] };
+  function alertsKey(ctx, s, G, x, y, w) {
+    const lv = G.alerts.pending();
+    if (lv) {
+      const [label, color] = LEVEL_KEY[lv], lit = Math.floor(s.t * 2) % 2 === 0;
+      box(ctx, x + 3, y + 3, w - 6, 28, { fill: lit ? color : C.black, stroke: null });
+      text(ctx, label, x + w / 2, y + 17, { size: 14, align: 'center', color: lit ? C.black : color });
       return;
     }
     const open = s.fms.win.pfd?.type === 'alerts';
     if (open) box(ctx, x + 3, y + 3, w - 6, 28, { fill: C.cyan, stroke: null });
     text(ctx, 'Alerts', x + w / 2, y + 17, { size: 18, align: 'center', color: open ? C.black : C.white });
+  }
+
+  // The annunciation window, right of the VSI: warnings (red) above
+  // cautions (amber). Unacknowledged ones flash (reverse video).
+  function annunciationWindow(ctx, s) {
+    const cas = s.alerts.cas;
+    if (!cas.length) return;
+    const x = 912, w = 108, y0 = 128, rowH = 26;
+    box(ctx, x, y0 - 4, w, cas.length * rowH + 8, { fill: C.black, stroke: C.grey });
+    cas.forEach((c, i) => {
+      const color = c.level === 'warning' ? C.red : C.yellow, y = y0 + i * rowH + rowH / 2;
+      const flash = !c.acked && Math.floor(s.t * 2) % 2 === 0;
+      if (flash) box(ctx, x + 3, y - 11, w - 6, 22, { fill: color, stroke: null });
+      text(ctx, c.text, x + w / 2, y + 1, { size: c.text.length > 10 ? 13 : 15, align: 'center', color: flash ? C.black : color });
+    });
   }
 
   // The PFD's Alerts window: the messages, newest first.
@@ -904,6 +922,16 @@ window.G1000_DISPLAY = (function () {
     slot(a.vert, x0 + 275, C.green, 'vert');
     if (vref) text(ctx, vref, x0 + 308, y + 1, { size: 19, color: C.green });
     slot(a.vertArmed, x0 + w - 8, C.white, 'vertArmed', 'right');
+    // Under the strip: PTRM (red, pitch trim failure) and MAXSPD (amber,
+    // flashing: overspeed protection is pitching up).
+    const below = [];
+    if (s.sys.failed.trim) below.push(['PTRM', C.red, true]);
+    if (a.maxspd) below.push(['MAXSPD', C.yellow, blinkOn(s, s.t + 1)]);
+    below.forEach(([str, color, show], i) => {
+      const bx = x0 + w / 2 - (below.length * 110) / 2 + i * 110;
+      box(ctx, bx + 5, 108, 100, 28, { fill: C.black, stroke: color });
+      if (show) text(ctx, str, bx + 55, 123, { size: 19, align: 'center', color });
+    });
   }
 
   function hsi(ctx, s, G) {
@@ -1052,6 +1080,7 @@ window.G1000_DISPLAY = (function () {
     airspeedTape(ctx, s, G);
     altitudeTape(ctx, s, G);
     vsi(ctx, s);
+    annunciationWindow(ctx, s);
     hsi(ctx, s, G);
     if (s.pfdMap.layout === 'Inset Map') insetMap(ctx, s, G);
     bottomBoxes(ctx, s);
@@ -1066,9 +1095,10 @@ window.G1000_DISPLAY = (function () {
   }
 
   // ---- MFD: engine strip (EIS) on the left, the navigation map ----
-  function gaugeBar(ctx, label, value, lo, hi, zones, x, y, w, fmt) {
-    text(ctx, label, x, y, { size: 16 });
-    text(ctx, fmt(value), x + w, y, { size: 18, align: 'right' });
+  // color: the value's colour (red or amber when out of limits).
+  function gaugeBar(ctx, label, value, lo, hi, zones, x, y, w, fmt, color = C.white) {
+    text(ctx, label, x, y, { size: 16, color: color === C.white ? C.white : color });
+    text(ctx, fmt(value), x + w, y, { size: 18, align: 'right', color });
     const by = y + 14, bw = w;
     for (const [a, b, color] of zones) {
       ctx.fillStyle = color;
@@ -1081,8 +1111,11 @@ window.G1000_DISPLAY = (function () {
 
   function eis(ctx, s, G) {
     box(ctx, 0, 70, 200, H - 104, { fill: C.panel, stroke: null });
-    // Plausible engine numbers from power and altitude.
-    const rpm = Math.round(700 + 1800 * s.power);
+    // The numbers come from js/g1000-systems.js.
+    const sys = s.sys, rpm = Math.round(sys.rpm);
+    // POH limits: red outside them, amber on a discharging battery.
+    const voltColor = (v) => (v < 24.5 || v > 32 ? C.red : C.white);
+    const ampColor = (v) => (v < -1.5 ? C.yellow : C.white);
     const ff = +G.fuelFlow().toFixed(1);
     const x = 12, w = 176;
     if (s.eisPage === 'Lean') {
@@ -1100,10 +1133,13 @@ window.G1000_DISPLAY = (function () {
     }
     if (s.eisPage === 'System') {
       text(ctx, 'SYSTEM', x, 100, { size: 18, color: C.cyan });
-      gaugeBar(ctx, 'VOLTS M', 28.0, 20, 32, [[20, 24, C.red], [24, 32, C.green]], x, 140, w, (v) => v.toFixed(1));
-      gaugeBar(ctx, 'VOLTS E', 28.0, 20, 32, [[20, 24, C.red], [24, 32, C.green]], x, 200, w, (v) => v.toFixed(1));
-      gaugeBar(ctx, 'AMPS M', 5, -60, 60, [[-60, 60, C.green]], x, 260, w, (v) => v.toFixed(0));
-      gaugeBar(ctx, 'AMPS S', 0, -10, 10, [[-10, 10, C.green]], x, 320, w, (v) => v.toFixed(0));
+      const vz = [[20, 24.5, C.red], [24.5, 32, C.green], [32, 34, C.red]];
+      gaugeBar(ctx, 'VOLTS M', sys.voltsM, 20, 34, vz, x, 140, w, (v) => v.toFixed(1), voltColor(sys.voltsM));
+      gaugeBar(ctx, 'VOLTS E', sys.voltsE, 20, 34, vz, x, 200, w, (v) => v.toFixed(1), voltColor(sys.voltsE));
+      gaugeBar(ctx, 'AMPS M', sys.ampsM, -60, 60, [[-60, 60, C.green]], x, 260, w, (v) => v.toFixed(0), ampColor(sys.ampsM));
+      gaugeBar(ctx, 'AMPS S', sys.ampsS, -10, 10, [[-10, 10, C.green]], x, 320, w, (v) => v.toFixed(1), sys.ampsS < 0 ? C.yellow : C.white);
+      gaugeBar(ctx, 'OIL PSI', sys.oilPsi, 0, 115, [[0, 20, C.red], [20, 50, C.yellow], [50, 90, C.green], [90, 115, C.red]], x, 380, w, (v) => v.toFixed(0), sys.oilPsi <= 20 ? C.red : C.white);
+      gaugeBar(ctx, 'OIL °F', sys.oilF, 75, 250, [[75, 100, C.yellow], [100, 245, C.green], [245, 250, C.red]], x, 440, w, (v) => v.toFixed(0), sys.oilF >= 245 ? C.red : C.white);
       return;
     }
     // ENGINE page: RPM as an arc, then bars.
@@ -1124,13 +1160,23 @@ window.G1000_DISPLAY = (function () {
     text(ctx, 'RPM', 100, 230, { size: 16, align: 'center' });
     text(ctx, String(Math.round(rpm / 10) * 10), 100, 208, { size: 24, align: 'center' });
     gaugeBar(ctx, 'FFLOW GPH', ff, 0, 20, [[0, 20, C.green]], x, 270, w, (v) => v.toFixed(1));
-    gaugeBar(ctx, 'OIL PRES', 60, 0, 115, [[0, 20, C.red], [20, 50, C.yellow], [50, 90, C.green], [90, 115, C.red]], x, 320, w, (v) => v.toFixed(0));
-    gaugeBar(ctx, 'OIL TEMP', 190, 75, 245, [[75, 100, C.yellow], [100, 245, C.green]], x, 370, w, (v) => v.toFixed(0));
-    gaugeBar(ctx, 'EGT', 1350, 1000, 1600, [[1000, 1600, '#555']], x, 420, w, () => '');
-    gaugeBar(ctx, 'VAC', 5.0, 3, 7, [[3, 4.5, '#555'], [4.5, 5.5, C.green], [5.5, 7, '#555']], x, 470, w, (v) => v.toFixed(1));
-    gaugeBar(ctx, 'FUEL QTY L', s.fuel / 2, 0, 30, [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]], x, 530, w, (v) => v.toFixed(0));
-    gaugeBar(ctx, 'FUEL QTY R', s.fuel / 2, 0, 30, [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]], x, 580, w, (v) => v.toFixed(0));
-    text(ctx, 'ENG 1,234.5 HRS', x, 640, { size: 15, color: C.grey });
+    gaugeBar(ctx, 'OIL PRES', sys.oilPsi, 0, 115, [[0, 20, C.red], [20, 50, C.yellow], [50, 90, C.green], [90, 115, C.red]], x, 320, w, (v) => v.toFixed(0), sys.oilPsi <= 20 ? C.red : C.white);
+    gaugeBar(ctx, 'OIL TEMP', sys.oilF, 75, 250, [[75, 100, C.yellow], [100, 245, C.green], [245, 250, C.red]], x, 370, w, (v) => v.toFixed(0), sys.oilF >= 245 ? C.red : C.white);
+    gaugeBar(ctx, 'EGT', sys.running ? 1350 : 1000, 1000, 1600, [[1000, 1600, '#555']], x, 420, w, () => '');
+    gaugeBar(ctx, 'VAC', sys.vac, 3, 7, [[3, 4.5, '#555'], [4.5, 5.5, C.green], [5.5, 7, '#555']], x, 470, w, (v) => v.toFixed(1), sys.vac < 3.5 ? C.yellow : C.white);
+    // Fuel: the POH's red 0-5 gal (1.5 gal unusable at 0), amber 5-8.
+    const fz = [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]];
+    const fc = (g) => (g < 5 ? C.yellow : C.white);
+    gaugeBar(ctx, 'FUEL QTY L', s.fuelL, 0, 30, fz, x, 530, w, (v) => v.toFixed(0), fc(s.fuelL));
+    gaugeBar(ctx, 'FUEL QTY R', s.fuelR, 0, 30, fz, x, 580, w, (v) => v.toFixed(0), fc(s.fuelR));
+    // Bus volts and battery amps at the bottom (POH: M BUS E, M BATT S).
+    const pair = (label, a, b, y, ca, cb, d) => {
+      text(ctx, label, x + w / 2, y, { size: 13, align: 'center', color: C.grey });
+      text(ctx, a.toFixed(d), x, y, { size: 16, color: ca });
+      text(ctx, b.toFixed(d), x + w, y, { size: 16, align: 'right', color: cb });
+    };
+    pair('M  VOLTS  E', sys.voltsM, sys.voltsE, 630, voltColor(sys.voltsM), voltColor(sys.voltsE), 1);
+    pair('M  AMPS  S', sys.ampsM, sys.ampsS, 656, ampColor(sys.ampsM), sys.ampsS < 0 ? C.yellow : C.white, 1);
   }
 
   // ---- Moving maps: the MFD's Navigation Map, the PFD's inset and HSI

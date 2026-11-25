@@ -110,8 +110,9 @@ window.G1000_TIMER = (function () {
         if (t.dir === 'UP' || t.expired) t.secs += dt;
         else {
           t.secs -= dt;
-          // Zero on a count down: it says so and counts up from there.
-          if (t.secs <= 0) { t.secs = -t.secs; t.expired = true; note('Timer expired'); }
+          // Zero on a count down: TIMER EXPIRD (js/g1000-alerts.js), and it
+          // counts up from there.
+          if (t.secs <= 0) { t.secs = -t.secs; t.expired = true; }
         }
       }
       const m = r.mins;

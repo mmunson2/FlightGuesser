@@ -214,8 +214,59 @@ the GFC 700 AFMS:
     laterally at an altitude inside the buffered band).
   - The airplane starts at 3,500 ft north of Seattle, so an advisory may
     flash right away.
-  - Other G1000 messages and the CAS alerts (LOW VOLTS, OIL PRES and so
-    on) aren't modelled.
+- **Annunciations** (js/g1000-systems.js, js/g1000-alerts.js). These
+  follow this POH: section 7, "G1000 annunciator panel", and the
+  electrical, oil, vacuum, fuel and CO pages.
+  - The eight annunciations, in the window right of the VSI:
+    - OIL PRESSURE: red, at 20 PSI or less.
+    - LOW VOLTS: red, main bus under 24.5 V.
+    - HIGH VOLTS: red, a bus over 32.0 V.
+    - CO LVL HIGH: red, 50 PPM or more.
+    - LOW FUEL L and LOW FUEL R: amber, under 5 gal for more than 60 s.
+    - LOW VACUUM: amber, under 3.5 inHg.
+    - STBY BATT: amber, standby battery discharging over 0.5 A for 10 s.
+  - A new one flashes. The ALERTS softkey becomes a flashing WARNING (red)
+    or CAUTION (amber) until pressed. Each press acknowledges one level,
+    warnings first, then ADVISORY for messages.
+  - The POH's tones (CO, low fuel) aren't modelled. Check the flashing
+    and the exact softkey behaviour against the CRG.
+  - Reaching them:
+    - LOW VOLTS comes on by itself below 1,000 RPM (the POH's note).
+    - LOW FUEL comes on as the tanks burn down.
+    - Both tanks dry stops the engine: no thrust, oil pressure or
+      alternator.
+    - The rest need a failure from the Failures list in Operate mode:
+      alternator, overvoltage, oil loss, vacuum pump, left tank leak, CO
+      leak, pitch trim. Choosing a failure again fixes it. Reset flight
+      fixes everything.
+  - The systems model, made up but in the POH's direction:
+    - Alternator off: the main battery runs the bus from 24 V down to
+      20 V in about 35 minutes (the POH says only "a short time"). Then
+      the standby battery takes the essential bus, giving STBY BATT.
+    - Overvoltage: 32.6 V for 3 s, then the ACU trips the alternator
+      (HIGH VOLTS, then LOW VOLTS).
+    - Oil loss: pressure falls to 5 PSI as oil temperature rises.
+    - CO builds to 120 PPM over about 40 s.
+    - The left leak drains 20 gal/h. The fuel selector is BOTH.
+  - The EIS now reads these: oil pressure and temperature, vacuum, fuel
+    per tank, and the bus volts and battery amps at the bottom of the
+    ENGINE page (M VOLTS E, M AMPS S, as the POH describes). Volts are
+    red outside 24.5–32. A discharging battery shows amber, the main one
+    below −1.5 A.
+  - PTRM (pitch trim fault): red, under the autopilot mode strip. The AP
+    disconnects and won't engage again, as the POH's procedure says.
+  - MAXSPD: amber, flashing, under the strip. With the AP engaged, the
+    nose comes up to hold Vne − 5 (158 KIAS). Check where the real one
+    shows and the speed it protects.
+- **Messages** (Alerts window), besides the airspace ones above:
+  - WPT ARRIVAL "Arriving at waypoint": 10 seconds or less to the active
+    waypoint, not in OBS.
+  - TIMER EXPIRD "Timer has expired.": a count-down timer reached zero.
+    It replaces the mock's old note.
+  - DATABASE EXPIRE "Navigation database has expired.": from 28 days
+    after the NASR cycle (29 Oct 2026, so from 26 Nov 2026), by the
+    computer's real date. Rebuild with `make fetch nav` for a new cycle.
+  - Hardware-fault messages are left out on purpose.
 - **AUX - System Setup** (AUX page 4): only the Airspace Alerts box.
   Altitude buffer 0–1,000 ft in 50 ft steps (default 200), and Class
   B/TMA, C/TCA and D alerts on or off (all on). Push FMS for the cursor,
@@ -268,7 +319,8 @@ the GFC 700 AFMS:
   - Not modelled: the variation's yearly drift, and the compass's own
     errors.
 - **Simplified**:
-  - The EIS numbers and the airplane's kinematics are made up.
+  - The airplane's kinematics and the systems model's rates are made up.
+    The annunciation thresholds are the POH's.
   - There is no wind.
 
 ## The engine model
