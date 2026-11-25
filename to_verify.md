@@ -497,7 +497,21 @@ the GFC 700 AFMS:
   - Volume knob: small knob is intercom volume (push to switch pilot or
     passengers); large knob is squelch, which works only with MAN SQ on.
     Check which half is which.
-  - The red DISPLAY BACKUP button isn't operable.
+- **Display backup (reversionary mode)**: the red DISPLAY BACKUP button
+  under the audio panel toggles it.
+  - Both displays show the PFD with the engine strip (EIS) down the left
+    side. The PFD's left 140 px are cropped and the rest squeezed 7%; the
+    OAT moves into the strip. The real layout is arranged, not squeezed.
+  - The MFD's keys and knobs work the PFD. Check what the real MFD bezel
+    does in reversion.
+  - The PFD's first softkey becomes Engine, giving the Engine, Lean and
+    System pages. Pressing the button again restores both displays and
+    the PFD's own softkeys.
+  - Not modelled: automatic reversion when a display fails, and the MFD's
+    pages (map, checklist) while reverted.
+  - The button's geometry is merged into the volume knob's part in the
+    model: in the quiz it is named as that knob. In Operate mode, a click
+    below the knob is the button.
 
 ## The engine model
 

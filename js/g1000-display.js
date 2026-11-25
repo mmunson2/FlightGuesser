@@ -790,7 +790,7 @@ window.G1000_DISPLAY = (function () {
 
   function softkeys(ctx, s, G, display) {
     const menu = G.menu(display);
-    const labels = G.MENUS[menu], live = G.LIVE[menu];
+    const labels = G.labels(display), live = G.live(display);
     const w = W / 12, y = H - 34;
     box(ctx, 0, y, W, 34, { fill: C.black, stroke: null });
     labels.forEach((label, i) => {
@@ -1365,9 +1365,12 @@ window.G1000_DISPLAY = (function () {
   function bottomBoxes(ctx, s) {
     const y = H - 34 - 40;
     // Outside air temperature, standard lapse from 15 °C.
+    // (Reversionary mode shows it in the engine strip instead.)
     const oat = Math.round(15 - 2 * s.trueAlt / 1000);
-    box(ctx, 0, y, 150, 38, { fill: C.black, stroke: C.grey });
-    text(ctx, `OAT ${oat}°C`, 10, y + 19, { size: 20 });
+    if (!s.reversion) {
+      box(ctx, 0, y, 150, 38, { fill: C.black, stroke: C.grey });
+      text(ctx, `OAT ${oat}°C`, 10, y + 19, { size: 20 });
+    }
     // Transponder: code, mode, ident.
     const x = s.xpdr;
     box(ctx, W - 280, y, 280, 38, { fill: C.black, stroke: C.grey });
@@ -1383,7 +1386,31 @@ window.G1000_DISPLAY = (function () {
     text(ctx, `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`, W - 10, y + 19, { size: 18, align: 'right', color: C.grey });
   }
 
-  function drawPFD(ctx, s, G) {
+  // Reversionary mode (DISPLAY BACKUP): the PFD with the engine strip down
+  // its left side, on both displays. The PFD is drawn whole off screen,
+  // then its middle (between the radios and the softkeys) put right of the
+  // strip: all but its left 140 px (empty but for the OAT box, which moves
+  // to the strip, and part of any inset map), squeezed 7% across.
+  let revCanvas = null;
+  function reversionary(ctx, s, G) {
+    revCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H });
+    const off = revCanvas.getContext('2d');
+    drawPFD(off, s, G, true);
+    const top = 70, bottom = H - 34, strip = 200;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = C.black;
+    ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(revCanvas, 0, 0, W, top, 0, 0, W, top);
+    const crop = 140;
+    ctx.drawImage(revCanvas, crop, top, W - crop, bottom - top, strip, top, W - strip, bottom - top);
+    ctx.drawImage(revCanvas, 0, bottom, W, H - bottom, 0, bottom, W, H - bottom);
+    eis(ctx, s, G);
+    text(ctx, `OAT ${Math.round(15 - 2 * s.trueAlt / 1000)}°C`, 12, bottom - 44, { size: 18 });
+    text(ctx, 'REVERSIONARY', strip / 2, bottom - 14, { size: 13, align: 'center', color: C.yellow });
+  }
+
+  function drawPFD(ctx, s, G, whole = false) {
+    if (s.reversion && !whole) return reversionary(ctx, s, G);
     ctx.clearRect(0, 0, W, H);
     attitude(ctx, s);
     aircraftSymbol(ctx, s);
@@ -1731,6 +1758,7 @@ window.G1000_DISPLAY = (function () {
   }
 
   function drawMFD(ctx, s, G) {
+    if (s.reversion) return reversionary(ctx, s, G);
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = C.black;
     ctx.fillRect(0, 0, W, H);

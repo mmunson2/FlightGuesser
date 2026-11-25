@@ -1123,6 +1123,25 @@ G1000_CHECKS = r"""() => {
     drawAll('audio panel');
   }
 
+  // DISPLAY BACKUP: both displays reverted; the MFD's keys work the PFD;
+  // Engine on the PFD's softkeys reaches the EIS pages; pressed again,
+  // back to normal with the PFD's own menu.
+  {
+    G.reset();
+    G.press('display_backup', 'pfd');
+    expect(s.reversion && G.labels('mfd')[0] === 'Engine' && G.menu('mfd') === 'pfd', `reverted: ${G.labels('mfd')}`);
+    drawAll('reversionary');
+    G.press('softkey:5', 'mfd');
+    expect(s.cdi === 'VOR1', `MFD softkey works the PFD's CDI: ${s.cdi}`);
+    G.press('softkey:0', 'mfd'); G.press('softkey:1', 'mfd');
+    expect(G.menu('pfd') === 'lean' && s.eisPage === 'Lean', `reverted Engine, Lean: ${G.menu('pfd')} ${s.eisPage}`);
+    drawAll('reversionary lean');
+    G.turn('hdg', '', 10, 'mfd');
+    expect(s.hdgBug === 350, `MFD HDG knob in reversion: ${s.hdgBug}`);
+    G.press('display_backup', 'mfd');
+    expect(!s.reversion && G.menu('pfd') === 'pfd' && G.labels('pfd')[0] === '' && s.eisPage === 'Engine', `back to normal: ${G.menu('pfd')}`);
+  }
+
   G.reset();
   return errors;
 }"""

@@ -28,15 +28,20 @@ window.G1000_PANEL = (function () {
     apr_key: 'apr', bc_key: 'bc', vs_key: 'vs', flc_key: 'flc', nose_up_key: 'nose_up', nose_dn_key: 'nose_dn',
     // The audio panel (js/g1000-gma.js): com1_mic_key -> 'gma:com1_mic'.
     ...Object.fromEntries(G1000_GMA.KEYS.map((k) => [k + '_key', 'gma:' + k])),
+    // The red DISPLAY BACKUP button: not a part of its own (see BACKUP).
+    display_backup: 'display_backup',
   };
   // The audio panel is one unit in the middle: its parts straddle the
   // displays' split, so they aren't split by display. Its volume knob's
-  // part also holds the VOL/SQ legend below it (under AUDIO_KNOB_Y).
+  // part also holds the red DISPLAY BACKUP button below it (under
+  // AUDIO_KNOB_Y): a hit there is the button, the control 'display_backup'
+  // on the knob's mesh.
   const AUDIO = new Set([...G1000_GMA.KEYS.map((k) => k + '_key'), 'audio_volume_knob']);
-  const AUDIO_KNOB = 'audio_volume_knob', AUDIO_KNOB_Y = -0.02;
+  const AUDIO_KNOB = 'audio_volume_knob', AUDIO_KNOB_Y = -0.02, BACKUP = 'display_backup';
   // Whether a vertex at (x, y, z) belongs to a part's control on `display`.
   const onControl = (pid, display, x, y, z) => (pid === STBY ? z < STBY_KNOB_Z
-    : pid === AUDIO_KNOB ? y > AUDIO_KNOB_Y : AUDIO.has(pid) || displayAt(x) === display);
+    : pid === AUDIO_KNOB ? y > AUDIO_KNOB_Y : pid === BACKUP ? y < AUDIO_KNOB_Y
+      : AUDIO.has(pid) || displayAt(x) === display);
   // Concentric knobs: the inner knob's radius is 4.7 mm, the outer's 6.
   // Their zones are bigger than the knobs, to be easy to hit: the inner
   // knob within INNER_ZONE of the centre, the outer out to OUTER_ZONE (the
@@ -234,6 +239,9 @@ window.G1000_PANEL = (function () {
         const k = centreOf(STBY, 'mfd');
         if (Math.hypot(hit.point.x - k.x, hit.point.y - k.y) > 0.008) return zoneAt(hit);
       }
+      if (pid === AUDIO_KNOB && hit.point.y < AUDIO_KNOB_Y) {
+        return { pid: BACKUP, mesh: hit.object, display: displayAt(hit.point.x), point: hit.point, inner: false };
+      }
       if (hit && ((pid in KEYS) || pid === 'softkeys' || ((pid in KNOBS) && !CONCENTRIC.has(KNOBS[pid])))) {
         return { pid, mesh: hit.object, display: displayAt(hit.point.x), point: hit.point, inner: false };
       }
@@ -266,9 +274,10 @@ window.G1000_PANEL = (function () {
       // the rest are on both.
       const where = ['autopilot', 'audio_panel'].includes(c.mesh.userData.part.system) ? '' : ' · ' + c.display.toUpperCase();
       if (c.pid === STBY) return 'Standby altimeter knob (baro)';
+      if (c.pid === BACKUP) return 'DISPLAY BACKUP button';
       if (c.pid === 'softkeys') {
         const i = softkeyAt(c.point, c.display);
-        const label = G.MENUS[G.menu(c.display)][i] || 'blank';
+        const label = G.labels(c.display)[i] || 'blank';
         return `Softkey ${i + 1} “${label}” · ${c.display.toUpperCase()}`;
       }
       return (I18N['part.' + c.pid] ?? c.pid) + half + where;

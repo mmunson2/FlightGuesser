@@ -19,7 +19,9 @@
 // PFD's wind window), bearing pointers and DME, map pan and measure, user
 // waypoints, GPS status (and loss of integrity), lean assist and the fuel
 // totalizer, checklists (js/g1000-checklist.js) and the audio panel's
-// selections (js/g1000-gma.js). What it doesn't:
+// selections (js/g1000-gma.js), and reversionary mode (the audio panel's
+// DISPLAY BACKUP button: both displays show the PFD with the engine strip;
+// see `reversion`). What it doesn't:
 // VNAV, procedures and GPS approaches, LOC/GS, ADF, sound (no aural
 // alerts), hardware-fault messages, the MFD's IFR pages. Headings, bugs, courses and bearings are magnetic (see
 // magVarAt); the simulation underneath is true. The airplane is a few
@@ -206,6 +208,9 @@ window.G1000 = (function () {
       fuel: 48, fuelL: 24, fuelR: 24, sys: systems.fresh(),
       // A line of text for the last thing the mock can't do yet.
       note: null,
+      // Reversionary mode (DISPLAY BACKUP): both displays show the PFD
+      // with the EIS strip, and the MFD's keys and knobs work the PFD.
+      reversion: false,
       fms: fms.fresh(),
       pageMenu: menus.fresh(), mapSet: menus.freshMap(), ref: timer.fresh(),
       alerts: alerts.fresh(), alertSet: alerts.freshSet(), chk: checklist.fresh(), gma: gma.fresh(),
@@ -446,10 +451,32 @@ window.G1000 = (function () {
     if (state.pan && !panPage()) state.pan = null;
     return handled;
   }
+  // In reversionary mode both displays are the PFD: the MFD's bezel works
+  // it too.
+  const pfdIfReverted = (display) => (state.reversion ? 'pfd' : display);
+  // DISPLAY BACKUP: into reversionary mode, or back out (the PFD's own
+  // softkeys back at the top: the engine menus belong to the MFD then).
+  function displayBackup() {
+    state.reversion = !state.reversion;
+    if (!state.reversion && ['engine', 'lean', 'system'].includes(menu('pfd'))) state.menus.pfd = ['pfd'];
+    if (!state.reversion) state.eisPage = 'Engine';
+  }
+  // The softkey labels a menu shows, and which of them do something: the
+  // PFD's top menu gains Engine (the EIS pages) in reversionary mode.
+  const labelsOf = (m) => (m === 'pfd' && state.reversion ? ['Engine', ...MENUS.pfd.slice(1)] : MENUS[m]);
+  const liveOf = (m) => (m === 'pfd' && state.reversion ? [0, ...LIVE.pfd] : LIVE[m]);
+  const menu = (display) => {
+    const d = pfdIfReverted(display);
+    return state.menus[d][state.menus[d].length - 1];
+  };
+
   function press(key, display = 'pfd') {
     const a = state.afcs;
-    // The audio panel's keys ('gma:com1_mic' and so on).
+    // The audio panel's keys ('gma:com1_mic' and so on), and its DISPLAY
+    // BACKUP button.
     if (key.startsWith('gma:')) return gma.press(key.slice(4));
+    if (key === 'display_backup') return displayBackup();
+    display = pfdIfReverted(display);
     if (windowKey(key, display)) return;
     switch (key) {
       case 'ap':
@@ -503,11 +530,11 @@ window.G1000 = (function () {
   function softkey(display, i) {
     const stack = state.menus[display];
     const menu = stack[stack.length - 1];
-    const label = MENUS[menu][i];
+    const label = labelsOf(menu)[i];
     if (!label) return;
     // ALERTS, the last softkey on every PFD menu.
     if (label === 'Alerts' && display === 'pfd') return alerts.softkey();
-    if (!LIVE[menu].includes(i)) return note(label + ': not in the mock yet');
+    if (!liveOf(menu).includes(i)) return note(label + ': not in the mock yet');
     const x = state.xpdr;
     switch (menu + ':' + label) {
       case 'pfd:PFD Opt': stack.push('pfd-opt'); return;
@@ -571,7 +598,7 @@ window.G1000 = (function () {
       case 'pfd-opt:Back': case 'xpdr:Back': case 'engine:Back': case 'map-hsi:Back': case 'map-layout:Back': case 'alt-units:Back':
         stack.pop(); return;
       case 'xpdr-code:Back': x.entry = null; stack.pop(); return;
-      case 'mfd:Engine': stack.push('engine'); return;
+      case 'mfd:Engine': case 'pfd:Engine': stack.push('engine'); return;
       case 'mfd:Checklist': checklist.open(); stack.push('checklist'); return;
       case 'checklist:Exit': checklist.close(); stack.pop(); return;
       case 'checklist:Emergency': checklist.emergency(); return;
@@ -600,6 +627,7 @@ window.G1000 = (function () {
   // nav_volume. part: 'inner' or 'outer' (one-piece knobs ignore it).
   // steps: + clockwise.
   function turn(knob, part, steps, display = 'pfd') {
+    display = pfdIfReverted(display);
     switch (knob) {
       case 'com': {
         const c = state.com[state.comTune];
@@ -670,6 +698,7 @@ window.G1000 = (function () {
 
   // Pushing a knob.
   function push(knob, display = 'pfd') {
+    display = pfdIfReverted(display);
     switch (knob) {
       // Push: tune the other radio (the cyan box moves).
       case 'com': state.comTune = 1 - state.comTune; return;
@@ -858,6 +887,8 @@ window.G1000 = (function () {
       watchSel();
       for (let left = dt; left > 1e-6; left -= 0.05) step(Math.min(0.05, left));
     },
-    menu: (display) => state.menus[display][state.menus[display].length - 1],
+    // The menu a display's softkeys show (the PFD's, on both, reverted),
+    // its labels and live softkeys.
+    menu, labels: (display) => labelsOf(menu(display)), live: (display) => liveOf(menu(display)),
   };
 })();
