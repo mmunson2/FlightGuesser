@@ -66,6 +66,100 @@ window.G1000_DISPLAY = (function () {
     }
   }
 
+  // The PFD's navigation status, top centre between the radios: the
+  // active leg, then distance and desired track to its waypoint.
+  function navStatus(ctx, s, G) {
+    const l = G.fms.leg();
+    if (!l) return;
+    const nav = G.navSolution('GPS');
+    const from = l.direct ? 'D→' : l.fromId + ' →';
+    text(ctx, `${from} ${l.to.id}`, 495, 20, { size: 21, align: 'center', color: C.magenta });
+    text(ctx, `DIS ${nav.dist.toFixed(1)}NM  DTK ${pad3(nav.course)}°`, 495, 52, { size: 18, align: 'center' });
+  }
+
+  // ---- FMS windows (js/g1000-fms.js): Direct-To and the flight plan ----
+  // An identifier being typed: the characters so far, the cursor's
+  // character in a cyan box, the rest completed from the database.
+  function identField(ctx, e, x, y, G, active) {
+    const m = G.fms.match(e.ident);
+    const shown = (m ? m.id : e.ident).padEnd(5, '_').slice(0, 6);
+    ctx.font = font(26);
+    const cw = 22;
+    for (let i = 0; i < shown.length; i++) {
+      const cursor = active && i === e.pos;
+      if (cursor) box(ctx, x + i * cw - 2, y - 16, cw, 32, { fill: C.cyan, stroke: null });
+      // Typed characters white; the completion cyan.
+      const color = cursor ? C.black : i < e.ident.length ? C.white : C.cyan;
+      text(ctx, shown[i], x + i * cw + cw / 2 - 2, y + 1, { size: 26, align: 'center', color });
+    }
+    return m;
+  }
+
+  function dtoWindow(ctx, s, G, win, x, y, w, h) {
+    box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
+    text(ctx, 'DIRECT TO', x + w / 2, y + 22, { size: 22, align: 'center', color: C.cyan });
+    const m = identField(ctx, win, x + 20, y + 66, G, win.stage === 'ident');
+    text(ctx, m ? m.name : 'No match', x + 20, y + 104, { size: 18, color: m ? C.white : C.yellow });
+    if (m) {
+      const { brg, dist } = G.bearingDist(s, m);
+      text(ctx, `BRG ${pad3(brg)}°   DIS ${dist.toFixed(1)}NM`, x + 20, y + 138, { size: 20 });
+    }
+    const on = win.stage === 'activate';
+    box(ctx, x + w / 2 - 80, y + 166, 160, 36, { fill: on ? C.cyan : C.black, stroke: C.cyan });
+    text(ctx, 'ACTIVATE?', x + w / 2, y + 185, { size: 20, align: 'center', color: on ? C.black : C.cyan });
+  }
+
+  function fplWindow(ctx, s, G, win, x, y, w, h) {
+    box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
+    text(ctx, 'ACTIVE FLIGHT PLAN', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    const cols = [x + 40, x + w * 0.45, x + w * 0.7, x + w - 12];
+    text(ctx, 'DTK', cols[1], y + 48, { size: 15, align: 'right', color: C.grey });
+    text(ctx, 'DIS', cols[2], y + 48, { size: 15, align: 'right', color: C.grey });
+    text(ctx, 'CUM', cols[3], y + 48, { size: 15, align: 'right', color: C.grey });
+    const rows = G.fms.rows();
+    const rowH = 30, top = y + 76;
+    const maxRows = Math.floor((h - 90 - (win.prompt ? 40 : 0)) / rowH);
+    // Keep the cursor in view.
+    const first = Math.max(0, Math.min((win.cursor ?? 0) - maxRows + 2, rows.length + 1 - maxRows));
+    const all = [...rows, null];
+    for (let k = 0; k < maxRows && first + k < all.length; k++) {
+      const i = first + k, r = all[i], ry = top + k * rowH;
+      const sel = win.cursor === i;
+      if (sel && !win.entry) box(ctx, x + 34, ry - 14, 84, 28, { fill: C.cyan, stroke: null });
+      if (sel && win.entry) {
+        // The new waypoint goes in above this row.
+        identField(ctx, win.entry, x + 34, ry, G, true);
+        continue;
+      }
+      if (!r) { text(ctx, '_____', cols[0], ry, { size: 22, color: sel ? C.black : C.cyan }); continue; }
+      const color = sel ? C.black : r.active ? C.magenta : C.white;
+      if (r.active) text(ctx, s.fms.fpl.dto ? 'D→' : '➔', x + 6, ry, { size: 15, color: C.magenta });
+      text(ctx, r.id, cols[0], ry, { size: 22, color });
+      if (r.dtk != null) {
+        const c = r.active ? C.magenta : C.white;
+        text(ctx, pad3(r.dtk) + '°', cols[1], ry, { size: 20, align: 'right', color: c });
+        text(ctx, r.dis.toFixed(1), cols[2], ry, { size: 20, align: 'right', color: c });
+        text(ctx, r.cum.toFixed(0), cols[3], ry, { size: 20, align: 'right', color: c });
+      }
+    }
+    if (win.prompt) {
+      box(ctx, x + 10, y + h - 46, w - 20, 36, { fill: C.cyan, stroke: null });
+      text(ctx, win.prompt.text + '  ENT / CLR', x + w / 2, y + h - 27, { size: 18, align: 'center', color: C.black });
+    } else if (win.cursor == null) {
+      text(ctx, 'Push FMS for the cursor', x + w / 2, y + h - 20, { size: 15, align: 'center', color: C.grey });
+    }
+  }
+
+  function fmsWindow(ctx, s, G, display) {
+    const win = s.fms.win[display];
+    if (!win) return;
+    // PFD: the lower right corner, beside the HSI and under the CRS box.
+    // MFD: the map's right half.
+    const [x, y, w, h] = display === 'pfd' ? [660, 548, 358, 228] : [600, 106, 418, H - 34 - 112];
+    if (win.type === 'dto') dtoWindow(ctx, s, G, win, x, y, w, Math.min(h, 228));
+    else fplWindow(ctx, s, G, win, x, y, w, h);
+  }
+
   function softkeys(ctx, s, G, display) {
     const menu = G.menu(display);
     const labels = G.MENUS[menu], live = G.LIVE[menu];
@@ -381,9 +475,10 @@ window.G1000_DISPLAY = (function () {
     ctx.moveTo(-14, -R); ctx.lineTo(-14, -R + 12); ctx.lineTo(-6, -R + 12); ctx.lineTo(0, -R + 5);
     ctx.lineTo(6, -R + 12); ctx.lineTo(14, -R + 12); ctx.lineTo(14, -R); ctx.closePath(); ctx.fill();
     ctx.restore();
-    // Course pointer and CDI (VOR: green; GPS with no leg: no pointer).
-    if (s.cdi !== 'GPS') {
-      const crs = s.crs[s.cdi === 'VOR1' ? 0 : 1];
+    // Course pointer and CDI: VOR green on the selected course, GPS
+    // magenta on the active leg's desired track (none with no leg).
+    const crs = s.cdi === 'GPS' ? nav?.course : s.crs[s.cdi === 'VOR1' ? 0 : 1];
+    if (crs != null) {
       ctx.save(); ctx.rotate(rad(crs));
       ctx.strokeStyle = srcColor;
       ctx.fillStyle = srcColor;
@@ -421,6 +516,8 @@ window.G1000_DISPLAY = (function () {
     ctx.moveTo(-9, 18); ctx.lineTo(9, 18); ctx.stroke();
     // Source label, and with no signal a red X over the CDI.
     text(ctx, s.cdi, -46, -26, { size: 17, align: 'center', color: srcColor });
+    // GPS: the CDI scale (ENR 2 NM, TERM 1 NM full scale).
+    if (nav?.scale) text(ctx, nav.scale, 46, -26, { size: 17, align: 'center', color: srcColor });
     if (s.cdi !== 'GPS' && !nav) {
       ctx.strokeStyle = C.red; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(-60, -40); ctx.lineTo(60, 40); ctx.moveTo(60, -40); ctx.lineTo(-60, 40); ctx.stroke();
@@ -433,10 +530,11 @@ window.G1000_DISPLAY = (function () {
     text(ctx, pad3(s.hdgBug) + '°', cx - 148, cy - R - 45, { size: 24, align: 'right', color: C.cyan });
     box(ctx, cx + 140, cy - R - 64, 150, 36, { fill: C.black, stroke: C.grey });
     text(ctx, 'CRS', cx + 150, cy - R - 45, { size: 20 });
-    const crsText = s.cdi === 'GPS' ? '---°' : pad3(s.crs[s.cdi === 'VOR1' ? 0 : 1]) + '°';
+    const crsText = crs != null ? pad3(crs) + '°' : '---°';
     text(ctx, crsText, cx + 282, cy - R - 45, { size: 24, align: 'right', color: srcColor });
-    // Distance to the station (a DME stand-in) under the source.
-    if (nav) text(ctx, `${nav.station.id} ${nav.dist.toFixed(1)}NM`, cx + 140, cy - R - 10, { size: 18, color: C.green });
+    // VOR: distance to the station (a DME stand-in) under the course box;
+    // GPS shows its distance in the navigation status bar instead.
+    if (nav && nav.source !== 'GPS' && !s.fms.win.pfd) text(ctx, `${nav.station.id} ${nav.dist.toFixed(1)}NM`, cx + 140, cy - R - 10, { size: 18, color: srcColor });
   }
 
   function bottomBoxes(ctx, s) {
@@ -468,7 +566,9 @@ window.G1000_DISPLAY = (function () {
     hsi(ctx, s, G);
     bottomBoxes(ctx, s);
     radios(ctx, s, G);
+    navStatus(ctx, s, G);
     fma(ctx, s, G);
+    fmsWindow(ctx, s, G, 'pfd');
     softkeys(ctx, s, G, 'pfd');
     noteBar(ctx, s);
     last.pfd = { t: s.t, ias: s.ias, trend: last.pfd?.trend };
@@ -562,9 +662,24 @@ window.G1000_DISPLAY = (function () {
     ctx.beginPath(); ctx.arc(ox, oy, ringR, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
     text(ctx, `${range}NM`, ox + ringR * 0.72, oy - ringR * 0.72, { size: 18, color: C.grey });
+    // The flight plan: legs white, the active leg (or Direct-To) magenta.
+    const f = s.fms.fpl, l = G.fms.leg();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = C.white;
+    for (let i = 1; i < f.wpts.length; i++) {
+      if (!f.dto && i === f.active) continue;
+      const [ax, ay] = toXY(G.fms.byId[f.wpts[i - 1]]), [bx, by] = toXY(G.fms.byId[f.wpts[i]]);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    }
+    if (l) {
+      const [ax, ay] = toXY(l.from), [bx, by] = toXY(l.to);
+      ctx.strokeStyle = C.magenta;
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    }
     // Selected VOR course line from the station.
     const nav = G.navSolution();
-    if (nav) {
+    if (nav && nav.source !== 'GPS') {
       const [sx, sy] = toXY(nav.station);
       const a = rad(nav.course - s.hdg);
       ctx.strokeStyle = C.green;
@@ -605,7 +720,16 @@ window.G1000_DISPLAY = (function () {
 
   function navDataBar(ctx, s, G) {
     box(ctx, 200, 70, W - 200, 36, { fill: C.panel, stroke: null });
-    const fields = [['GS', `${Math.round(G.tas())}KT`], ['DTK', '___°'], ['TRK', `${pad3(s.hdg)}°`], ['ETE', '__:__']];
+    // DTK and ETE (to the active waypoint, at the present ground speed)
+    // come from the GPS leg; blank without one.
+    const nav = G.navSolution('GPS');
+    let ete = '__:__';
+    if (nav) {
+      const mins = (nav.dist / Math.max(G.tas(), 30)) * 60;
+      ete = `${Math.floor(mins)}:${String(Math.floor((mins % 1) * 60)).padStart(2, '0')}`;
+    }
+    const fields = [['GS', `${Math.round(G.tas())}KT`], ['DTK', nav ? pad3(nav.course) + '°' : '___°'],
+      ['TRK', `${pad3(s.hdg)}°`], ['ETE', ete]];
     fields.forEach(([k, v], i) => {
       const x = 220 + i * 200;
       text(ctx, k, x, 88, { size: 18 });
@@ -621,6 +745,7 @@ window.G1000_DISPLAY = (function () {
     eis(ctx, s);
     navDataBar(ctx, s, G);
     radios(ctx, s, G);
+    fmsWindow(ctx, s, G, 'mfd');
     softkeys(ctx, s, G, 'mfd');
     noteBar(ctx, s);
   }

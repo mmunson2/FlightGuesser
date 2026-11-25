@@ -337,6 +337,62 @@ G1000_CHECKS = r"""() => {
   G.turn('nav', 'inner', 1);
   expect(s.nav[0].stby === 108.0, `NAV inner wrap: ${s.nav[0].stby}`);
 
+  // Flight plans, entered with the FMS knob as a pilot would: the small
+  // knob picks each character from blank, the large knob moves on.
+  const CHARS = G1000_FMS.CHARS, f = () => s.fms.fpl;
+  const type = (id) => [...id].forEach((c, i) => {
+    if (i) G.turn('fms', 'outer', 1, 'pfd');
+    G.turn('fms', 'inner', CHARS.indexOf(c) + 1, 'pfd');
+  });
+  const leg = () => G.fms.leg();
+
+  // Direct-To: KAW completes to KAWO; ENT, ENT activates from here.
+  G.reset();
+  G.press('direct_to', 'pfd');
+  type('KAW');
+  expect(G.fms.match(s.fms.win.pfd.ident)?.id === 'KAWO', `D→ typing KAW matched ${s.fms.win.pfd.ident}`);
+  G.press('ent', 'pfd'); G.press('ent', 'pfd');
+  expect(!s.fms.win.pfd && leg()?.to.id === 'KAWO' && leg().direct, `D→ KAWO not active: ${JSON.stringify(f())}`);
+  nav = G.navSolution();
+  expect(nav && nav.source === 'GPS' && Math.abs(nav.dev) < 0.05 && nav.scale === 'TERM',
+    `D→ GPS solution: ${JSON.stringify(nav && { dev: nav.dev, scale: nav.scale })}`);
+
+  // GPS NAV captures at once on the Direct-To and flies it to KAWO.
+  G.press('nav'); G.press('ap');
+  expect(a().lat === 'NAV', `GPS NAV should capture on a fresh D→: ${a().lat}/${a().latArmed}`);
+  let worst = 0;
+  const arrived = run(1200, () => {
+    if (s.t > 60) worst = Math.max(worst, Math.abs(G.navSolution().xtk));
+    return G.navSolution().dist < 0.3;
+  });
+  expect(arrived && worst < 0.3, `D→ KAWO: arrived ${arrived}, worst cross-track ${worst.toFixed(2)} NM`);
+
+  // FPL: build KPAE KAWO KBVS; the first leg goes active by itself.
+  G.reset();
+  G.press('fpl', 'pfd'); G.push('fms', 'pfd');
+  for (const id of ['KPAE', 'KAWO', 'KBVS']) { type(id); G.press('ent', 'pfd'); }
+  expect(f().wpts.join() === 'KPAE,KAWO,KBVS' && f().active === 1, `FPL built: ${JSON.stringify(f())}`);
+  // Insert KPWT before KAWO (row 1): the active leg still ends at KAWO.
+  G.turn('fms', 'outer', -2, 'pfd');
+  type('KPW'); G.press('ent', 'pfd');
+  expect(f().wpts.join() === 'KPAE,KPWT,KAWO,KBVS' && leg().to.id === 'KAWO', `FPL insert: ${JSON.stringify(f())}`);
+  // CLR on KPWT asks, ENT removes it.
+  G.turn('fms', 'outer', -1, 'pfd');
+  G.press('clr', 'pfd');
+  expect(s.fms.win.pfd.prompt?.text === 'Remove KPWT?', `CLR prompt: ${s.fms.win.pfd.prompt?.text}`);
+  G.press('ent', 'pfd');
+  expect(f().wpts.join() === 'KPAE,KAWO,KBVS' && leg().to.id === 'KAWO', `FPL remove: ${JSON.stringify(f())}`);
+  // MENU on KBVS: activate the leg to it.
+  G.turn('fms', 'outer', 1, 'pfd');
+  G.press('menu', 'pfd'); G.press('ent', 'pfd');
+  expect(f().active === 2 && leg().fromId === 'KAWO', `MENU activate leg: ${JSON.stringify(f())}`);
+
+  // Sequencing: D→ KAWO (in the plan), then on to KBVS by itself.
+  G.fms.directTo('KAWO');
+  G.press('nav'); G.press('ap');
+  expect(run(1500, () => !f().dto && f().active === 2), `no sequencing past KAWO: ${JSON.stringify(f())}`);
+  expect(leg()?.fromId === 'KAWO' && leg().to.id === 'KBVS', `after KAWO the leg is ${leg()?.fromId} → ${leg()?.to.id}`);
+
   // Transponder: XPDR, Code, four digits, back on the XPDR menu.
   G.reset();
   G.press('softkey:7', 'pfd'); G.press('softkey:7', 'pfd');

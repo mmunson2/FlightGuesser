@@ -53,10 +53,33 @@ the GFC 700 AFMS:
   - Arms when off course by 7° or more.
   - Intercepts at up to 45°.
   - VOR full scale is 10°, at 2 dots.
+- **Flight plans and Direct-To** (js/g1000-fms.js):
+  - Entry: the small FMS knob picks the character under the cursor, the
+    large knob moves the cursor, and the identifier completes from the
+    database.
+  - Direct-To takes ENT to accept the identifier, then ENT on ACTIVATE?.
+    It defaults to the active waypoint.
+  - In the FPL, push FMS for the cursor. The small knob inserts a
+    waypoint before the selected row.
+  - CLR on a waypoint asks "Remove?". MENU on a waypoint asks to activate
+    the leg to it. The real unit goes through a page menu for this; the
+    mock asks directly.
+  - The first leg becomes active by itself once the plan has two
+    waypoints. Check what the real unit does.
+  - A Direct-To to a waypoint in the plan continues with the plan after
+    it.
+  - Legs sequence when the waypoint is passed. There's no turn
+    anticipation.
+- **GPS CDI scale**: ENR 2.0 NM full scale; TERM 1.0 NM within 31 NM of
+  the plan's departure or destination airport. The 0.3 NM approach scale
+  isn't modelled.
+- **GPS NAV**: captures within full-scale deflection, else arms.
 - **Volume**: turning a volume knob shows a percentage in place of the
   standby frequency for 2 seconds.
-- **Stations**: PAE VOR 110.6 and SEA VORTAC 116.8, and the airport
-  positions on the MFD map, are approximate.
+- **Stations and airports**: PAE VOR 110.6, SEA VORTAC 116.8, and the
+  airports in the flight plan database are approximate positions. The
+  airports are KPAE, KAWO, S43, KBFI, KSEA, KRNT, KBVS, KBLI, KPWT and
+  0S9.
 - **Simplified**:
   - The EIS numbers and the airplane's kinematics are made up.
   - There is no wind, and headings are true (no magnetic variation).

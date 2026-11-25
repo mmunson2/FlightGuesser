@@ -6,10 +6,12 @@
 // What it models: COM and NAV radios (tuning, transfer, volume), the
 // heading bug, course, baro, selected altitude and its alerter, the CDI
 // source, the transponder, the PFD's softkey menus, and the GFC 700's mode
-// logic (FD/AP, ROL PIT HDG ALT VS FLC NAV APR, ALTS capture, NOSE UP/DN).
-// What it doesn't: flight plans, VNAV, GPS approaches, LOC/GS, the MFD's
-// pages beyond the map, failures, wind, magnetic variation (headings are
-// true). The airplane is a few lines of kinematics, not a flight model.
+// logic (FD/AP, ROL PIT HDG ALT VS FLC NAV APR, ALTS capture, NOSE UP/DN),
+// and through js/g1000-fms.js the flight plan, Direct-To and GPS legs.
+// What it doesn't: VNAV, procedures and GPS approaches, LOC/GS, the MFD's
+// pages beyond the map and FPL, failures, wind, magnetic variation
+// (headings are true). The airplane is a few lines of kinematics, not a
+// flight model.
 // Behaviour follows the G1000 NXi and GFC 700 pilot's guides as remembered;
 // to_verify.md lists what to check against the real guides.
 window.G1000 = (function () {
@@ -26,12 +28,21 @@ window.G1000 = (function () {
     { id: 'SEA', name: 'SEATTLE', freq: 116.8, lat: 47.4353, lon: -122.3097 },
   ];
   const AIRPORTS = [
-    { id: 'KPAE', lat: 47.9063, lon: -122.2816, towered: true },
-    { id: 'KAWO', lat: 48.1608, lon: -122.1590, towered: false },
-    { id: 'S43', lat: 47.9082, lon: -122.1031, towered: false },
-    { id: 'KBFI', lat: 47.5300, lon: -122.3020, towered: true },
-    { id: 'KSEA', lat: 47.4490, lon: -122.3093, towered: true },
-    { id: 'KRNT', lat: 47.4931, lon: -122.2157, towered: true },
+    { id: 'KPAE', name: 'PAINE FLD', lat: 47.9063, lon: -122.2816, towered: true },
+    { id: 'KAWO', name: 'ARLINGTON MUNI', lat: 48.1608, lon: -122.1590, towered: false },
+    { id: 'S43', name: 'HARVEY FLD', lat: 47.9082, lon: -122.1031, towered: false },
+    { id: 'KBFI', name: 'BOEING FLD/KING CO', lat: 47.5300, lon: -122.3020, towered: true },
+    { id: 'KSEA', name: 'SEATTLE-TACOMA', lat: 47.4490, lon: -122.3093, towered: true },
+    { id: 'KRNT', name: 'RENTON MUNI', lat: 47.4931, lon: -122.2157, towered: true },
+    { id: 'KBVS', name: 'SKAGIT RGNL', lat: 48.4709, lon: -122.4208, towered: false },
+    { id: 'KBLI', name: 'BELLINGHAM INTL', lat: 48.7927, lon: -122.5375, towered: true },
+    { id: 'KPWT', name: 'BREMERTON NATL', lat: 47.4902, lon: -122.7648, towered: false },
+    { id: '0S9', name: 'JEFFERSON CO INTL', lat: 48.0538, lon: -122.8106, towered: false },
+  ];
+  // The flight plan's database: every airport and station above.
+  const WAYPOINTS = [
+    ...AIRPORTS.map((a) => ({ ...a, type: 'airport' })),
+    ...NAVAIDS.map((n) => ({ ...n, type: 'vor' })),
   ];
 
   // Great-circle bearing (deg true) and distance (NM) from a to b.
@@ -69,6 +80,11 @@ window.G1000 = (function () {
   const RANGES = [1, 1.5, 2.5, 4, 5, 7.5, 10, 15, 25, 40, 50, 75, 100];
 
   const state = {};
+  // Flight planning (js/g1000-fms.js) keeps its part of the state in
+  // state.fms.
+  const fms = G1000_FMS.create({
+    state, bearingDist, waypoints: WAYPOINTS, note: (text) => note(text),
+  });
   function reset() {
     Object.assign(state, {
       t: 0,
@@ -94,6 +110,7 @@ window.G1000 = (function () {
       mfdPage: 'map', eisPage: 'Engine', range: 6,
       // A line of text for the last thing the mock can't do yet.
       note: null,
+      fms: fms.fresh(),
     });
     state.afcs.ref.alt = state.trueAlt;
   }
@@ -108,10 +125,11 @@ window.G1000 = (function () {
     return NAVAIDS.find((n) => Math.abs(n.freq - state.nav[i].act) < 0.001) ?? null;
   }
   // { source, station, course, toFrom, dev (needle, -1..1 of full scale,
-  // + = needle right), xtk (NM, + = right of course), dist } or null when
-  // the source has no signal.
+  // + = needle right), xtk (NM, + = right of course), dist, capturable
+  // (close enough for NAV to capture) } or null when the source has no
+  // signal (GPS: no active leg).
   function navSolution(src = state.cdi) {
-    if (src === 'GPS') return null;
+    if (src === 'GPS') return fms.navSolution();
     const i = src === 'VOR1' ? 0 : 1;
     const st = tunedStation(i);
     if (!st) return null;
@@ -122,7 +140,7 @@ window.G1000 = (function () {
     const off = from ? diff(brg, crs) : -diff(brg, wrap360(crs + 180));
     return { source: src, station: st, course: crs, toFrom: from ? 'FROM' : 'TO',
              dev: clamp(-off / 10, -1, 1), offDeg: off, xtk: dist * Math.sin(rad(off)), dist,
-             bearingTo: wrap360(brg + 180) };
+             bearingTo: wrap360(brg + 180), capturable: Math.abs(off) < 7 };
   }
 
   // ---- The GFC 700 ----
@@ -179,9 +197,10 @@ window.G1000 = (function () {
     setMode(axis, mode);
   }
   function navKey(mode) {
+    if (mode === 'APR' && state.cdi === 'GPS') return note('GPS approaches: not in the mock yet');
     const nav = navSolution();
     if (!nav) {
-      note(state.cdi === 'GPS' ? 'No GPS flight plan in the mock: use CDI for VOR1/VOR2'
+      note(state.cdi === 'GPS' ? 'No active GPS leg: make one with FPL or D→'
         : 'No VOR signal on ' + state.cdi);
       return;
     }
@@ -193,7 +212,7 @@ window.G1000 = (function () {
     }
     // Captured straight away when near the course, else armed (white)
     // while HDG or ROL flies the intercept.
-    if (Math.abs(nav.offDeg) < 7) setMode('lat', mode); else arm('lat', mode);
+    if (nav.capturable) setMode('lat', mode); else arm('lat', mode);
   }
   const navModeName = (mode) => {
     const src = state.cdi === 'GPS' ? 'GPS' : 'VOR';
@@ -203,6 +222,8 @@ window.G1000 = (function () {
   // ---- Keys, knobs and softkeys ----
   function press(key, display = 'pfd') {
     const a = state.afcs;
+    // D→, FPL, PROC, and ENT/CLR/MENU in an open window are the FMS's.
+    if (fms.press(key, display)) return;
     switch (key) {
       case 'ap':
         if (a.ap) apDisconnect();
@@ -235,8 +256,8 @@ window.G1000 = (function () {
       case 'clr':
         if (state.menus[display].length > 1) state.menus[display].pop();
         return;
-      case 'direct_to': case 'fpl': case 'proc': case 'menu': case 'ent':
-        return note(key.replace('_', ' ').toUpperCase() + ': not in the mock yet');
+      case 'menu': case 'ent':
+        return note(key.toUpperCase() + ': nothing to do here in the mock (open FPL or D→)');
       default:
         if (key.startsWith('softkey:')) return softkey(display, Number(key.slice(8)));
     }
@@ -296,7 +317,7 @@ window.G1000 = (function () {
   // knob: com, nav, hdg, alt, crs_baro, fms, range, com_volume,
   // nav_volume. part: 'inner' or 'outer' (one-piece knobs ignore it).
   // steps: + clockwise.
-  function turn(knob, part, steps) {
+  function turn(knob, part, steps, display = 'pfd') {
     switch (knob) {
       case 'com': {
         const c = state.com[state.comTune];
@@ -334,13 +355,13 @@ window.G1000 = (function () {
         state.vol.show = { kind, i, until: state.t + 2 };
         return;
       }
-      case 'fms': return note('FMS knob: no pages to scroll in the mock yet');
+      case 'fms': return fms.turn(part, steps, display);
     }
   }
   const wrapInt = (v, n) => ((v % n) + n) % n;
 
   // Pushing a knob.
-  function push(knob) {
+  function push(knob, display = 'pfd') {
     switch (knob) {
       // Push: tune the other radio (the cyan box moves).
       case 'com': state.comTune = 1 - state.comTune; return;
@@ -356,7 +377,7 @@ window.G1000 = (function () {
       case 'com_volume': return note('COM squelch: not in the mock');
       case 'nav_volume': return note('NAV ID: not in the mock');
       case 'range': return note('Map pan: not in the mock yet');
-      case 'fms': return note('FMS cursor: not in the mock yet');
+      case 'fms': return fms.push(display);
     }
   }
 
@@ -383,7 +404,7 @@ window.G1000 = (function () {
     } else if ((a.lat === 'NAV' || a.lat === 'APR') && !nav) {
       setMode('lat', LAT_DEFAULT);
     }
-    if (a.latArmed && nav && Math.abs(nav.offDeg) < 7) {
+    if (a.latArmed && nav && nav.capturable) {
       setMode('lat', a.latArmed);
       arm('lat', null);
     }
@@ -442,6 +463,7 @@ window.G1000 = (function () {
     state.lat += (nm / 60) * Math.cos(rad(state.hdg));
     state.lon += (nm / 60) * Math.sin(rad(state.hdg)) / Math.cos(rad(state.lat));
 
+    fms.step();
     alerter();
   }
 
@@ -478,7 +500,7 @@ window.G1000 = (function () {
   }
 
   return {
-    state, reset, NAVAIDS, AIRPORTS, SPEEDS, MENUS, LIVE, RANGES,
+    state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, SPEEDS, MENUS, LIVE, RANGES, fms,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, tas, navModeName,
     tick(dt) {
       // Big gaps (a background tab) are skipped, small steps keep it stable.
