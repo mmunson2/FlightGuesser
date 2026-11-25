@@ -21,6 +21,10 @@
     <h1 id="picked" data-t="viewer.none"></h1>
     <div class="tools">
       <button type="button" id="controls-open" data-t="controls.open"></button>
+      <button type="button" id="operate" aria-pressed="false"
+              data-t="tools.operate" data-t-title="tools.operateTip"></button>
+      <button type="button" id="g1000-reset" hidden
+              data-t="tools.resetFlight" data-t-title="tools.resetFlightTip"></button>
       <button type="button" id="hide-selected" hidden
               data-t="tools.hide" data-t-title="tools.hideTip"></button>
       <button type="button" id="undo" disabled
@@ -118,6 +122,9 @@
         <dt data-t="controls.hideKey.key"></dt><dd data-t="controls.hideKey"></dd>
         <dt data-t="controls.undo.key"></dt><dd data-t="controls.undo"></dd>
         <dt data-t="controls.submit.key"></dt><dd data-t="controls.submit"></dd>
+        <dt data-t="controls.operate.key"></dt><dd data-t="controls.operate"></dd>
+        <dt data-t="controls.knob.key"></dt><dd data-t="controls.knob"></dd>
+        <dt data-t="controls.fly.key"></dt><dd data-t="controls.fly"></dd>
       </dl>
       <div class="modal-actions">
         <button type="button" class="primary" id="controls-close" data-t="controls.close"></button>
@@ -132,7 +139,8 @@
   if (!PHONE) for (const src of [
     'https://unpkg.com/three@0.147.0/build/three.min.js',
     'https://unpkg.com/three@0.147.0/examples/js/controls/OrbitControls.js',
-    'i18n/en.js', 'i18n/questions.en.js', 'data/scenedata.js', 'data/textures.js', 'js/grade.js', 'js/focus.js', 'js/diagram.js', 'js/viewer.js',
+    'i18n/en.js', 'i18n/questions.en.js', 'data/scenedata.js', 'data/textures.js', 'js/grade.js', 'js/focus.js', 'js/diagram.js',
+    'js/g1000.js', 'js/g1000-display.js', 'js/g1000-panel.js', 'js/viewer.js',
   ]) document.body.append(Object.assign(document.createElement('script'), { src, async: false }));
 </script>
 </body>

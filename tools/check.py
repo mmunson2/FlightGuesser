@@ -1,5 +1,5 @@
 """Check the questions, the names and the model against each other, in the
-real page (headless Chrome).
+real page (headless Chrome), and the mock G1000's logic (G1000_CHECKS).
 
     make check                # errors and warnings; exits 1 on any error
     make check ARGS=--gaps    # also list parts without aliases
@@ -264,6 +264,90 @@ def play_cards(browser):
     return problems
 
 
+G1000_CHECKS = r"""() => {
+  // The mock G1000 (js/g1000.js), driven through its own API with the
+  // simulation stepped by hand. Each scenario starts from a reset.
+  const G = window.G1000, s = G.state, errors = [];
+  const expect = (ok, what) => { if (!ok) errors.push('g1000: ' + what); };
+  const run = (secs, until = () => false) => {
+    for (let t = 0; t < secs; t += 0.5) { G.tick(0.5); if (until()) return true; }
+    return false;
+  };
+  const a = () => s.afcs;
+  const angle = (x, y) => Math.abs(((((x - y) % 360) + 540) % 360) - 180);
+
+  // AP on: FD comes on in ROL and PIT; the FD can't go off under the AP;
+  // AP off leaves the FD.
+  G.reset();
+  G.press('ap');
+  expect(a().ap && a().fd && a().lat === 'ROL' && a().vert === 'PIT', `AP on: ${a().lat}/${a().vert}`);
+  G.press('fd');
+  expect(a().fd, 'FD went off with the AP on');
+  G.press('ap');
+  expect(!a().ap && a().fd, 'AP off should leave the FD on');
+
+  // HDG: turns to the bug; pressed again, back to ROL.
+  G.reset();
+  G.press('hdg'); G.press('ap');
+  G.turn('hdg', '', 60);
+  expect(run(90, () => angle(s.hdg, s.hdgBug) < 1 && Math.abs(s.roll) < 1), `HDG: heading ${s.hdg.toFixed(1)} vs bug ${s.hdgBug}`);
+  G.press('hdg');
+  expect(a().lat === 'ROL', 'HDG pressed again should give ROL');
+
+  // VS climb with ALTS armed, captured, then ALT at the selected altitude.
+  G.reset();
+  G.press('ap'); G.press('vs');
+  for (let i = 0; i < 5; i++) G.press('nose_up');
+  expect(a().vert === 'VS' && a().ref.vs === 500, `VS ref ${a().ref.vs} after 5 NOSE UP`);
+  G.turn('alt', 'outer', -1);  // 5,500 -> 4,500
+  run(2);
+  expect(a().vertArmed === 'ALTS', `ALTS not armed in a climb toward ${s.altSel}: ${a().vertArmed}`);
+  expect(run(300, () => a().vert === 'ALT'), `no ALT capture: ${a().vert} at ${s.trueAlt.toFixed(0)} ft`);
+  run(30);
+  expect(Math.abs(s.trueAlt - 4500) < 30, `holding ${s.trueAlt.toFixed(0)} ft, selected 4,500`);
+
+  // VOR: CDI to VOR1 (PAE), CRS push centres the needle with a TO flag.
+  G.reset();
+  G.press('softkey:5', 'pfd');
+  expect(s.cdi === 'VOR1', `CDI softkey gave ${s.cdi}`);
+  G.push('crs_baro');
+  let nav = G.navSolution();
+  expect(nav && Math.abs(nav.dev) < 0.05 && nav.toFrom === 'TO', `CRS push: ${JSON.stringify(nav && { dev: nav.dev, tf: nav.toFrom })}`);
+
+  // NAV: armed off course, captured on the intercept, then tracks it.
+  G.turn('crs_baro', 'inner', 20);
+  nav = G.navSolution();
+  G.press('nav');
+  expect(a().latArmed === 'NAV' && a().lat === 'ROL', `NAV should arm 20° off course: ${a().lat}/${a().latArmed}`);
+  s.hdgBug = Math.round((nav.course - 45 * Math.sign(nav.xtk) + 360) % 360);
+  G.press('hdg'); G.press('ap');
+  expect(run(900, () => a().lat === 'NAV'), `NAV never captured (off ${G.navSolution()?.offDeg.toFixed(1)}°)`);
+  run(240);
+  nav = G.navSolution();
+  expect(nav && Math.abs(nav.dev) < 0.25, `NAV tracking: needle at ${nav && nav.dev.toFixed(2)} of full scale`);
+
+  // Radios: transfer swaps; outer knobs wrap at the band's ends.
+  G.reset();
+  const stby = s.com[0].stby;
+  G.press('com_transfer');
+  expect(s.com[0].act === stby, 'COM transfer');
+  s.nav[0].stby = 117.95;
+  G.turn('nav', 'outer', 1);
+  expect(s.nav[0].stby === 108.95, `NAV outer wrap: ${s.nav[0].stby}`);
+  G.turn('nav', 'inner', 1);
+  expect(s.nav[0].stby === 108.0, `NAV inner wrap: ${s.nav[0].stby}`);
+
+  // Transponder: XPDR, Code, four digits, back on the XPDR menu.
+  G.reset();
+  G.press('softkey:7', 'pfd'); G.press('softkey:7', 'pfd');
+  for (const d of [7, 7, 0, 0]) G.press('softkey:' + d, 'pfd');
+  expect(s.xpdr.code === '7700' && G.menu('pfd') === 'xpdr', `XPDR code ${s.xpdr.code}, menu ${G.menu('pfd')}`);
+
+  G.reset();
+  return errors;
+}"""
+
+
 TEST_CHECKS = r"""() => {
   const errors = [], seen = new Map();
   for (const test of PRACTICE_TESTS) {
@@ -326,6 +410,7 @@ def main(gaps):
     with app(800, 600) as page:
         page.wait_for_timeout(500)
         result = page.evaluate(CHECKS)
+        result["errors"] += page.evaluate(G1000_CHECKS)
         en = page.evaluate("Object.keys(I18N)")
         problems = play(page) + play_cards(page.context.browser) + play_tests(page.context.browser)
         errors = page.errors + result["errors"] + problems
