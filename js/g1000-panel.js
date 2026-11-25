@@ -1,5 +1,6 @@
 // The mock G1000 (js/g1000.js) on the 3D panel: live PFD and MFD screens
-// (js/g1000-display.js on canvas textures), and, in Operate mode, the
+// (js/g1000-display.js on canvas textures), live standby instrument faces
+// (js/g1000-standby.js), and, in Operate mode, the
 // bezel keys and knobs. js/viewer.js calls attach() once the model is
 // built, tick() every frame and click() for left clicks while operating.
 //
@@ -59,6 +60,33 @@ window.G1000_PANEL = (function () {
       plane.renderOrder = 1;
       scene.add(plane);
       return { id, parent, plane, canvas, ctx: canvas.getContext('2d'), texture };
+    });
+
+    // ---- Standby instruments: a live face (js/g1000-standby.js) on a
+    // disc inside each bezel, in front of the model's own fixed needles.
+    // The dial's centre: midway across, and half the width down from the
+    // top (the bottom has the knob). Radius and depth from the models:
+    // the bezel lip is 32 mm out, 0.3652 deep; the dials sit at 0.3685
+    // or more. The attitude indicator's bezel reaches in to 26 mm. ----
+    const SB = window.G1000_STANDBY;
+    const gauges = Object.keys(SB.draw).filter((id) => meshById[id]).map((id) => {
+      const parent = meshById[id], box = new THREE.Box3().setFromObject(parent);
+      const w = box.max.x - box.min.x;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = SB.SIZE;
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      if ('colorSpace' in texture) texture.colorSpace = THREE.SRGBColorSpace;
+      else texture.encoding = THREE.sRGBEncoding;
+      const r = id === 'standby_attitude_indicator' ? 0.0255 : 0.0305;
+      const plane = new THREE.Mesh(new THREE.CircleGeometry(r, 64),
+        new THREE.MeshBasicMaterial({ map: texture, toneMapped: false, transparent: true }));
+      // Facing the pilot, like the screens.
+      plane.rotation.y = Math.PI;
+      plane.position.set((box.min.x + box.max.x) / 2, box.max.y - w / 2, 0.3664);
+      plane.renderOrder = 1;
+      scene.add(plane);
+      return { id, parent, plane, ctx: canvas.getContext('2d'), texture };
     });
 
     // ---- Where on a part a click landed ----
@@ -445,6 +473,10 @@ window.G1000_PANEL = (function () {
         (s.id === 'pfd' ? D.drawPFD : D.drawMFD)(s.ctx, G.state, G);
         s.texture.needsUpdate = true;
       }
+      for (const g of gauges) {
+        SB.draw[g.id](g.ctx, G.state, G);
+        g.texture.needsUpdate = true;
+      }
     }
     function tick() {
       const now = performance.now();
@@ -455,6 +487,11 @@ window.G1000_PANEL = (function () {
       for (const s of screens) {
         s.plane.visible = s.parent.visible;
         s.plane.material.opacity = s.parent.material[0].opacity;
+      }
+      for (const g of gauges) {
+        const m = Array.isArray(g.parent.material) ? g.parent.material[0] : g.parent.material;
+        g.plane.visible = g.parent.visible;
+        g.plane.material.opacity = m.opacity;
       }
       // The overlay fades out after a turn.
       if (fadeFrom) {
@@ -477,7 +514,7 @@ window.G1000_PANEL = (function () {
       onTurn(fn) { onTurn = fn; },
       reset() { G.reset(); redraw(true); },
       // For tools (tools/shot.py --js): where a part's control is.
-      controlAt, softkeyAt, screens, overlay,
+      controlAt, softkeyAt, screens, gauges, overlay,
     };
   }
 

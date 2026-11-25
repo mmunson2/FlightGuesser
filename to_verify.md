@@ -258,6 +258,17 @@ the GFC 700 AFMS:
   - MAXSPD: amber, flashing, under the strip. With the AP engaged, the
     nose comes up to hold Vne − 5 (158 KIAS). Check where the real one
     shows and the speed it protects.
+- **Standby instruments** (js/g1000-standby.js): live faces drawn over
+  the 3D airspeed, attitude and altimeter, following the simulation (and
+  so the autopilot).
+  - They cover the model's own fixed needles.
+  - The dial layouts are mine, not the real instruments'. The airspeed
+    arcs are the POH's.
+  - The attitude indicator is vacuum-driven: below 3.5 inHg the red GYRO
+    flag shows, as the POH says, and the ball drifts up to 25° of bank
+    and 8° of pitch off. The drift is made up.
+  - The altimeter has its own Kollsman setting, 30.12 from the start,
+    with no knob in the mock yet. STD BARO on the PFD doesn't change it.
 - **Messages** (Alerts window), besides the airspace ones above:
   - WPT ARRIVAL "Arriving at waypoint": 10 seconds or less to the active
     waypoint, not in OBS.

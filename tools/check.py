@@ -777,6 +777,17 @@ G1000_CHECKS = r"""() => {
   expect(msg('timer')?.title === 'TIMER EXPIRD', 'TIMER EXPIRD message');
   expect(G.DB_EXPIRES === Date.UTC(2026, 10, 26), `database expiry ${new Date(G.DB_EXPIRES).toISOString()}`);
 
+  // Standby instruments: the altimeter keeps its own setting (STD BARO on
+  // the PFD leaves it), and each face draws without error.
+  G.reset();
+  G.press('softkey:3', 'pfd'); G.press('softkey:9', 'pfd');
+  expect(s.baro === 29.92 && Math.abs(G.standbyAlt() - s.trueAlt) < 1, `standby altimeter ${G.standbyAlt()} vs ${s.trueAlt}`);
+  for (const [id, draw] of Object.entries(G1000_STANDBY.draw)) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = G1000_STANDBY.SIZE;
+    try { draw(cv.getContext('2d'), s, G); } catch (e) { errors.push(`g1000: standby ${id}: ${e}`); }
+  }
+
   // Nearest Frequencies: sections in order, nearest first; ENT tunes COM.
   G.reset();
   const fr = P.nearestFreqs();

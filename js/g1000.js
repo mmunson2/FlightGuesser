@@ -143,6 +143,8 @@ window.G1000 = (function () {
       // Pilot input with the autopilot off (arrow keys): attitude targets.
       manual: { pitch: 2.0, roll: 0 },
       baro: ACTUAL_BARO,
+      // The standby altimeter's own Kollsman setting (set before flight).
+      stbyBaro: ACTUAL_BARO,
       com: [{ act: 132.950, stby: 120.200 }, { act: 128.650, stby: 121.900 }], comTune: 0,
       nav: [{ act: 110.60, stby: 116.80 }, { act: 116.80, stby: 110.60 }], navTune: 0,
       // A volume change shows in place of the standby frequency briefly.
@@ -177,6 +179,8 @@ window.G1000 = (function () {
   reset();
 
   const indicatedAlt = () => state.trueAlt + (state.baro - ACTUAL_BARO) * 1000;
+  // The standby altimeter, by its own setting.
+  const standbyAlt = () => state.trueAlt + (state.stbyBaro - ACTUAL_BARO) * 1000;
   const tas = () => state.ias * (1 + 0.02 * state.trueAlt / 1000);
   // Fuel flow (GPH): made up from power and altitude, not the POH's tables.
   // None with the engine stopped.
@@ -645,7 +649,7 @@ window.G1000 = (function () {
     // The airplane's magnetic heading, as the HSI shows it.
     magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, systems, airportSize, fuelFlow,
     FAILURES: G1000_SYSTEMS.FAILURES, fail: (id, on) => systems.fail(id, on), DB_EXPIRES,
-    press, turn, push, fly, bearingDist, navSolution, indicatedAlt, tas, navModeName,
+    press, turn, push, fly, bearingDist, navSolution, indicatedAlt, standbyAlt, tas, navModeName,
     tick(dt) {
       // Big gaps (a background tab) are skipped, small steps keep it stable.
       dt = Math.min(dt, 0.5);
