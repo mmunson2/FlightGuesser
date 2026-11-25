@@ -49,6 +49,19 @@ window.G1000_SWITCHES = (function () {
   const NAMES = { alt: 'MASTER ALT', bat: 'MASTER BAT', avn1: 'AVIONICS BUS 1', avn2: 'AVIONICS BUS 2',
                   stby: 'STBY BATT', beacon: 'BEACON', land: 'LAND', nav: 'NAV', strobe: 'STROBE',
                   taxi: 'TAXI', pitot: 'PITOT HEAT', fuelPump: 'FUEL PUMP', cabinPwr: 'CABIN PWR 12V', elt: 'ELT' };
+  // The throttle and mixture: their `lever` pieces slide along the scene's
+  // z (into the panel). As drawn both are pulled right out (idle, idle
+  // cutoff), the knob 11 cm from its mount; fully in leaves it 1.5 cm out:
+  // `travel` metres. Their positions are state.power and state.mixture (0-1).
+  const LEVERS = [
+    { pid: 'throttle', key: 'power', travel: 0.081, name: 'THROTTLE' },
+    { pid: 'mixture', key: 'mixture', travel: 0.083, name: 'MIXTURE' },
+  ];
+  const LEVER_PARTS = new Set(LEVERS.map((l) => l.pid));
+  const leverOf = (pid) => LEVERS.find((l) => l.pid === pid);
+  const leverLabel = (l, v) => l.name + ' · ' + (l.key === 'mixture' && v <= 0.001 ? 'IDLE CUTOFF'
+    : l.key === 'power' && v <= 0.001 ? 'IDLE' : Math.round(v * 100) + '%');
+
   // Parts clicked as switches (the ignition key is a knob).
   const PARTS = new Set(SWITCHES.filter((s) => !s.knob).map((s) => s.pid));
   // The STBY BATT test lamp, right of the switch; the ELT's red lamp,
@@ -69,6 +82,14 @@ window.G1000_SWITCHES = (function () {
                nfrom: nrm && idx.map((i) => [nrm.getX(i), nrm.getY(i), nrm.getZ(i)]), shown: null };
     });
 
+    const slides = LEVERS.filter((l) => meshById[l.pid]).map((l) => {
+      const mesh = meshById[l.pid], pos = mesh.geometry.attributes.position;
+      const range = mesh.userData.moving.find((m) => m.moves === 'lever');
+      const idx = [];
+      if (range) for (let i = range.first; i < range.first + range.count; i++) idx.push(i);
+      return { ...l, mesh, pos, idx, from: idx.map((i) => pos.getZ(i)), shown: null };
+    });
+
     const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.0021, 24),
       new THREE.MeshBasicMaterial({ color: 0x5dff7a, toneMapped: false }));
     lamp.rotation.y = Math.PI;
@@ -84,8 +105,19 @@ window.G1000_SWITCHES = (function () {
     eltLamp.visible = false;
     scene.add(eltLamp);
 
-    // Move the levers to the switches' positions (only those that moved).
-    function update(sys, lampOn) {
+    // Move the levers to the switches' positions (only those that moved),
+    // and the throttle and mixture to theirs.
+    function update(state, lampOn) {
+      const sys = state.sys;
+      for (const l of slides) {
+        const dz = (Math.round(state[l.key] * 1000) / 1000) * l.travel;
+        if (dz === l.shown) continue;
+        l.shown = dz;
+        l.idx.forEach((i, k) => l.pos.setZ(i, l.from[k] + dz));
+        l.pos.needsUpdate = true;
+        l.mesh.geometry.computeBoundingSphere();
+        l.mesh.geometry.computeBoundingBox();
+      }
       const dirty = new Set();
       for (const l of levers) {
         const deg = l.angle(sys.sw[l.key]);
@@ -149,7 +181,17 @@ window.G1000_SWITCHES = (function () {
       return label(s, sys.sw[s.key]);
     }
 
-    return { update, click, scroll, lamp };
+    // The throttle or mixture: where its knob is (for dragging along it on
+    // screen), its travel and position.
+    function leverAxis(pid, state) {
+      const l = slides.find((s) => s.pid === pid);
+      if (!l) return null;
+      let x = 0, y = 0, zMin = Infinity;
+      l.idx.forEach((i) => { x += l.pos.getX(i); y += l.pos.getY(i); zMin = Math.min(zMin, l.pos.getZ(i)); });
+      return { knob: new THREE.Vector3(x / l.idx.length, y / l.idx.length, zMin), travel: l.travel, value: state[l.key] };
+    }
+
+    return { update, click, scroll, lamp, leverAxis };
   }
 
   // Whether a hit on a part is on one of its switches (the ELT's panel
@@ -157,5 +199,5 @@ window.G1000_SWITCHES = (function () {
   const isSwitch = (pid, point) => SWITCHES.some((s) => s.pid === pid
     && (s.key !== 'elt' || inBox([ELT_ROCKER[0].map((v) => v - 0.002), ELT_ROCKER[1].map((v) => v + 0.002)])(point.x, point.y, point.z)));
 
-  return { attach, PARTS, SWITCHES, isSwitch };
+  return { attach, PARTS, SWITCHES, isSwitch, LEVER_PARTS, leverOf, leverLabel };
 })();

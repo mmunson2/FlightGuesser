@@ -259,6 +259,9 @@ window.G1000_PANEL = (function () {
         const k = centreOf(STBY, 'mfd');
         if (Math.hypot(hit.point.x - k.x, hit.point.y - k.y) > 0.008) return zoneAt(hit);
       }
+      if (G1000_SWITCHES.LEVER_PARTS.has(pid)) {
+        return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, lever: true };
+      }
       if (SWITCH.has(pid) && G1000_SWITCHES.isSwitch(pid, hit.point)) return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, sw: true };
       if (pid === AUDIO_KNOB && hit.point.y < AUDIO_KNOB_Y) {
         return { pid: BACKUP, mesh: hit.object, display: displayAt(hit.point.x), point: hit.point, inner: false };
@@ -319,6 +322,7 @@ window.G1000_PANEL = (function () {
         redraw(true);
         return said;
       }
+      if (c.lever) return leverName(c.pid);
       if (!hasPower(c)) return name(c) + ' · no power';
       // The key doesn't push.
       if (c.pid === IGN) return name(c);
@@ -340,6 +344,12 @@ window.G1000_PANEL = (function () {
     renderer.domElement.parentElement.addEventListener('wheel', (e) => {
       if (!operating) return;
       const c = controlAt(e);
+      if (c?.lever) {
+        e.preventDefault();
+        e.stopPropagation();
+        moveLever(c.pid, (e.deltaY < 0 ? 1 : -1) * 0.05);
+        return;
+      }
       if (c?.sw) {
         e.preventDefault();
         e.stopPropagation();
@@ -495,7 +505,7 @@ window.G1000_PANEL = (function () {
       if (!e || drag) return;
       hoverEvent = null;
       const c = operating && !e.gone && e.buttons === 0 ? controlAt(e) : null;
-      renderer.domElement.style.cursor = !c ? '' : c.pid in KNOBS ? 'grab' : 'pointer';
+      renderer.domElement.style.cursor = !c ? '' : c.pid in KNOBS || c.lever ? 'grab' : 'pointer';
       if (c && CONCENTRIC.has(KNOBS[c.pid])) {
         if (shown !== c.pid + ':' + c.display + ':' + c.inner) showOverlay(c);
       } else if (shown) hideOverlay(false);
@@ -517,6 +527,54 @@ window.G1000_PANEL = (function () {
       drag.piece.visible = true;
       showOverlay(c, drag);
     }, { capture: true });
+    // ---- The throttle and mixture: dragged along their shafts as they
+    // look on screen (toward the panel pushes in), or scrolled (up: in). ----
+    const LEVER_KEY = { throttle: 'power', mixture: 'mixture' };
+    const leverName = (pid) => G1000_SWITCHES.leverLabel(G1000_SWITCHES.leverOf(pid), G.state[LEVER_KEY[pid]]);
+    function moveLever(pid, by) {
+      const key = LEVER_KEY[pid], before = G.state[key];
+      G.fly({ [key]: by });
+      if (G.state[key] !== before) redraw(true);
+      onTurn?.(leverName(pid));
+    }
+    let slide = null;
+    const toScreen = (v) => {
+      const p = v.clone().project(camera), r = renderer.domElement.getBoundingClientRect();
+      return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
+    };
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      if (!operating || e.button !== 0) return;
+      const c = controlAt(e);
+      if (!c?.lever) return;
+      const ax = SWX.leverAxis(c.pid, G.state);
+      // Fully out and fully in on screen, from where it is now.
+      const a = toScreen(ax.knob.clone().setZ(ax.knob.z - ax.value * ax.travel));
+      const b = toScreen(ax.knob.clone().setZ(ax.knob.z + (1 - ax.value) * ax.travel));
+      const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+      if (len2 < 25) return;            // seen end on: nothing to drag along
+      controls.enabled = false;
+      slide = { pid: c.pid, id: e.pointerId, x: e.clientX, y: e.clientY, dx, dy, len2, start: ax.value };
+      renderer.domElement.style.cursor = 'grabbing';
+      renderer.domElement.setPointerCapture(e.pointerId);
+      onTurn?.(leverName(c.pid));
+    }, { capture: true });
+    renderer.domElement.addEventListener('pointermove', (e) => {
+      if (!slide || e.pointerId !== slide.id) return;
+      const t = ((e.clientX - slide.x) * slide.dx + (e.clientY - slide.y) * slide.dy) / slide.len2;
+      const want = Math.min(1, Math.max(0, slide.start + t));
+      moveLever(slide.pid, want - G.state[LEVER_KEY[slide.pid]]);
+      slide.moved = true;
+    });
+    const endSlide = (e) => {
+      if (!slide || e.pointerId !== slide.id) return;
+      if (slide.moved) turnedAt = performance.now();
+      slide = null;
+      hoverEvent = e;
+      controls.enabled = true;
+    };
+    renderer.domElement.addEventListener('pointerup', endSlide, { capture: true });
+    renderer.domElement.addEventListener('pointercancel', endSlide);
+
     renderer.domElement.addEventListener('pointermove', (e) => {
       if (!drag || e.pointerId !== drag.id) return;
       const a = angleAt(drag, e);
@@ -595,7 +653,7 @@ window.G1000_PANEL = (function () {
       const now = performance.now();
       G.tick((now - lastT) / 1000);
       lastT = now;
-      SWX.update(G.state.sys, G.systems.testLamp());
+      SWX.update(G.state, G.systems.testLamp());
       // The screens follow their display's part: hidden, faded by the
       // quiz's x-ray.
       for (const s of screens) {

@@ -308,6 +308,11 @@ the GFC 700 AFMS:
     (the windmilling propeller; no starter model). One magneto drops the
     RPM: R 70, L 55 (made up, inside the POH's 150 max and 50 between).
     START springs back to BOTH after 1.5 s.
+  - Throttle and mixture: drag along the shaft (toward the panel pushes
+    in) or scroll (up: in, 5% a notch); Page Up/Down and Home/End still
+    work. Travel about 8 cm, knob 1.5 cm off the panel fully in (made up
+    from the model, which draws them pulled right out). No mixture vernier
+    lock button: it slides freely.
 - **PFD Opt → ALT Units** (Meters, IN, HPA):
   - Meters adds metric boxes under the altitude readout and beside the
     selected altitude. The real overlay may sit elsewhere.
