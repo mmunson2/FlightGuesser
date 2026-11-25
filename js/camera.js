@@ -113,12 +113,15 @@ const CAMERA_RIG = (() => {
     });
     window.addEventListener('blur', () => { keys.clear(); shift = false; });
 
+    // Each frame. True if the camera moved, so the viewer draws a frame
+    // (it draws only on a change); a look drag or a zoom is an input,
+    // which draws one anyway.
     const want = new THREE.Vector3(), fwd = new THREE.Vector3(), right = new THREE.Vector3();
     function update() {
       const now = performance.now(), dt = Math.min(0.1, (now - lastT) / 1000);
       lastT = now;
-      if (mode === 'orbit') { orbit.update(); return; }
-      if (mode !== 'fly') return;
+      if (mode === 'orbit') return orbit.update();
+      if (mode !== 'fly') return false;
       want.set(0, 0, 0);
       for (const k of keys) want.add(new THREE.Vector3(...MOVE_KEYS[k]));
       if (want.lengthSq()) want.normalize().multiplyScalar(SPEED * (shift ? FAST : 1));
@@ -128,8 +131,9 @@ const CAMERA_RIG = (() => {
       const target = new THREE.Vector3().addScaledVector(right, want.x)
         .addScaledVector(fwd, want.z).addScaledVector(camera.up, want.y);
       vel.lerp(target, 1 - Math.exp(-dt * 10));
-      if (vel.lengthSq() < 1e-6) vel.set(0, 0, 0);
+      if (vel.lengthSq() < 1e-6) { vel.set(0, 0, 0); return false; }
       camera.position.addScaledVector(vel, dt);
+      return true;
     }
     // Place the camera (a view preset).
     function goTo(position, target) {

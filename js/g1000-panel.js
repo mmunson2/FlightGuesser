@@ -66,7 +66,7 @@ window.G1000_PANEL = (function () {
     const screens = ['pfd', 'mfd'].map((id) => {
       const parent = meshById[id];
       const g = parent.geometry, pos = g.attributes.position;
-      const group = g.groups.find((gr) => !parent.material[gr.materialIndex].map);
+      const group = g.groups.find((gr) => !parent.userData.maps[gr.materialIndex]);
       const box = new THREE.Box3();
       for (let k = group.start; k < group.start + group.count; k++) {
         box.expandByPoint(new THREE.Vector3().fromBufferAttribute(pos, g.index.getX(k)));
@@ -634,26 +634,69 @@ window.G1000_PANEL = (function () {
     });
 
     // ---- Every frame: the simulation, and the screens at ~15 Hz ----
+    // Drawing a screen and uploading its 1024 x 852 texture is the
+    // panel's main cost, so a screen or gauge off camera, hidden or
+    // faded out isn't drawn, and one a few pixels tall (the outside view)
+    // only twice a second. A dark screen is filled once.
     let lastT = performance.now(), lastDraw = 0;
+    const frustum = new THREE.Frustum(), viewProj = new THREE.Matrix4(), sphere = new THREE.Sphere();
+    const SMALL_PX = 120, SMALL_MS = 500;
+    function onCamera(f) {
+      if (!f.plane.visible || f.plane.material.opacity < 0.05) return false;
+      const g = f.plane.geometry;
+      if (!g.boundingSphere) g.computeBoundingSphere();
+      sphere.copy(g.boundingSphere).applyMatrix4(f.plane.matrixWorld);
+      if (!frustum.intersectsSphere(sphere)) return false;
+      // Its height on screen, in pixels.
+      const d = camera.position.distanceTo(sphere.center);
+      const px = (sphere.radius / (d * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))))
+        * renderer.domElement.height;
+      return px < SMALL_PX ? 'small' : true;
+    }
+    function due(f, seen, now, force) {
+      if (!seen) return false;
+      if (force || f.stale) return true;
+      return seen !== 'small' || now - (f.drawnAt ?? 0) >= SMALL_MS;
+    }
+    // True if anything was drawn (the viewer then draws a frame).
     function redraw(force = false) {
       const now = performance.now();
-      if (!force && now - lastDraw < 66) return;
+      if (!force && now - lastDraw < 66) return false;
       lastDraw = now;
+      camera.updateMatrixWorld();
+      frustum.setFromProjectionMatrix(viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+      let drew = false;
       for (const s of screens) {
-        if (G.systems.powered(s.id)) (s.id === 'pfd' ? D.drawPFD : D.drawMFD)(s.ctx, G.state, G);
+        const seen = onCamera(s), on = G.systems.powered(s.id);
+        // Off camera, it is redrawn as soon as it comes back.
+        if (!seen) { s.stale = true; continue; }
+        if (!on && s.dark) continue;
+        if (!due(s, seen, now, force)) continue;
+        if (on) (s.id === 'pfd' ? D.drawPFD : D.drawMFD)(s.ctx, G.state, G);
         else { s.ctx.fillStyle = '#000'; s.ctx.fillRect(0, 0, s.canvas.width, s.canvas.height); }
+        s.dark = !on;
+        s.stale = false;
+        s.drawnAt = now;
         s.texture.needsUpdate = true;
+        drew = true;
       }
       for (const g of gauges) {
+        const seen = onCamera(g);
+        if (!seen) { g.stale = true; continue; }
+        if (!due(g, seen, now, force)) continue;
         SB.draw[g.id](g.ctx, G.state, G);
+        g.stale = false;
+        g.drawnAt = now;
         g.texture.needsUpdate = true;
+        drew = true;
       }
+      return drew;
     }
     function tick() {
       const now = performance.now();
       G.tick((now - lastT) / 1000);
       lastT = now;
-      SWX.update(G.state, G.systems.testLamp());
+      let changed = SWX.update(G.state, G.systems.testLamp());
       // The screens follow their display's part: hidden, faded by the
       // quiz's x-ray.
       for (const s of screens) {
@@ -661,7 +704,10 @@ window.G1000_PANEL = (function () {
         s.plane.material.opacity = s.parent.material[0].opacity;
       }
       // Audio panel annunciators: lit while their key is on.
-      for (const l of leds) l.led.visible = l.parent.visible && G.gma.lit(l.key);
+      for (const l of leds) {
+        const lit = l.parent.visible && G.gma.lit(l.key);
+        if (l.led.visible !== lit) { l.led.visible = lit; changed = true; }
+      }
       for (const g of gauges) {
         const m = Array.isArray(g.parent.material) ? g.parent.material[0] : g.parent.material;
         g.plane.visible = g.parent.visible;
@@ -672,13 +718,14 @@ window.G1000_PANEL = (function () {
         const o = 1 - (now - fadeFrom) / 300;
         overlay.material.opacity = Math.max(0, o);
         if (o <= 0) { overlay.visible = false; fadeFrom = 0; }
+        changed = true;
       }
       hover();
       if (!operating && !drag) {
         if (overlay.visible && !fadeFrom) hideOverlay(false);
         renderer.domElement.style.cursor = '';
       }
-      redraw();
+      return redraw() || changed;
     }
 
     return {

@@ -21,13 +21,23 @@
   const stage = document.getElementById('stage');
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
+  // Three's shaders are known good; asking for their logs makes the
+  // browser finish each compile before starting the next.
+  renderer.debug.checkShaderErrors = false;
   stage.appendChild(renderer.domElement);
+
+  // Frames are drawn only when something changed (the last lines of this
+  // file): the scene is 340k triangles, and redrawing it 60 times a second
+  // while nothing moves keeps the GPU busy for nothing. invalidate() asks
+  // for frames for the next `ms`.
+  let renderUntil = 0;
+  const invalidate = (ms = 300) => { renderUntil = Math.max(renderUntil, performance.now() + ms); };
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x14161a);
   // A sky panorama behind the airplane (data/textures.js; build/sky.py).
   if (window.SCENE_SKY) {
-    const sky = new THREE.TextureLoader().load(window.SCENE_SKY);
+    const sky = new THREE.TextureLoader().load(window.SCENE_SKY, () => invalidate());
     sky.mapping = THREE.EquirectangularReflectionMapping;
     scene.background = sky;
   }
@@ -50,7 +60,8 @@
       || !!document.querySelector('.modal:not([hidden])') });
 
   function decode(b64, Type) {
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const s = atob(b64), bytes = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
     return new Type(bytes.buffer);
   }
 
@@ -62,51 +73,60 @@
   const { min, scale } = SCENE_DATA;
   const loader = new THREE.TextureLoader();
   const textures = (window.SCENE_TEXTURES ?? []).map((uri) => {
-    const tex = loader.load(uri);
+    const tex = loader.load(uri, () => invalidate());
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return tex;
   });
+  // Untextured pieces get a white texel rather than no map: one shader
+  // for every piece, not one with a map and one without (each costs a
+  // compile of ~0.25 s at load, or mid-quiz when a name-it blanks a key).
+  const WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  WHITE.needsUpdate = true;
   const meshes = [];
   for (const part of SCENE_DATA.parts) {
-    const pos = [], col = [], uvs = [], idx = [], groups = [], mats = [], moving = [];
-    let base = 0;
+    const decoded = part.pieces.map((piece) => ({
+      piece, q: decode(piece.positions, Uint16Array), c: decode(piece.colors, Uint8Array),
+      u: piece.uv && decode(piece.uv, Uint16Array),
+      ind: decode(piece.indices, piece.index32 ? Uint32Array : Uint16Array),
+    }));
+    const nVerts = decoded.reduce((n, d) => n + d.q.length / 3, 0);
+    const nIdx = decoded.reduce((n, d) => n + d.ind.length, 0);
+    const pos = new Float32Array(nVerts * 3), col = new Float32Array(nVerts * 3), uvs = new Float32Array(nVerts * 2);
+    const idx = nVerts > 65535 ? new Uint32Array(nIdx) : new Uint16Array(nIdx);
+    const groups = [], mats = [], moving = [];
+    let base = 0, at = 0;
     const opacity = part.glass ? 0.25 : 1;
-    part.pieces.forEach((piece, i) => {
-      const q = decode(piece.positions, Uint16Array);
-      for (let k = 0; k < q.length; k++) pos.push(min[k % 3] + q[k] * scale[k % 3]);
-      decode(piece.colors, Uint8Array).forEach((c) => col.push(c / 255));
+    decoded.forEach(({ piece, q, c, u, ind }, i) => {
+      for (let k = 0; k < q.length; k++) pos[base * 3 + k] = min[k % 3] + q[k] * scale[k % 3];
+      for (let k = 0; k < c.length; k++) col[base * 3 + k] = c[k] / 255;
       const n = q.length / 3;
-      if (piece.uv) {
-        const u = decode(piece.uv, Uint16Array);
-        for (let k = 0; k < u.length; k++) uvs.push(piece.uvMin[k % 2] + u[k] * piece.uvScale[k % 2]);
-      } else {
-        for (let k = 0; k < n; k++) uvs.push(0, 0);
-      }
-      const ind = decode(piece.indices, piece.index32 ? Uint32Array : Uint16Array);
-      groups.push([idx.length, ind.length, i]);
+      if (u) for (let k = 0; k < u.length; k++) uvs[base * 2 + k] = piece.uvMin[k % 2] + u[k] * piece.uvScale[k % 2];
+      groups.push([at, ind.length, i]);
       // A piece that moves (the ignition key): its vertices, for whatever
       // moves it (js/g1000-switches.js).
       if (piece.moves) moving.push({ moves: piece.moves, first: base, count: n });
-      ind.forEach((v) => idx.push(v + base));
+      for (let k = 0; k < ind.length; k++) idx[at + k] = ind[k] + base;
+      at += ind.length;
       base += n;
       // A `behind` piece lies on another surface (FlightGear's centre wing
       // repeats the flaps): a depth offset keeps it from z-fighting.
       mats.push(new THREE.MeshStandardMaterial({
-        vertexColors: true, map: piece.tex === undefined ? null : textures[piece.tex],
+        vertexColors: true, map: piece.tex === undefined ? WHITE : textures[piece.tex],
         roughness: 0.6, metalness: 0, side: THREE.DoubleSide,
         ...(piece.behind ? { polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 } : {}),
       }));
     });
     const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geom.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geom.setIndex(base > 65535 ? new THREE.Uint32BufferAttribute(idx, 1) : new THREE.Uint16BufferAttribute(idx, 1));
+    geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geom.setIndex(new THREE.BufferAttribute(idx, 1));
     groups.forEach(([start, count, m]) => geom.addGroup(start, count, m));
     geom.computeVertexNormals();
     const mesh = new THREE.Mesh(geom, mats);
-    mesh.userData = { part, baseOpacity: opacity, maps: mats.map((m) => m.map), moving };
+    // maps: each piece's own texture, null for an untextured one.
+    mesh.userData = { part, baseOpacity: opacity, maps: mats.map((m) => (m.map === WHITE ? null : m.map)), moving };
     setOpacity(mesh, opacity);
     mesh.renderOrder = part.glass ? 2 : 0;
     scene.add(mesh);
@@ -119,7 +139,7 @@
     mesh.material.forEach((m, i) => {
       m.color.setHex(color ?? 0xffffff);
       m.emissive.setHex(color ?? 0x000000).multiplyScalar(color == null ? 1 : 0.45);
-      const map = blank ? null : mesh.userData.maps[i];
+      const map = (!blank && mesh.userData.maps[i]) || WHITE;
       if (m.map !== map) { m.map = map; m.needsUpdate = true; }
     });
   }
@@ -873,30 +893,41 @@
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
-  window.addEventListener('resize', resize);
+  window.addEventListener('resize', () => { resize(); invalidate(); });
   resize();
 
   goView(Object.keys(SCENE_DATA.views)[0]);
   // In the seat the yokes are in the way of the lower panel: while the
   // pointer is over one, both fade out, as if reaching past them, and fade
   // back once it leaves. The ray tests the yokes' shape even while they're
-  // gone; clicks go through them from the moment the fade starts.
+  // gone; clicks go through them from the moment the fade starts. True
+  // while fading, so the viewer draws a frame.
   const yokes = meshById.control_wheels;
   const FADE_OUT = 0.12, FADE_IN = 0.2;   // seconds
   const meshRaycast = THREE.Mesh.prototype.raycast;
   const noRaycast = () => {};
   let hoverAt = null, fade = 1, fadeT = performance.now();
+  // The ray is cast only when the pointer or the view changed since.
+  let testedAt = null;
+  const testedView = new THREE.Matrix4(), view = new THREE.Matrix4();
   renderer.domElement.addEventListener('pointermove', (e) => { hoverAt = e; });
   renderer.domElement.addEventListener('pointerleave', () => { hoverAt = null; });
+  function viewChanged() {
+    camera.updateMatrixWorld();
+    view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    if (view.equals(testedView)) return false;
+    testedView.copy(view);
+    return true;
+  }
   function reachPastYokes() {
-    if (!yokes) return;
+    if (!yokes) return false;
     const now = performance.now(), dt = Math.min(0.1, (now - fadeT) / 1000);
     fadeT = now;
     let reaching = !!yokes.userData.reaching;
     if (rig.mode !== 'seat' || !hoverAt) reaching = false;
     // Not mid-drag: a knob turned behind the yoke keeps it out of the way.
-    else if (hoverAt.buttons === 0) {
-      camera.updateMatrixWorld();
+    else if (hoverAt.buttons === 0 && (hoverAt !== testedAt || viewChanged())) {
+      testedAt = hoverAt;
       const r = renderer.domElement.getBoundingClientRect();
       ray.setFromCamera({ x: ((hoverAt.clientX - r.left) / r.width) * 2 - 1,
                           y: -((hoverAt.clientY - r.top) / r.height) * 2 + 1 }, camera);
@@ -909,7 +940,7 @@
     yokes.raycast = reaching ? noRaycast : meshRaycast;
     const was = fade;
     fade = reaching ? Math.max(0, fade - dt / FADE_OUT) : Math.min(1, fade + dt / FADE_IN);
-    if (fade === was) return;
+    if (fade === was) return false;
     // Out of the way altogether once faded out.
     yokes.userData.faded = fade === 0;
     yokes.visible = !yokes.userData.hidden && fade > 0;
@@ -919,18 +950,37 @@
       if (m.transparent === solid) { m.transparent = !solid; m.depthWrite = solid; m.needsUpdate = true; }
       m.opacity = opacity;
     }
+    return true;
   }
+  // Compile the shaders now, the faded (transparent) one too, which the
+  // glass and the quiz's x-ray use: compiled on first use it stalls a frame.
+  {
+    const twin = meshes[0].material.map((m) => Object.assign(m.clone(), { transparent: true, opacity: 0.5 }));
+    const probe = new THREE.Mesh(meshes[0].geometry, twin);
+    scene.add(probe);
+    renderer.compile(scene, camera);
+    scene.remove(probe);
+    twin.forEach((m) => m.dispose());
+  }
+  // A frame when the camera moves (or glides to a stop), a screen or
+  // switch changed, while operating (the sim runs), and for a moment
+  // after any input (a click that selects, hides or x-rays a part).
+  const INPUTS = ['pointerdown', 'pointerup', 'wheel', 'keydown', 'click', 'change', 'input'];
+  INPUTS.forEach((type) => window.addEventListener(type, () => invalidate(), { capture: true, passive: true }));
+  window.addEventListener('pointermove', (e) => { if (e.buttons) invalidate(); }, { capture: true, passive: true });
+  rig.orbit.addEventListener('change', () => invalidate());
+  invalidate(2000);
   renderer.setAnimationLoop(() => {
-    rig.update();
-    reachPastYokes();
-    avionics.tick();
-    renderer.render(scene, camera);
+    const moved = rig.update();
+    const faded = reachPastYokes();
+    const changed = avionics.tick();
+    if (moved || faded || changed || avionics.operating || performance.now() < renderUntil) renderer.render(scene, camera);
   });
   showStart();
 
   // For tools/check.py and tools/shot.py, which drive the page headless.
   // Not used by the app itself.
-  window.FLIGHT_DEBUG = {
+  window.FLIGHT_DEBUG = Object.fromEntries(Object.entries({
     THREE, renderer, camera, controls: rig.orbit, rig, nameKey, nameMatches, GRADE, namePromptKey, settings,
     meshes: () => meshes, meshById: () => meshById, meshesOf, GROUPS, askable,
     showDiagram, goView, explore, question: () => question, avionics, setOperate,
@@ -940,5 +990,8 @@
       hide(meshes.filter((m) => !systems.includes(m.userData.part.system)));
     },
     hide: (ids) => hide(ids.flatMap(meshesOf)),
-  };
+    invalidate,
+  }).map(([k, v]) => [k, typeof v === 'function' && k !== 'meshes' && k !== 'meshById'
+    // Each call asks for frames, as a click would.
+    ? (...a) => { invalidate(1000); return v(...a); } : v]));
 })();

@@ -55,17 +55,18 @@ def texture_uri(path):
     from PIL import Image
     im = Image.open(path)
     im.load()
-    size = TEX_SIZE_LABELS if Path(path).stem in LABEL_TEXTURES else TEX_SIZE
-    alpha = im.mode in ("RGBA", "LA", "P") and im.convert("RGBA").getextrema()[3][0] < 255
-    im = im.convert("RGBA" if alpha else "RGB")
+    labels = Path(path).stem in LABEL_TEXTURES
+    size = TEX_SIZE_LABELS if labels else TEX_SIZE
+    # Always JPEG: the viewer's materials are opaque, so a texture's alpha
+    # is never used (as a PNG, panel-fg1000 alone was 3.7 MB of the page).
+    # convert("RGB") keeps the colour under transparent pixels, which is
+    # what an opaque material shows.
+    im = im.convert("RGBA").convert("RGB") if im.mode == "P" else im.convert("RGB")
     if max(im.size) > size:
         k = size / max(im.size)
         im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
     buf = io.BytesIO()
-    if alpha:
-        im.save(buf, "PNG", optimize=True)
-        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
-    im.save(buf, "JPEG", quality=85)
+    im.save(buf, "JPEG", quality=90 if labels else 85)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
