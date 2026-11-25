@@ -263,7 +263,9 @@ window.G1000_PANEL = (function () {
         const lever = SWX.leverAt(pid, hit.point);
         if (lever) return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, lever };
       }
-      if (SWITCH.has(pid) && G1000_SWITCHES.isSwitch(pid, hit.point)) return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, sw: true };
+      if (SWITCH.has(pid) && G1000_SWITCHES.isSwitch(pid, hit.point)) {
+        return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, sw: true };
+      }
       if (pid === AUDIO_KNOB && hit.point.y < AUDIO_KNOB_Y) {
         return { pid: BACKUP, mesh: hit.object, display: displayAt(hit.point.x), point: hit.point, inner: false };
       }
@@ -529,8 +531,8 @@ window.G1000_PANEL = (function () {
       showOverlay(c, drag);
     }, { capture: true });
     // ---- Push-pull controls (throttle, mixture, cabin heat and air):
-    // dragged along their shafts as they
-    // look on screen (toward the panel pushes in), or scrolled (up: in). ----
+    // dragged along their shafts as they look on screen (toward the panel
+    // pushes in), or scrolled (up: in). ----
     const leverName = (id) => G1000_SWITCHES.leverLabel(id, G.state);
     function moveLever(id, by) {
       if (G1000_SWITCHES.moveLever(G, id, by)) redraw(true);

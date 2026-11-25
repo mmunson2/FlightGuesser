@@ -1,14 +1,16 @@
-// The panel's switches in Operate mode: the MASTER rocker (ALT, BAT), the
-// AVIONICS rocker (BUS 1, BUS 2), STBY BATT (ARM, OFF, TEST) and the
-// light, pitot heat, fuel pump and cabin power toggles, and the ELT's
-// remote rocker (ARM, ON). The last three don't do anything yet: they are
-// there to practise procedures. The ignition key turns too (OFF, R, L,
-// BOTH, START at 0, 30, 60, 90 and 120° clockwise, magneto-switch-fg1000.xml),
-// but it is worked as a knob (js/g1000-panel.js KNOBS); only its piece
-// tagged `moves: key` (build/aircraft.py MOVING) turns. Their positions live in state.sys.sw
-// (js/g1000-systems.js, which also wires them to the buses); this moves
-// the 3D levers to match and turns clicks into flips. js/g1000-panel.js
-// routes Operate-mode clicks and scrolls on these parts here.
+// The panel's switches and push-pull controls in Operate mode.
+//
+// Switches: the MASTER rocker (ALT, BAT), the AVIONICS rocker (BUS 1,
+// BUS 2), STBY BATT (ARM, OFF, TEST), the light, pitot heat, fuel pump
+// and cabin power toggles, and the ELT's remote rocker (ARM, ON). The
+// pump, cabin power and ELT don't do anything yet: they are there to
+// practise procedures. The ignition key turns too (OFF, R, L, BOTH, START
+// at 0, 30, 60, 90 and 120° clockwise, magneto-switch-fg1000.xml), but it
+// is worked as a knob (js/g1000-panel.js KNOBS); only its piece tagged
+// `moves: key` (build/aircraft.py MOVING) turns. Their positions live in
+// state.sys.sw (js/g1000-systems.js, which also wires them to the buses);
+// this moves the 3D switches to match and turns clicks into flips.
+// js/g1000-panel.js routes Operate-mode clicks, scrolls and drags here.
 //
 // Pivots and angles are FlightGear's (c172sp.xml's rotate animations),
 // its frame turned into the scene's: each lever turns about the scene's x
@@ -20,9 +22,10 @@
 // The ELT's part is its whole panel: its rocker is the vertices in
 // ELT_ROCKER, turning -20° from ARM to ON (elt-fg1000.xml).
 window.G1000_SWITCHES = (function () {
-  const AVN_SPLIT = 0.3545;
+  const AVN_SPLIT = 0.3545;           // the gap between the halves (BUS 1 0.355-0.366, BUS 2 0.342-0.354)
+  const inBox = ([lo, hi]) => (x, y, z) => x >= lo[0] && x <= hi[0] && y >= lo[1] && y <= hi[1] && z >= lo[2] && z <= hi[2];
+  const widen = ([lo, hi], m) => [lo.map((v) => v - m), hi.map((v) => v + m)];
   const ELT_ROCKER = [[-0.3159, 0.1063, 0.3587], [-0.3000, 0.1265, 0.3665]];
-  const inBox = ([lo, hi]) => (x, y, z) => x >= lo[0] && x <= hi[0] && y >= lo[1] && y <= hi[1] && z >= lo[2] && z <= hi[2];           // the gap between the halves (BUS 1 0.355-0.366, BUS 2 0.342-0.354)
   const STBY_ANGLE = { test: -15, off: -45, arm: -75 };
   const MAG_ANGLE = { off: 0, r: 30, l: 60, both: 90, start: 120 };
   const STBY_LABEL = { test: 'TEST', off: 'OFF', arm: 'ARM' };
@@ -43,9 +46,15 @@ window.G1000_SWITCHES = (function () {
     { pid: 'cabin_power_switch', key: 'cabinPwr', pivot: [0.291114, -0.126543, 0.363664], angle: toggle },
     { pid: 'ignition_switch', key: 'mags', pivot: [0.427319, -0.225186, 0.357935], axis: [0, 0, 1],
       angle: (v) => MAG_ANGLE[v], piece: 'key', knob: true },
+    // `only`: which of the part's vertices turn; `hit`: where a click
+    // counts (default: `only`). The ELT's: a little slack round its rocker.
     { pid: 'elt_remote_switch', key: 'elt', pivot: [-0.307917, 0.115113, 0.360932], angle: (on) => (on ? -20 : 0),
-      only: inBox(ELT_ROCKER) },
+      only: inBox(ELT_ROCKER), hit: inBox(widen(ELT_ROCKER, 0.002)) },
   ];
+  // The switch a hit on a part is (the avionics rocker's half by where;
+  // none for the ELT's panel off its rocker), if it is one.
+  const switchAt = (pid, point) => SWITCHES.find((s) => s.pid === pid && !s.knob
+    && (!(s.hit || s.only) || (s.hit || s.only)(point.x, point.y, point.z)));
   const NAMES = { alt: 'MASTER ALT', bat: 'MASTER BAT', avn1: 'AVIONICS BUS 1', avn2: 'AVIONICS BUS 2',
                   stby: 'STBY BATT', beacon: 'BEACON', land: 'LAND', nav: 'NAV', strobe: 'STROBE',
                   taxi: 'TAXI', pitot: 'PITOT HEAT', fuelPump: 'FUEL PUMP', cabinPwr: 'CABIN PWR 12V', elt: 'ELT' };
@@ -91,7 +100,7 @@ window.G1000_SWITCHES = (function () {
 
   function attach({ THREE, scene, meshById }) {
     // Each switch's vertices, as drawn, to turn from.
-    const levers = SWITCHES.filter((s) => meshById[s.pid]).map((s) => {
+    const turning = SWITCHES.filter((s) => meshById[s.pid]).map((s) => {
       const mesh = meshById[s.pid], g = mesh.geometry, pos = g.attributes.position, nrm = g.attributes.normal;
       const idx = [];
       const range = s.piece && mesh.userData.moving.find((m) => m.moves === s.piece);
@@ -127,8 +136,8 @@ window.G1000_SWITCHES = (function () {
     eltLamp.visible = false;
     scene.add(eltLamp);
 
-    // Move the levers to the switches' positions (only those that moved),
-    // and the throttle and mixture to theirs.
+    // Move the push-pull controls and the switches to their positions
+    // (only those that moved).
     function update(state, lampOn) {
       const sys = state.sys;
       for (const l of slides) {
@@ -141,7 +150,7 @@ window.G1000_SWITCHES = (function () {
         l.mesh.geometry.computeBoundingBox();
       }
       const dirty = new Set();
-      for (const l of levers) {
+      for (const l of turning) {
         const deg = l.angle(sys.sw[l.key]);
         if (deg === l.shown) continue;
         l.shown = deg;
@@ -171,11 +180,6 @@ window.G1000_SWITCHES = (function () {
         && performance.now() % ELT_FLASH_MS < ELT_LIT_MS;
     }
 
-    // The switch a hit on a part is: the avionics rocker's half by where;
-    // on the ELT's panel, only its rocker (a little slack around it).
-    const switchAt = (pid, point) => SWITCHES.find((s) => s.pid === pid && (!s.only
-      || (s.key === 'elt' ? inBox([ELT_ROCKER[0].map((v) => v - 0.002), ELT_ROCKER[1].map((v) => v + 0.002)])
-        : s.only)(point.x, point.y, point.z)));
     const label = (s, v) => NAMES[s.key] + ' · ' + (s.key === 'stby' ? STBY_LABEL[v] : s.key === 'elt' ? (v ? 'ON' : 'ARM')
       : v ? 'ON' : 'OFF');
 
@@ -224,13 +228,10 @@ window.G1000_SWITCHES = (function () {
       return { zero: at(0), one: at(1), value: v };
     }
 
-    return { update, click, scroll, lamp, leverAt, leverAxis };
+    return { update, click, scroll, leverAt, leverAxis };
   }
 
-  // Whether a hit on a part is on one of its switches (the ELT's panel
-  // is more than its rocker).
-  const isSwitch = (pid, point) => SWITCHES.some((s) => s.pid === pid
-    && (s.key !== 'elt' || inBox([ELT_ROCKER[0].map((v) => v - 0.002), ELT_ROCKER[1].map((v) => v + 0.002)])(point.x, point.y, point.z)));
+  const isSwitch = (pid, point) => !!switchAt(pid, point);
 
-  return { attach, PARTS, SWITCHES, isSwitch, LEVER_PARTS, LEVERS, leverById, leverLabel, moveLever };
+  return { attach, PARTS, isSwitch, LEVER_PARTS, leverById, leverLabel, moveLever };
 })();
