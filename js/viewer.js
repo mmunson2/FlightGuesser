@@ -59,7 +59,7 @@
   });
   const meshes = [];
   for (const part of SCENE_DATA.parts) {
-    const pos = [], col = [], uvs = [], idx = [], groups = [], mats = [];
+    const pos = [], col = [], uvs = [], idx = [], groups = [], mats = [], moving = [];
     let base = 0;
     const opacity = part.glass ? 0.25 : 1;
     part.pieces.forEach((piece, i) => {
@@ -75,6 +75,9 @@
       }
       const ind = decode(piece.indices, piece.index32 ? Uint32Array : Uint16Array);
       groups.push([idx.length, ind.length, i]);
+      // A piece that moves (the ignition key): its vertices, for whatever
+      // moves it (js/g1000-switches.js).
+      if (piece.moves) moving.push({ moves: piece.moves, first: base, count: n });
       ind.forEach((v) => idx.push(v + base));
       base += n;
       // A `behind` piece lies on another surface (FlightGear's centre wing
@@ -93,7 +96,7 @@
     groups.forEach(([start, count, m]) => geom.addGroup(start, count, m));
     geom.computeVertexNormals();
     const mesh = new THREE.Mesh(geom, mats);
-    mesh.userData = { part, baseOpacity: opacity, maps: mats.map((m) => m.map) };
+    mesh.userData = { part, baseOpacity: opacity, maps: mats.map((m) => m.map), moving };
     setOpacity(mesh, opacity);
     mesh.renderOrder = part.glass ? 2 : 0;
     scene.add(mesh);

@@ -2,7 +2,10 @@
 // AVIONICS rocker (BUS 1, BUS 2), STBY BATT (ARM, OFF, TEST) and the
 // light, pitot heat, fuel pump and cabin power toggles, and the ELT's
 // remote rocker (ARM, ON). The last three don't do anything yet: they are
-// there to practise procedures. Their positions live in state.sys.sw
+// there to practise procedures. The ignition key turns too (OFF, R, L,
+// BOTH, START at 0, 30, 60, 90 and 120° clockwise, magneto-switch-fg1000.xml),
+// but it is worked as a knob (js/g1000-panel.js KNOBS); only its piece
+// tagged `moves: key` (build/aircraft.py MOVING) turns. Their positions live in state.sys.sw
 // (js/g1000-systems.js, which also wires them to the buses); this moves
 // the 3D levers to match and turns clicks into flips. js/g1000-panel.js
 // routes Operate-mode clicks and scrolls on these parts here.
@@ -21,6 +24,7 @@ window.G1000_SWITCHES = (function () {
   const ELT_ROCKER = [[-0.3159, 0.1063, 0.3587], [-0.3000, 0.1265, 0.3665]];
   const inBox = ([lo, hi]) => (x, y, z) => x >= lo[0] && x <= hi[0] && y >= lo[1] && y <= hi[1] && z >= lo[2] && z <= hi[2];           // the gap between the halves (BUS 1 0.355-0.366, BUS 2 0.342-0.354)
   const STBY_ANGLE = { test: -15, off: -45, arm: -75 };
+  const MAG_ANGLE = { off: 0, r: 30, l: 60, both: 90, start: 120 };
   const STBY_LABEL = { test: 'TEST', off: 'OFF', arm: 'ARM' };
   const toggle = (on) => (on ? -50 : 0), rocker = (on) => (on ? -37 : -20);
   const SWITCHES = [
@@ -37,13 +41,16 @@ window.G1000_SWITCHES = (function () {
     { pid: 'pitot_heat_switch', key: 'pitot', pivot: [0.314722, -0.126435, 0.364022], angle: toggle },
     { pid: 'fuel_pump_switch', key: 'fuelPump', pivot: [0.337472, -0.126653, 0.364096], angle: toggle },
     { pid: 'cabin_power_switch', key: 'cabinPwr', pivot: [0.291114, -0.126543, 0.363664], angle: toggle },
+    { pid: 'ignition_switch', key: 'mags', pivot: [0.427319, -0.225186, 0.357935], axis: [0, 0, 1],
+      angle: (v) => MAG_ANGLE[v], piece: 'key', knob: true },
     { pid: 'elt_remote_switch', key: 'elt', pivot: [-0.307917, 0.115113, 0.360932], angle: (on) => (on ? -20 : 0),
       only: inBox(ELT_ROCKER) },
   ];
   const NAMES = { alt: 'MASTER ALT', bat: 'MASTER BAT', avn1: 'AVIONICS BUS 1', avn2: 'AVIONICS BUS 2',
                   stby: 'STBY BATT', beacon: 'BEACON', land: 'LAND', nav: 'NAV', strobe: 'STROBE',
                   taxi: 'TAXI', pitot: 'PITOT HEAT', fuelPump: 'FUEL PUMP', cabinPwr: 'CABIN PWR 12V', elt: 'ELT' };
-  const PARTS = new Set(SWITCHES.map((s) => s.pid));
+  // Parts clicked as switches (the ignition key is a knob).
+  const PARTS = new Set(SWITCHES.filter((s) => !s.knob).map((s) => s.pid));
   // The STBY BATT test lamp, right of the switch; the ELT's red lamp,
   // above its rocker (elt-fg1000.ac eltlamp), which flashes while the ELT
   // is ON (transmitting).
@@ -55,7 +62,9 @@ window.G1000_SWITCHES = (function () {
     const levers = SWITCHES.filter((s) => meshById[s.pid]).map((s) => {
       const mesh = meshById[s.pid], g = mesh.geometry, pos = g.attributes.position, nrm = g.attributes.normal;
       const idx = [];
-      for (let i = 0; i < pos.count; i++) if (!s.only || s.only(pos.getX(i), pos.getY(i), pos.getZ(i))) idx.push(i);
+      const range = s.piece && mesh.userData.moving.find((m) => m.moves === s.piece);
+      if (range) for (let i = range.first; i < range.first + range.count; i++) idx.push(i);
+      else for (let i = 0; i < pos.count; i++) if (!s.only || s.only(pos.getX(i), pos.getY(i), pos.getZ(i))) idx.push(i);
       return { ...s, mesh, idx, pos, nrm, from: idx.map((i) => [pos.getX(i), pos.getY(i), pos.getZ(i)]),
                nfrom: nrm && idx.map((i) => [nrm.getX(i), nrm.getY(i), nrm.getZ(i)]), shown: null };
     });
@@ -82,16 +91,17 @@ window.G1000_SWITCHES = (function () {
         const deg = l.angle(sys.sw[l.key]);
         if (deg === l.shown) continue;
         l.shown = deg;
-        // FlightGear turns about its +y, the scene's -x: about +x by -deg.
-        const a = (-deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
-        const [px, py, pz] = l.pivot;
+        // About the switch's axis (FlightGear's, in the scene: its +y, the
+        // toggles' and rockers', is the scene's -x).
+        const rot = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeRotationAxis(
+          new THREE.Vector3(...(l.axis || [-1, 0, 0])), (deg * Math.PI) / 180));
+        const pivot = new THREE.Vector3(...l.pivot), v = new THREE.Vector3();
         l.idx.forEach((i, k) => {
-          const [x, y, z] = l.from[k];
-          const dy = y - py, dz = z - pz;
-          l.pos.setXYZ(i, x, py + dy * c - dz * s, pz + dy * s + dz * c);
+          v.set(...l.from[k]).sub(pivot).applyMatrix3(rot).add(pivot);
+          l.pos.setXYZ(i, v.x, v.y, v.z);
           if (l.nrm) {
-            const [nx, ny, nz] = l.nfrom[k];
-            l.nrm.setXYZ(i, nx, ny * c - nz * s, ny * s + nz * c);
+            v.set(...l.nfrom[k]).applyMatrix3(rot);
+            l.nrm.setXYZ(i, v.x, v.y, v.z);
           }
         });
         dirty.add(l);

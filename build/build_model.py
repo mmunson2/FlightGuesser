@@ -93,6 +93,8 @@ def pack(parts):
                 e["index32"] = True
             if q.get("behind"):
                 e["behind"] = True             # a coplanar duplicate: drawn with a depth offset
+            if q.get("moves"):
+                e["moves"] = q["moves"]        # a moving piece (aircraft.MOVING)
             if q["tex"] is not None:
                 name = Path(q["tex"]).stem
                 if name not in textures:

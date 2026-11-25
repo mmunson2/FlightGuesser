@@ -19,10 +19,14 @@ window.G1000_PANEL = (function () {
     standby_altimeter: 'stby_baro',
     // The audio panel's volume (small) and squelch (large) knob.
     audio_volume_knob: 'gma_vol',
+    // The ignition key (js/g1000-systems.js turnMags; js/g1000-switches.js
+    // turns the 3D key).
+    ignition_switch: 'mags',
   };
   // The standby altimeter is one part, gauge and knob; the knob is the only
   // piece that stands proud of the bezel (in front of this depth).
   const STBY = 'standby_altimeter', STBY_KNOB_Z = 0.36;
+  const IGN = 'ignition_switch';
   const KEYS = {
     nav_transfer_key: 'nav_transfer', com_transfer_key: 'com_transfer', direct_to_key: 'direct_to',
     fpl_key: 'fpl', clr_key: 'clr', ent_key: 'ent', menu_key: 'menu', proc_key: 'proc',
@@ -238,7 +242,7 @@ window.G1000_PANEL = (function () {
     const SWITCH = G1000_SWITCHES.PARTS;
     // Whether a control has power: a display's bezel, or the audio panel
     // (avionics bus 2). The standby altimeter's knob needs none.
-    const hasPower = (c) => (c.pid === STBY ? true
+    const hasPower = (c) => (c.pid === STBY || c.pid === IGN ? true
       : AUDIO.has(c.pid) || c.pid === BACKUP ? G.systems.buses().avn2 : G.systems.powered(c.display));
 
     const ray = new THREE.Raycaster();
@@ -291,6 +295,7 @@ window.G1000_PANEL = (function () {
       // the rest are on both.
       const where = ['autopilot', 'audio_panel'].includes(c.mesh.userData.part.system) ? '' : ' · ' + c.display.toUpperCase();
       if (c.pid === STBY) return 'Standby altimeter knob (baro)';
+      if (c.pid === IGN) return 'MAGNETOS · ' + G.state.sys.sw.mags.toUpperCase();
       if (c.pid === BACKUP) return 'DISPLAY BACKUP button';
       if (c.pid === 'softkeys') {
         const i = softkeyAt(c.point, c.display);
@@ -315,6 +320,8 @@ window.G1000_PANEL = (function () {
         return said;
       }
       if (!hasPower(c)) return name(c) + ' · no power';
+      // The key doesn't push.
+      if (c.pid === IGN) return name(c);
       // Named before pressing: a softkey's label changes with its menu.
       const said = name(c) + (c.pid in KNOBS ? ' · push' : '');
       // The MFD's autopilot keys belong to another unit's layout (context

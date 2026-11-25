@@ -37,6 +37,11 @@
 //   essential bus or avionics bus 1, the MFD and the autopilot on avionics
 //   bus 2 (the breaker panel's rows).
 // - Lights and pitot heat: load on the main bus (their amps made up).
+// - The ignition switch (sw.mags): OFF, R, L, BOTH, START. OFF stops the
+//   engine (back on, it runs again: the windmilling propeller turns it).
+//   One magneto alone drops the RPM (R 70, L 55: made up, inside the POH's
+//   150 and 50). START springs back to BOTH.
+// - The pump, cabin power and ELT do nothing yet (procedure practice).
 window.G1000_SYSTEMS = (function () {
   const FAILURES = ['alternator', 'overvolt', 'oil', 'vacuum', 'leakL', 'co', 'trim', 'gps'];
   // Richness: the fuel-air ratio over the one that gives peak EGT (1).
@@ -59,7 +64,9 @@ window.G1000_SYSTEMS = (function () {
   const SWITCHES = { bat: true, alt: true, avn1: true, avn2: true, stby: 'arm',
                      beacon: true, land: false, taxi: false, nav: true, strobe: true, pitot: false,
                      // Not wired to anything yet (procedure practice): ELT on = transmitting.
-                     fuelPump: false, cabinPwr: false, elt: false };
+                     fuelPump: false, cabinPwr: false, elt: false, mags: 'both' };
+  const MAGS = ['off', 'r', 'l', 'both', 'start'];
+  const MAG_DROP = { r: 70, l: 55 };
   // TEST springs back to OFF after this long (s), standing for a held press.
   const TEST_S = 1.5;
   // The test lamp lights with the standby battery over this charge (0-1).
@@ -84,7 +91,7 @@ window.G1000_SYSTEMS = (function () {
       tot: { rem: 48, used: 0 },
       // How long each delayed annunciation's condition has held (s).
       held: { fuelL: 0, fuelR: 0, stby: 0 },
-      sw: { ...SWITCHES }, testFor: 0,
+      sw: { ...SWITCHES }, testFor: 0, startFor: 0,
       failed: Object.fromEntries(FAILURES.map((f) => [f, false])),
     });
 
@@ -146,8 +153,10 @@ window.G1000_SYSTEMS = (function () {
       s.tot.rem = Math.max(0, s.tot.rem - (gph / 3600) * dt);
       // Both tanks dry, idle cutoff, or leaned far past peak: the engine
       // stops (and runs again with fuel and mixture: no starter here).
-      s.running = state.fuel > 0.01 && richness() >= 0.55;
-      s.rpm = s.running ? 700 + 1800 * state.power * mixtureEffect().power : 0;
+      s.running = state.fuel > 0.01 && richness() >= 0.55 && s.sw.mags !== 'off';
+      s.rpm = s.running ? 700 + 1800 * state.power * mixtureEffect().power - (MAG_DROP[s.sw.mags] || 0) : 0;
+      // START springs back to BOTH.
+      if (s.sw.mags === 'start' && (s.startFor -= dt) <= 0) s.sw.mags = 'both';
       temps(dt);
       // Oil: pressure with RPM; lost oil drains it away and heats it up.
       const oilTarget = !s.running ? 0 : f.oil ? 5 : clamp(25 + 0.017 * s.rpm, 25, 75);
@@ -242,6 +251,13 @@ window.G1000_SYSTEMS = (function () {
       if (key === 'bat' && !value) sw.alt = false;
       if (key === 'stby' && value === 'test') S().testFor = TEST_S;
     }
+    // The ignition switch a notch clockwise (+) or back (-).
+    function turnMags(steps) {
+      const s = S(), i = MAGS.indexOf(s.sw.mags);
+      const next = MAGS[Math.max(0, Math.min(MAGS.length - 1, i + Math.sign(steps)))];
+      if (next === 'start') s.startFor = TEST_S;
+      s.sw.mags = next;
+    }
     // Which buses have power: main, essential, avionics 1 and 2.
     function buses() {
       const s = S(), main = s.voltsM > 20.05;
@@ -256,7 +272,7 @@ window.G1000_SYSTEMS = (function () {
     const testLamp = () => S().sw.stby === 'test' && S().stbyBatt > STBY_OK;
 
     return { fresh, step, annunciations, fail, FAILURES, mixtureEffect, bestPowerMixture, richness, assist, totalizer,
-             setSwitch, buses, powered, testLamp };
+             setSwitch, buses, powered, testLamp, turnMags, MAGS };
   }
 
   return { create, FAILURES, FULL_USABLE };

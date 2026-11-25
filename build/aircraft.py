@@ -519,6 +519,11 @@ SOURCES = [
 # light cones and lit-state copies, inner copies of the glass, the compass
 # deviation card (placed off the panel), rudder trim (not on a C172S), and
 # the interior's own magneto switch (the magneto file's is used).
+# Objects that move in Operate mode, kept in a piece of their own so the
+# viewer can find them: (file, object) -> the piece's `moves` name. The
+# ignition key turns (js/g1000-switches.js); the switch's face stays.
+MOVING = {("magneto-switch/magneto-switch-fg1000.ac", r"key|start"): "key"}
+
 # Skipped in one file only: the magnetic compass's glass (an opaque sheet
 # here; js/g1000-panel.js draws the live card in its window).
 SKIP_IN = {"mag-compass/mag-compass.ac": r"Glass"}
@@ -649,7 +654,7 @@ def load(c172p):
                 m = rest & test(c)
                 rest &= ~m
                 if m.any() and pid:
-                    merged.setdefault(pid, {}).setdefault((tex, behind), []).append(
+                    merged.setdefault(pid, {}).setdefault((tex, behind, None), []).append(
                         (c[m], None if uv is None else uv[m], rgb[m]))
             split.append((name, c[rest], None if uv is None else uv[rest], rgb[rest], tex, behind))
         for name, c, uv, rgb, tex, behind in split:
@@ -662,7 +667,8 @@ def load(c172p):
                 continue
             if pid == "windows":
                 uv, tex, rgb = None, None, np.full_like(rgb, GLASS_RGB)
-            merged.setdefault(pid, {}).setdefault((tex, behind), []).append((c, uv, rgb))
+            moves = next((m for (f, rx), m in MOVING.items() if rel.endswith(f) and re.fullmatch(rx, name)), None)
+            merged.setdefault(pid, {}).setdefault((tex, behind, moves), []).append((c, uv, rgb))
     CUT_HOLES[:] = [(cx, cz, r, y_min) for cx, cz, r, y_min, _ in holes]
     for cx, cz, r, y_min, pids in holes:
         for pid in pids:
@@ -675,20 +681,22 @@ def load(c172p):
             if not len(hits(skin[near], cx + r * 1.5, cz)):
                 continue                      # this part has no skin here
             collar = hole_collar(skin[near], (cx, cz), r, y_min)
-            by_key.setdefault((None, True), []).append((collar, None, np.full_like(collar, SKIN_RGB)))
+            by_key.setdefault((None, True, None), []).append((collar, None, np.full_like(collar, SKIN_RGB)))
             for key, chunks in by_key.items():
                 for i, (c, uv, rgb) in enumerate(chunks):
                     chunks[i] = cut_hole(c, uv, rgb, (cx, cz), r, y_min)
     parts = []
     for pid, by_tex in merged.items():
         pieces = []
-        for (tex, behind), chunks in by_tex.items():
+        for (tex, behind, moves), chunks in by_tex.items():
             cuv = None if tex is None else np.vstack([u if u is not None else np.zeros((len(c), 3, 2))
                                                       for c, u, _ in chunks])
             pieces.append(piece(np.vstack([c for c, _, _ in chunks]), cuv, np.vstack([r for _, _, r in chunks]),
                                 None if tex is None else str(tex)))
             if behind:
                 pieces[-1]["behind"] = True
+            if moves:
+                pieces[-1]["moves"] = moves
         parts.append({"id": pid, "system": SYSTEM_OF.get(pid, "cabin"),
                       "kind": "target",
                       "glass": pid == "windows", "ask": SYSTEM_OF.get(pid) in ASK_SYSTEMS, "pieces": pieces})

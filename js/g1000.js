@@ -629,6 +629,8 @@ window.G1000 = (function () {
   function turn(knob, part, steps, display = 'pfd') {
     display = pfdIfReverted(display);
     switch (knob) {
+      // The ignition switch (js/g1000-systems.js turnMags).
+      case 'mags': systems.turnMags(steps); return;
       case 'com': {
         const c = state.com[state.comTune];
         if (part === 'outer') c.stby = 118 + wrapInt(Math.floor(c.stby) - 118 + steps, 19) + (c.stby % 1);

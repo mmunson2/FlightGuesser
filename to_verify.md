@@ -303,6 +303,11 @@ the GFC 700 AFMS:
     but do nothing yet: procedure practice only. All start off / ARM.
     ELT ON flashes its red lamp (0.6 s lit every second; check the real
     rate).
+  - The ignition key turns like a G1000 knob (scroll or drag): OFF, R,
+    L, BOTH, START. OFF stops the engine; back on, it runs again at once
+    (the windmilling propeller; no starter model). One magneto drops the
+    RPM: R 70, L 55 (made up, inside the POH's 150 max and 50 between).
+    START springs back to BOTH after 1.5 s.
 - **PFD Opt → ALT Units** (Meters, IN, HPA):
   - Meters adds metric boxes under the altitude readout and beside the
     selected altitude. The real overlay may sit elsewhere.
