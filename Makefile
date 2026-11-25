@@ -30,8 +30,8 @@ fetch:  ## Download whatever source data is missing from $(DATA)
 model: setup $(ENGINE)/engine.npz  ## Rebuild data/scenedata.js and the KPAE diagram (data/kpae-diagram.png, .pdf)
 	$(PY) build/build_model.py "$(C172P)" "$(KPAE)" "$(ENGINE)" data/scenedata.js
 
-nav: setup  ## Rebuild data/wa-nav.js (Washington airports and VORs, FAA NASR) for the G1000
-	$(PY) build/wa_nav.py "$(NASR)" data/wa-nav.js
+nav: setup  ## Rebuild data/wa-nav.js (Washington airports, VORs, frequencies, airspace; FAA NASR/ADDS) for the G1000
+	$(PY) build/wa_nav.py "$(NASR)" data/wa-nav.js "$(DATA)/airspace/wa-class-airspace.geojson"
 
 # The engine's STEP file tessellated (slow, so cached next to it).
 $(ENGINE)/engine.npz: $(STEP) build/step_mesh.py

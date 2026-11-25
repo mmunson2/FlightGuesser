@@ -11,6 +11,8 @@
 #                     operator manual the extras are drawn from
 #   nasr/*_CSV.zip    the FAA's NASR 28-day subscription (APT, FRQ, NAV),
 #                     for build/wa_nav.py (NASR_DATE)
+#   airspace/wa-class-airspace.geojson  the FAA ADDS Class Airspace layer cut
+#                     to Washington's box, for build/wa_nav.py (always current)
 # A new FAA cycle: change DIAGRAM_PDF in build/airport.py and CYCLE here,
 # then `make fetch model`; for NASR, NASR_DATE here and in build/wa_nav.py,
 # then `make fetch nav`.
@@ -65,4 +67,6 @@ get "https://chapters.eaa.org/eaa245/-/media/3B5A3308519148D58C389A05AEEC001F.as
 for k in APT FRQ NAV; do
   get "https://nfdc.faa.gov/webContent/28DaySub/extra/${NASR_DATE}_${k}_CSV.zip" "$DATA/nasr/${NASR_DATE}_${k}_CSV.zip"
 done
+ADDS=https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Class_Airspace/FeatureServer/0/query
+get "$ADDS?where=1%3D1&geometry=-125,45.4,-116.8,49.1&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&outSR=4326&f=geojson" "$DATA/airspace/wa-class-airspace.geojson"
 echo "source data in $DATA is complete"
