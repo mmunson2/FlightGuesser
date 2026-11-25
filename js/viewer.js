@@ -109,13 +109,10 @@
   }
   const meshById = Object.fromEntries(meshes.map((m) => [m.userData.part.id, m]));
   // The mock G1000 (js/g1000-panel.js): live screens, and in Operate mode
-  // the keys and knobs work. A pressed key lights for a moment.
+  // the keys and knobs work. A pressed key lights for a moment, a turning
+  // knob while it turns.
   const avionics = G1000_PANEL.attach({
-    THREE, scene, camera, renderer, meshes, meshById,
-    flash(mesh) {
-      paint(mesh, HIGHLIGHT);
-      setTimeout(() => paint(mesh, selection.includes(mesh) ? HIGHLIGHT : null), 150);
-    },
+    THREE, scene, camera, renderer, controls, meshes, meshById, highlight: HIGHLIGHT,
   });
   // Parts made of several (GROUPS in build/aircraft.py): both ailerons, the
   // three nav lights. A group id works wherever a part id does in a question.
@@ -213,8 +210,8 @@
   undoBtn.addEventListener('click', undo);
   unhideAllBtn.addEventListener('click', unhideAll);
 
-  // Operate mode: clicks and scrolling work the G1000 instead of naming
-  // parts (other parts still select). Reset puts the flight back.
+  // Operate mode: clicks, drags and scrolling work the G1000, and no part
+  // can be selected. Reset puts the flight back.
   const operateBtn = document.getElementById('operate');
   const resetBtn = document.getElementById('g1000-reset');
   function setOperate(on) {
@@ -283,7 +280,7 @@
     const r = renderer.domElement.getBoundingClientRect();
     ray.setFromCamera({ x: ((e.clientX - r.left) / r.width) * 2 - 1,
                         y: -((e.clientY - r.top) / r.height) * 2 + 1 }, camera);
-    const hit = ray.intersectObjects(meshes.filter((m) => m.visible && accept(m.userData.part)))[0];
+    const hit = ray.intersectObjects(meshes.filter((m) => m.visible && accept(m.userData.part)), false)[0];
     return hit ? hit.object : null;
   }
 
@@ -298,6 +295,7 @@
       // Operating, a click on a G1000 or autopilot control works it.
       const said = !quizOn && avionics.click(e);
       if (said) { picked.textContent = said; return; }
+      if (!quizOn && avionics.operating) return;
       const mesh = meshAt(e, (p) => p.kind === 'target');
       // Once an answer is in, the marks stay put until Next; and a name
       // question can't be picked at all, since picking shows the name.

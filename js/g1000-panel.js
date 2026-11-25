@@ -19,14 +19,17 @@ window.G1000_PANEL = (function () {
     ap_key: 'ap', fd_key: 'fd', hdg_key: 'hdg', alt_key: 'alt', nav_key: 'nav', vnv_key: 'vnv',
     apr_key: 'apr', bc_key: 'bc', vs_key: 'vs', flc_key: 'flc', nose_up_key: 'nose_up', nose_dn_key: 'nose_dn',
   };
-  // Concentric knobs: the inner knob's radius is 4.7 mm, the outer's 6.6.
+  // Concentric knobs: the inner knob's radius is 4.7 mm, the outer's 6.
+  // Their zones are bigger than the knobs, to be easy to hit: the inner
+  // knob within INNER_ZONE of the centre, the outer out to OUTER_ZONE (the
+  // nearest other control is 16 mm away), panel around it included.
   const CONCENTRIC = new Set(['nav', 'com', 'alt', 'crs_baro', 'fms']);
-  const INNER_R = 0.0050;
+  const INNER_ZONE = 0.0055, OUTER_ZONE = 0.012, INNER_KNOB = 0.0049;
   // The PFD is on the pilot's side (+x), the MFD on the right (-x).
   const SPLIT_X = 0.025;
   const displayAt = (x) => (x > SPLIT_X ? 'pfd' : 'mfd');
 
-  function attach({ THREE, scene, camera, renderer, meshes, meshById, flash }) {
+  function attach({ THREE, scene, camera, renderer, controls, meshes, meshById, highlight = 0x36c2ff }) {
     const G = window.G1000, D = window.G1000_DISPLAY;
 
     // ---- Screens: a canvas-textured plane just in front of each dark
@@ -69,13 +72,78 @@ window.G1000_PANEL = (function () {
         v.fromBufferAttribute(pos, i);
         if (displayAt(v.x) === display) box.expandByPoint(v);
       }
-      centres[key] = { x: (box.min.x + box.max.x) / 2, y: (box.min.y + box.max.y) / 2, min: box.min.x, max: box.max.x };
+      centres[key] = { x: (box.min.x + box.max.x) / 2, y: (box.min.y + box.max.y) / 2,
+                       z: (box.min.z + box.max.z) / 2, front: box.min.z, min: box.min.x, max: box.max.x };
       return centres[key];
     }
     // Softkeys: twelve evenly spaced, numbered from the pilot's left (+x).
     function softkeyAt(point, display) {
       const c = centreOf('softkeys', display);
       return Math.max(0, Math.min(11, Math.floor(((c.max - point.x) / (c.max - c.min)) * 12)));
+    }
+
+    // Lighting one control: a part covers its key or knob on both displays
+    // (and all twelve softkeys), so a pressed one lights through an overlay
+    // of just its own triangles: the part's on that display, and for a
+    // softkey those in its twelfth. Same textures, tinted like a selection.
+    const pieces = {};
+    function pieceOf(c) {
+      const slot = c.pid === 'softkeys' ? softkeyAt(c.point, c.display) : -1;
+      // A concentric knob lights only the half in use.
+      const half = CONCENTRIC.has(KNOBS[c.pid]) ? (c.inner ? 'inner' : 'outer') : '';
+      const key = c.pid + ':' + c.display + ':' + slot + ':' + half;
+      if (pieces[key]) return pieces[key];
+      const mesh = c.mesh, g = mesh.geometry, pos = g.attributes.position, idx = g.index;
+      const sk = slot >= 0 && centreOf('softkeys', c.display);
+      const mine = (t) => {
+        let x = 0;
+        for (let j = 0; j < 3; j++) x += pos.getX(idx.getX(t + j)) / 3;
+        if (displayAt(x) !== c.display) return false;
+        if (half) {
+          // The inner knob: triangles all within its 4.7 mm radius.
+          const k = centreOf(c.pid, c.display);
+          let far = 0;
+          for (let j = 0; j < 3; j++) {
+            const i = idx.getX(t + j);
+            far = Math.max(far, Math.hypot(pos.getX(i) - k.x, pos.getY(i) - k.y));
+          }
+          if ((far < INNER_KNOB) !== (half === 'inner')) return false;
+        }
+        return slot < 0 || Math.max(0, Math.min(11, Math.floor(((sk.max - x) / (sk.max - sk.min)) * 12))) === slot;
+      };
+      const geom = new THREE.BufferGeometry();
+      for (const [name, attr] of Object.entries(g.attributes)) geom.setAttribute(name, attr);
+      const index = [];
+      const groups = g.groups.length ? g.groups : [{ start: 0, count: idx.count, materialIndex: 0 }];
+      for (const gr of groups) {
+        const start = index.length;
+        for (let t = gr.start; t < gr.start + gr.count; t += 3) {
+          if (mine(t)) index.push(idx.getX(t), idx.getX(t + 1), idx.getX(t + 2));
+        }
+        if (index.length > start) geom.addGroup(start, index.length - start, gr.materialIndex);
+      }
+      geom.setIndex(index);
+      const mats = [mesh.material].flat().map((m) => {
+        const lit = m.clone();
+        lit.color.setHex(highlight);
+        lit.emissive?.setHex(highlight).multiplyScalar(0.45);
+        // Drawn over the part's own, identical triangles.
+        lit.polygonOffset = true;
+        lit.polygonOffsetFactor = -1;
+        lit.polygonOffsetUnits = -4;
+        return lit;
+      });
+      const piece = new THREE.Mesh(geom, mats);
+      piece.visible = false;
+      // A child of the part: same transform, and hidden with it.
+      mesh.add(piece);
+      return (pieces[key] = piece);
+    }
+    function flash(c) {
+      const piece = pieceOf(c);
+      piece.visible = true;
+      clearTimeout(piece.userData.off);
+      piece.userData.off = setTimeout(() => { piece.visible = false; }, 150);
     }
 
     const ray = new THREE.Raycaster();
@@ -85,17 +153,31 @@ window.G1000_PANEL = (function () {
       const r = renderer.domElement.getBoundingClientRect();
       ray.setFromCamera({ x: ((e.clientX - r.left) / r.width) * 2 - 1,
                           y: -((e.clientY - r.top) / r.height) * 2 + 1 }, camera);
-      const hit = ray.intersectObjects(meshes.filter((m) => m.visible && !m.userData.part.glass))[0];
-      if (!hit) return null;
-      const pid = hit.object.userData.part.id;
-      if (!(pid in KNOBS) && !(pid in KEYS) && pid !== 'softkeys') return null;
-      const display = displayAt(hit.point.x);
-      let inner = false;
-      if (pid in KNOBS) {
-        const c = centreOf(pid, display);
-        inner = Math.hypot(hit.point.x - c.x, hit.point.y - c.y) < INNER_R;
+      const hit = ray.intersectObjects(meshes.filter((m) => m.visible && !m.userData.part.glass), false)[0];
+      const pid = hit?.object.userData.part.id;
+      if (hit && ((pid in KEYS) || pid === 'softkeys' || ((pid in KNOBS) && !CONCENTRIC.has(KNOBS[pid])))) {
+        return { pid, mesh: hit.object, display: displayAt(hit.point.x), point: hit.point, inner: false };
       }
-      return { pid, mesh: hit.object, display, point: hit.point, inner };
+      return zoneAt(hit);
+    }
+    // A concentric knob's zone under the pointer (ray set), unless something
+    // nearer than the knob's face is in the way.
+    const ZONED = Object.keys(KNOBS).filter((pid) => CONCENTRIC.has(KNOBS[pid]));
+    const facePlane = new THREE.Plane(), onFace = new THREE.Vector3();
+    function zoneAt(hit) {
+      for (const pid of ZONED) {
+        if (!meshById[pid].visible) continue;
+        for (const display of ['pfd', 'mfd']) {
+          const k = centreOf(pid, display);
+          facePlane.set(new THREE.Vector3(0, 0, -1), k.front);
+          if (!ray.ray.intersectPlane(facePlane, onFace)) continue;
+          const d = Math.hypot(onFace.x - k.x, onFace.y - k.y);
+          if (d > OUTER_ZONE) continue;
+          if (hit && hit.object !== meshById[pid] && hit.distance < ray.ray.origin.distanceTo(onFace) - 0.003) return null;
+          return { pid, mesh: meshById[pid], display, point: onFace.clone(), inner: d < INNER_ZONE };
+        }
+      }
+      return null;
     }
 
     const name = (c) => {
@@ -116,6 +198,8 @@ window.G1000_PANEL = (function () {
     // text for what was operated, or null if the click wasn't on a control.
     function click(e) {
       if (!operating) return null;
+      // The end of a drag that turned a knob: not a push.
+      if (turnedAt && performance.now() - turnedAt < 50) return lastSaid;
       const c = controlAt(e);
       if (!c) return null;
       // Named before pressing: a softkey's label changes with its menu.
@@ -125,7 +209,7 @@ window.G1000_PANEL = (function () {
       if (c.pid === 'softkeys') G.press('softkey:' + softkeyAt(c.point, c.display), c.display);
       else if (c.pid in KEYS) G.press(KEYS[c.pid], c.display);
       else G.push(KNOBS[c.pid], c.display);
-      flash?.(c.mesh);
+      flash(c);
       redraw(true);
       return said;
     }
@@ -150,6 +234,194 @@ window.G1000_PANEL = (function () {
       redraw(true);
       onTurn?.(name(c) + ' · turn');
     }, { capture: true, passive: false });
+
+    // Dragging on a knob turns it: the pointer's angle around the knob's
+    // centre on screen, one click per STEP of it (clockwise on screen is
+    // clockwise, as the panel faces the camera). The camera stays put.
+    const STEP = Math.PI / 12, MIN_R = 6;
+    let drag = null, turnedAt = 0, lastSaid = null;
+    function screenCentre(c) {
+      const k = centreOf(c.pid, c.display);
+      const p = new THREE.Vector3(k.x, k.y, k.z).project(camera);
+      const r = renderer.domElement.getBoundingClientRect();
+      return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };
+    }
+    const angleAt = (d, e) => {
+      const dx = e.clientX - d.centre.x, dy = e.clientY - d.centre.y;
+      return Math.hypot(dx, dy) < MIN_R ? null : Math.atan2(dy, dx);
+    };
+    // The knob overlay: a canvas-textured plane in front of a knob. On a
+    // concentric knob, hovered or turning, it shades the zone in use and
+    // labels it INNER or OUTER. Turning, an arc around the pointer's angle
+    // with an arrowhead shows the way it is going.
+    const OVER_PX = 512, OVER_M = 0.06, MM = OVER_PX / OVER_M / 1000;
+    const overCanvas = document.createElement('canvas');
+    overCanvas.width = overCanvas.height = OVER_PX;
+    const overCtx = overCanvas.getContext('2d');
+    const overTex = new THREE.CanvasTexture(overCanvas);
+    if ('colorSpace' in overTex) overTex.colorSpace = THREE.SRGBColorSpace;
+    const overlay = new THREE.Mesh(new THREE.PlaneGeometry(OVER_M, OVER_M),
+      new THREE.MeshBasicMaterial({ map: overTex, transparent: true, depthTest: false, depthWrite: false,
+        toneMapped: false, side: THREE.DoubleSide }));
+    // Facing aft like the screens, so canvas x runs to the pilot's right and
+    // canvas angles match the pointer's on screen.
+    overlay.rotation.y = Math.PI;
+    overlay.renderOrder = 10;
+    overlay.visible = false;
+    scene.add(overlay);
+    let fadeFrom = 0, shown = null;
+    // c: the control; d: the drag, if turning.
+    function drawOverlay(c, d) {
+      const ctx = overCtx, k = centreOf(c.pid, c.display), zoned = CONCENTRIC.has(KNOBS[c.pid]);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, OVER_PX, OVER_PX);
+      // Millimetres from the knob's centre.
+      ctx.setTransform(MM, 0, 0, MM, OVER_PX / 2, OVER_PX / 2);
+      ctx.lineCap = ctx.lineJoin = 'round';
+      // Each shape twice: a dark outline, then white on it.
+      const both = (path, width, alpha, fill) => {
+        for (const [style, w] of [['rgba(0,0,0,0.7)', width + 1.2], ['#ffffff', width]]) {
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = ctx.fillStyle = style;
+          ctx.lineWidth = w;
+          path();
+          ctx.stroke();
+          if (fill) ctx.fill();
+        }
+      };
+      const circle = (r) => () => { ctx.beginPath(); ctx.arc(0, 0, r, 0, 2 * Math.PI); };
+      const inR = INNER_ZONE * 1000, outR = OUTER_ZONE * 1000;
+      if (zoned) {
+        // Both zones' edges faintly, the one in use shaded and outlined.
+        both(circle(inR), 0.4, 0.35);
+        both(circle(outR), 0.4, 0.35);
+        ctx.globalAlpha = 0.28;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(0, 0, c.inner ? inR : outR, 0, 2 * Math.PI);
+        if (!c.inner) ctx.arc(0, 0, inR, 0, 2 * Math.PI, true);
+        ctx.fill();
+        both(circle(c.inner ? inR : outR), 0.7, 1);
+        if (!c.inner) both(circle(inR), 0.7, 1);
+        // The label above the knob.
+        ctx.font = 'bold 5px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillStyle = '#ffffff';
+        const label = c.inner ? 'INNER' : 'OUTER';
+        ctx.strokeText(label, 0, -outR - 1.5);
+        ctx.fillText(label, 0, -outR - 1.5);
+      }
+      if (!d) { overTex.needsUpdate = true; return; }
+      // The turn: inner knob's arrow on its face, the outer's outside its zone.
+      const r = zoned ? (c.inner ? inR - 1.5 : outR + 2.5) : (k.max - k.min) * 500 + 4.5;
+      if (!zoned) both(circle(r), 1, 0.45);
+      if (d.dir && d.last != null) {
+        // A 100° arc behind the pointer, the head at the pointer.
+        const head = d.last, tail = head - d.dir * (100 * Math.PI / 180);
+        const hx = r * Math.cos(head), hy = r * Math.sin(head);
+        // Tangent along the turn, and the outward normal.
+        const tx = -Math.sin(head) * d.dir, ty = Math.cos(head) * d.dir;
+        const nx = Math.cos(head), ny = Math.sin(head);
+        const w = c.inner ? 1.6 : 2.4, L = w * 2.6, W = w * 1.8;
+        both(() => {
+          ctx.beginPath();
+          ctx.arc(0, 0, r, Math.min(head, tail), Math.max(head, tail));
+        }, w, 1);
+        both(() => {
+          ctx.beginPath();
+          ctx.moveTo(hx + tx * L, hy + ty * L);
+          ctx.lineTo(hx + nx * W, hy + ny * W);
+          ctx.lineTo(hx - nx * W, hy - ny * W);
+          ctx.closePath();
+        }, 0.6, 1, true);
+      }
+      overTex.needsUpdate = true;
+    }
+    function showOverlay(c, d) {
+      const k = centreOf(c.pid, c.display);
+      overlay.position.set(k.x, k.y, k.front);
+      overlay.material.opacity = 1;
+      overlay.visible = true;
+      fadeFrom = 0;
+      shown = c.pid + ':' + c.display + ':' + c.inner;
+      drawOverlay(c, d);
+    }
+    function hideOverlay(fade) {
+      shown = null;
+      if (fade) fadeFrom = performance.now();
+      else overlay.visible = false;
+    }
+
+    // Hovering: once a frame, the control under the pointer sets the
+    // cursor, and a concentric knob shows its zone.
+    let hoverEvent = null;
+    renderer.domElement.addEventListener('pointermove', (e) => { hoverEvent = e; });
+    renderer.domElement.addEventListener('pointerleave', () => { hoverEvent = { gone: true }; });
+    function hover() {
+      const e = hoverEvent;
+      if (!e || drag) return;
+      hoverEvent = null;
+      const c = operating && !e.gone && e.buttons === 0 ? controlAt(e) : null;
+      renderer.domElement.style.cursor = !c ? '' : c.pid in KNOBS ? 'grab' : 'pointer';
+      if (c && CONCENTRIC.has(KNOBS[c.pid])) {
+        if (shown !== c.pid + ':' + c.display + ':' + c.inner) showOverlay(c);
+      } else if (shown) hideOverlay(false);
+    }
+
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      if (!operating || e.button !== 0) return;
+      const c = controlAt(e);
+      if (!c || !(c.pid in KNOBS)) return;
+      // OrbitControls listens on the same element: switch it off until the
+      // drag ends, so the drag turns the knob instead of the camera.
+      controls.enabled = false;
+      drag = { c, centre: screenCentre(c), acc: 0, id: e.pointerId };
+      drag.last = angleAt(drag, e);
+      drag.dir = 0;
+      renderer.domElement.style.cursor = 'grabbing';
+      renderer.domElement.setPointerCapture(e.pointerId);
+      drag.piece = pieceOf(c);
+      drag.piece.visible = true;
+      showOverlay(c, drag);
+    }, { capture: true });
+    renderer.domElement.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const a = angleAt(drag, e);
+      if (a == null) return;
+      if (drag.last == null) { drag.last = a; return; }
+      let da = a - drag.last;
+      if (da > Math.PI) da -= 2 * Math.PI;
+      if (da < -Math.PI) da += 2 * Math.PI;
+      drag.last = a;
+      drag.acc += da;
+      if (drag.dir) drawOverlay(drag.c, drag);
+      const steps = Math.trunc(drag.acc / STEP);
+      if (!steps) return;
+      drag.acc -= steps * STEP;
+      drag.dir = Math.sign(steps);
+      drawOverlay(drag.c, drag);
+      const { c } = drag;
+      G.turn(KNOBS[c.pid], c.inner ? 'inner' : 'outer', steps, c.display);
+      drag.turned = true;
+      redraw(true);
+      lastSaid = name(c) + ' · turn';
+      onTurn?.(lastSaid);
+    });
+    const endDrag = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      if (drag.turned) turnedAt = performance.now();
+      drag.piece.visible = false;
+      hideOverlay(true);
+      drag = null;
+      hoverEvent = e;
+      controls.enabled = true;
+    };
+    renderer.domElement.addEventListener('pointerup', endDrag, { capture: true });
+    renderer.domElement.addEventListener('pointercancel', endDrag);
 
     // Flying by hand with the autopilot off: arrows for pitch and bank,
     // Page Up/Down for power. Not while a dialog or text field has focus.
@@ -184,6 +456,17 @@ window.G1000_PANEL = (function () {
         s.plane.visible = s.parent.visible;
         s.plane.material.opacity = s.parent.material[0].opacity;
       }
+      // The overlay fades out after a turn.
+      if (fadeFrom) {
+        const o = 1 - (now - fadeFrom) / 300;
+        overlay.material.opacity = Math.max(0, o);
+        if (o <= 0) { overlay.visible = false; fadeFrom = 0; }
+      }
+      hover();
+      if (!operating && !drag) {
+        if (overlay.visible && !fadeFrom) hideOverlay(false);
+        renderer.domElement.style.cursor = '';
+      }
       redraw();
     }
 
@@ -194,7 +477,7 @@ window.G1000_PANEL = (function () {
       onTurn(fn) { onTurn = fn; },
       reset() { G.reset(); redraw(true); },
       // For tools (tools/shot.py --js): where a part's control is.
-      controlAt, softkeyAt, screens,
+      controlAt, softkeyAt, screens, overlay,
     };
   }
 
