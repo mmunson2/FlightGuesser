@@ -49,8 +49,12 @@ window.G1000_FMS = (function () {
       // OBS mode: null, or { crs } (magnetic), the selected course
       // through the active waypoint.
       obs: null,
+      // The flight plan's options (its Page Menu): a new waypoint goes in
+      // after the selected one instead of before; the three data columns.
+      insertAfter: false, fields: freshFields(),
     });
     const F = () => state.fms;
+    const freshFields = () => ({ f1: 'DTK', f2: 'DIS', f3: 'CUM' });
 
     // The point `dist` NM from p along true bearing brg (great circle).
     function project(p, brg, dist) {
@@ -269,8 +273,11 @@ window.G1000_FMS = (function () {
       if (win.entry) {
         const m = match(win.entry.ident);
         if (!m) { note('No waypoint matches ' + win.entry.ident); return true; }
-        insert(win.cursor, m.id);
-        win.cursor++;
+        // Before the selected row, or after it (Insert After); the cursor
+        // then sits after the new waypoint, or on it.
+        const n = F().fpl.wpts.length;
+        if (F().insertAfter && win.cursor < n) { insert(win.cursor + 1, m.id); win.cursor++; }
+        else { insert(win.cursor, m.id); win.cursor++; }
         win.entry = null;
         return true;
       }
@@ -297,9 +304,10 @@ window.G1000_FMS = (function () {
     // ---- The FMS knob ----
     function turn(part, steps, display) {
       const win = F().win[display];
+      // (The MFD's pages take the knob before this; on the PFD it needs a
+      // window.)
       if (!win) {
-        note(display === 'mfd' ? 'MFD page groups: not in the mock yet (try FPL or D→)'
-          : 'FMS knob: open FPL or D→ first');
+        note('FMS knob: open FPL, D→ or a softkey window first');
         return;
       }
       if (win.type === 'dto') {
@@ -334,11 +342,13 @@ window.G1000_FMS = (function () {
 
     // The plan as rows for the display: id, desired track (magnetic, by
     // the variation at the leg's start) and distance of the leg to it,
-    // cumulative distance, and whether it is flown to now.
+    // cumulative distance, whether it is flown to now, and toGo: the
+    // distance from the airplane along the route (the active waypoint and
+    // those after it; null before), for ETE, ETA and fuel.
     function rows() {
       const f = F().fpl;
       let cum = 0;
-      return f.wpts.map((id, i) => {
+      const out = f.wpts.map((id, i) => {
         const w = byId[id];
         let dtk = null, dis = null;
         if (i > 0) {
@@ -348,12 +358,18 @@ window.G1000_FMS = (function () {
         }
         cum += dis ?? 0;
         const active = f.dto ? f.dto.index === i : f.active === i;
-        return { id, name: w.name, dtk, dis, cum, active };
+        return { id, name: w.name, dtk, dis, cum, active, toGo: null };
       });
+      const at = out.findIndex((r) => r.active);
+      if (at >= 0) {
+        out[at].toGo = bearingDist(state, byId[out[at].id]).dist;
+        for (let i = at + 1; i < out.length; i++) out[i].toGo = out[i - 1].toGo + out[i].dis;
+      }
+      return out;
     }
 
     return { fresh, press, turn, push, step, navSolution, leg, rows, match, byId, SCALE, directTo, insert, remove,
-      toggleObs, project, activateLeg, cancelDirect, invertPlan, deletePlan, storePlan, activatePlan, deleteAllStored, editChar, moveCursor };
+      toggleObs, project, freshFields, activateLeg, cancelDirect, invertPlan, deletePlan, storePlan, activatePlan, deleteAllStored, editChar, moveCursor };
   }
 
   return { create, CHARS };

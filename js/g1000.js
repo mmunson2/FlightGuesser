@@ -55,6 +55,8 @@ window.G1000 = (function () {
   // The altimeter setting at the airplane: indicated altitude is right
   // only when the Kollsman (BARO) setting matches it.
   const ACTUAL_BARO = 30.12;
+  // Hectopascals in an inch of mercury.
+  const HPA = 33.8639;
 
   // C172S airspeed indicator markings (POH section 2), KIAS.
   const SPEEDS = { white: [40, 85], green: [48, 129], yellow: [129, 163], vne: 163 };
@@ -65,6 +67,7 @@ window.G1000 = (function () {
     'map-hsi': ['', 'Layout', '', '', '', '', '', '', '', '', 'Back', 'Alerts'],
     'map-layout': ['', 'Map Off', 'Inset Map', 'HSI Map', '', '', '', '', '', '', 'Back', 'Alerts'],
     'pfd-opt': ['SVT', '', 'Wind', 'DME', 'Bearing 1', '', 'Bearing 2', '', 'ALT Units', 'STD Baro', 'Back', 'Alerts'],
+    'alt-units': ['', '', '', '', '', 'Meters', '', 'IN', 'HPA', '', 'Back', 'Alerts'],
     xpdr: ['', '', 'Standby', 'On', 'Alt', '', 'VFR', 'Code', 'Ident', '', 'Back', 'Alerts'],
     'xpdr-code': ['0', '1', '2', '3', '4', '5', '6', '7', 'Ident', 'BKSP', 'Back', 'Alerts'],
     mfd: ['Engine', '', 'Map Opt', '', '', '', '', '', '', 'Detail', 'Charts', 'Checklist'],
@@ -72,7 +75,7 @@ window.G1000 = (function () {
   };
   // The softkeys that do something in the mock; the rest draw grey.
   const LIVE = {
-    pfd: [1, 3, 4, 5, 7, 8, 9, 10], 'pfd-opt': [9, 10], 'map-hsi': [1, 10], 'map-layout': [1, 2, 3, 10], xpdr: [2, 3, 4, 6, 7, 8, 10],
+    pfd: [1, 3, 4, 5, 7, 8, 9, 10], 'pfd-opt': [8, 9, 10], 'alt-units': [5, 7, 8, 10], 'map-hsi': [1, 10], 'map-layout': [1, 2, 3, 10], xpdr: [2, 3, 4, 6, 7, 8, 10],
     'xpdr-code': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mfd: [0], engine: [0, 1, 2, 10],
   };
 
@@ -148,10 +151,14 @@ window.G1000 = (function () {
       com: [{ act: 132.950, stby: 120.200 }, { act: 128.650, stby: 121.900 }], comTune: 0,
       nav: [{ act: 110.60, stby: 116.80 }, { act: 116.80, stby: 110.60 }], navTune: 0,
       // A volume change shows in place of the standby frequency briefly.
-      vol: { com: [80, 80], nav: [60, 60], show: null },
+      // sqOff: COM squelch turned off; navId: NAV Morse identifier on.
+      vol: { com: [80, 80], nav: [60, 60], show: null, sqOff: [false, false], navId: [false, false] },
+      // PFD Opt, ALT Units: the metric overlay, and the baro unit (IN, HPA).
+      altUnits: { meters: false, baro: 'IN' },
       hdgBug: 340, crs: [340, 340], altSel: 5500,
       cdi: 'GPS',
-      xpdr: { code: '1200', mode: 'ALT', identUntil: 0, entry: null },
+      // flightId: sent with the transponder's replies (AUX - System Setup).
+      xpdr: { code: '1200', mode: 'ALT', identUntil: 0, entry: null, flightId: 'N172SP' },
       afcs: { ap: false, fd: false, lat: null, latArmed: null, vert: null, vertArmed: null,
               ref: { pitch: 0, roll: 0, vs: 0, ias: 0, alt: 0 }, changed: {}, apOffAt: -99 },
       // Selected altitude alerter: 'approach' (within 1,000 ft), 'reached'
@@ -161,7 +168,7 @@ window.G1000 = (function () {
       mfd: pages.fresh(), eisPage: 'Engine', range: 6,
       // The PFD's map (Map/HSI, Layout): 'Map Off', 'Inset Map' or 'HSI Map',
       // and its range (an index into RANGES).
-      pfdMap: { layout: 'Map Off', range: 4 },
+      pfdMap: { layout: 'Map Off', range: 4 }, pfdMapSet: menus.freshPfdMap(),
       // Usable fuel on board, gallons (both tanks).
       fuel: 48, fuelL: 24, fuelR: 24, sys: systems.fresh(),
       // A line of text for the last thing the mock can't do yet.
@@ -329,7 +336,7 @@ window.G1000 = (function () {
       case 'nav': return navKey('NAV');
       case 'apr': return navKey('APR');
       case 'bc': return note('BC needs a localizer: not in the mock');
-      case 'vnv': return note('VNV needs a flight plan: not in the mock');
+      case 'vnv': return note('VNV: vertical navigation is not in the mock yet');
       case 'alt': return modeKey('vert', 'ALT');
       case 'vs': return modeKey('vert', 'VS');
       case 'flc': return modeKey('vert', 'FLC');
@@ -399,13 +406,17 @@ window.G1000 = (function () {
         if (menu !== 'pfd') stack.splice(1);
         return;
       case 'pfd-opt:STD Baro': state.baro = 29.92; return;
+      case 'pfd-opt:ALT Units': stack.push('alt-units'); return;
+      // A metric readout beside the altitude; the baro in inches or hPa.
+      case 'alt-units:Meters': state.altUnits.meters = !state.altUnits.meters; return;
+      case 'alt-units:IN': case 'alt-units:HPA': state.altUnits.baro = label; return;
       case 'xpdr:Standby': x.mode = 'STBY'; return;
       case 'xpdr:On': x.mode = 'ON'; return;
       case 'xpdr:Alt': x.mode = 'ALT'; return;
       case 'xpdr:VFR': x.code = '1200'; return;
       case 'xpdr:Code': x.entry = ''; stack.push('xpdr-code'); return;
       case 'xpdr-code:BKSP': x.entry = x.entry.slice(0, -1); return;
-      case 'pfd-opt:Back': case 'xpdr:Back': case 'engine:Back': case 'map-hsi:Back': case 'map-layout:Back':
+      case 'pfd-opt:Back': case 'xpdr:Back': case 'engine:Back': case 'map-hsi:Back': case 'map-layout:Back': case 'alt-units:Back':
         stack.pop(); return;
       case 'xpdr-code:Back': x.entry = null; stack.pop(); return;
       case 'mfd:Engine': stack.push('engine'); return;
@@ -445,7 +456,10 @@ window.G1000 = (function () {
         state.altSel = clamp(state.altSel + steps * (part === 'outer' ? 1000 : 100), -1000, 20000);
         return;
       case 'crs_baro':
-        if (part === 'outer') {
+        if (part === 'outer' && state.altUnits.baro === 'HPA') {
+          // In hPa: whole hectopascals.
+          state.baro = clamp((Math.round(state.baro * HPA) + steps) / HPA, 27.0, 31.0);
+        } else if (part === 'outer') {
           state.baro = clamp(+(state.baro + steps * 0.01).toFixed(2), 27.0, 31.0);
         } else if (state.cdi !== 'GPS') {
           const i = state.cdi === 'VOR1' ? 0 : 1;
@@ -456,6 +470,8 @@ window.G1000 = (function () {
         }
         return;
       // Each display's RANGE knob zooms its own map.
+      // The standby altimeter's knob: its own Kollsman setting.
+      case 'stby_baro': state.stbyBaro = clamp(+(state.stbyBaro + steps * 0.01).toFixed(2), 28.0, 31.0); return;
       case 'range': {
         const m = display === 'pfd' ? state.pfdMap : state;
         m.range = clamp(m.range - steps, 0, RANGES.length - 1);
@@ -498,8 +514,11 @@ window.G1000 = (function () {
         else if (nav) state.crs[state.cdi === 'VOR1' ? 0 : 1] = Math.round(nav.bearingTo);
         return;
       }
-      case 'com_volume': return note('COM squelch: not in the mock');
-      case 'nav_volume': return note('NAV ID: not in the mock');
+      // Volume knob pushes: COM automatic squelch off (on again), and the
+      // NAV radio's Morse identifier on (off again), for the radio tuned.
+      case 'com_volume': state.vol.sqOff[state.comTune] = !state.vol.sqOff[state.comTune]; return;
+      case 'nav_volume': state.vol.navId[state.navTune] = !state.vol.navId[state.navTune]; return;
+      case 'stby_baro': return;
       case 'range': return note('Map pan: not in the mock yet');
       case 'fms': {
         if (menus.push(display)) return;
@@ -647,7 +666,7 @@ window.G1000 = (function () {
   return {
     state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, AIRSPACE, COMMS, WA_SOURCE: WA_NAV.source, magVarAt, toMag, toTrue,
     // The airplane's magnetic heading, as the HSI shows it.
-    magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, systems, airportSize, fuelFlow,
+    magHeading: () => toMag(state.hdg), HPA, SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, systems, airportSize, fuelFlow,
     FAILURES: G1000_SYSTEMS.FAILURES, fail: (id, on) => systems.fail(id, on), DB_EXPIRES,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, standbyAlt, tas, navModeName,
     tick(dt) {

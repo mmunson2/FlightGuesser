@@ -13,7 +13,12 @@ window.G1000_PANEL = (function () {
     nav_frequency_knob: 'nav', com_frequency_knob: 'com', hdg_knob: 'hdg', alt_knob: 'alt',
     crs_baro_knob: 'crs_baro', fms_knob: 'fms', range_knob: 'range',
     nav_volume_knob: 'nav_volume', com_volume_knob: 'com_volume',
+    // The standby altimeter's Kollsman knob (only its knob: see STBY_KNOB).
+    standby_altimeter: 'stby_baro',
   };
+  // The standby altimeter is one part, gauge and knob; the knob is the only
+  // piece that stands proud of the bezel (in front of this depth).
+  const STBY = 'standby_altimeter', STBY_KNOB_Z = 0.36;
   const KEYS = {
     nav_transfer_key: 'nav_transfer', com_transfer_key: 'com_transfer', direct_to_key: 'direct_to',
     fpl_key: 'fpl', clr_key: 'clr', ent_key: 'ent', menu_key: 'menu', proc_key: 'proc',
@@ -98,7 +103,8 @@ window.G1000_PANEL = (function () {
       const pos = meshById[pid].geometry.attributes.position, box = new THREE.Box3(), v = new THREE.Vector3();
       for (let i = 0; i < pos.count; i++) {
         v.fromBufferAttribute(pos, i);
-        if (displayAt(v.x) === display) box.expandByPoint(v);
+        // The standby altimeter: its knob only, whichever side.
+        if (pid === STBY ? v.z < STBY_KNOB_Z : displayAt(v.x) === display) box.expandByPoint(v);
       }
       centres[key] = { x: (box.min.x + box.max.x) / 2, y: (box.min.y + box.max.y) / 2,
                        z: (box.min.z + box.max.z) / 2, front: box.min.z, min: box.min.x, max: box.max.x };
@@ -126,6 +132,8 @@ window.G1000_PANEL = (function () {
       const mine = (t) => {
         let x = 0;
         for (let j = 0; j < 3; j++) x += pos.getX(idx.getX(t + j)) / 3;
+        // The standby altimeter's knob: its triangles in front of the bezel.
+        if (c.pid === STBY) return [0, 1, 2].every((j) => pos.getZ(idx.getX(t + j)) < STBY_KNOB_Z);
         if (displayAt(x) !== c.display) return false;
         if (half) {
           // The inner knob: triangles all within its 4.7 mm radius.
@@ -183,6 +191,11 @@ window.G1000_PANEL = (function () {
                           y: -((e.clientY - r.top) / r.height) * 2 + 1 }, camera);
       const hit = ray.intersectObjects(meshes.filter((m) => m.visible && !m.userData.part.glass), false)[0];
       const pid = hit?.object.userData.part.id;
+      // The standby altimeter operates only by its knob (within 8 mm of it).
+      if (pid === STBY) {
+        const k = centreOf(STBY, 'mfd');
+        if (Math.hypot(hit.point.x - k.x, hit.point.y - k.y) > 0.008) return zoneAt(hit);
+      }
       if (hit && ((pid in KEYS) || pid === 'softkeys' || ((pid in KNOBS) && !CONCENTRIC.has(KNOBS[pid])))) {
         return { pid, mesh: hit.object, display: displayAt(hit.point.x), point: hit.point, inner: false };
       }
@@ -213,6 +226,7 @@ window.G1000_PANEL = (function () {
       const half = knob && CONCENTRIC.has(knob) ? (c.inner ? ' (inner)' : ' (outer)') : '';
       // The autopilot keys are only on the PFD; the rest are on both.
       const where = c.mesh.userData.part.system === 'autopilot' ? '' : ' · ' + c.display.toUpperCase();
+      if (c.pid === STBY) return 'Standby altimeter knob (baro)';
       if (c.pid === 'softkeys') {
         const i = softkeyAt(c.point, c.display);
         const label = G.MENUS[G.menu(c.display)][i] || 'blank';

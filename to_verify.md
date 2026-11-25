@@ -267,8 +267,48 @@ the GFC 700 AFMS:
   - The attitude indicator is vacuum-driven: below 3.5 inHg the red GYRO
     flag shows, as the POH says, and the ball drifts up to 25° of bank
     and 8° of pitch off. The drift is made up.
-  - The altimeter has its own Kollsman setting, 30.12 from the start,
-    with no knob in the mock yet. STD BARO on the PFD doesn't change it.
+  - The altimeter has its own Kollsman setting, 30.12 from the start.
+    STD BARO on the PFD doesn't change it.
+  - Its knob works in Operate mode (scroll or drag, 0.01 inHg a click).
+    Only the knob responds, not the dial.
+- **PFD Opt → ALT Units** (Meters, IN, HPA):
+  - Meters adds metric boxes under the altitude readout and beside the
+    selected altitude. The real overlay may sit elsewhere.
+  - HPA shows the baro in hectopascals, and the BARO knob then steps
+    1 hPa.
+- **Transponder**:
+  - A green R beside the mode while replying. The mock simulates a radar
+    sweep every 4.8 s.
+  - The Flight ID (N172SP to start) is set on AUX - System Setup: ENT on
+    it, then the FMS knob as for an identifier. Up to 6 characters in
+    the mock. The real unit sets it in configuration or on the XPDR
+    menu, depending on the installation. Check yours.
+- **Volume knob pushes**:
+  - COM pushes turn the automatic squelch off, showing "SQ" by the COM
+    label.
+  - NAV pushes turn the Morse identifier on, showing "ID" by the station.
+  - Both act on the radio being tuned. With no audio, the annunciation
+    is all they do. Check where the real unit shows these.
+- **More setup windows** (generalised from Map Setup):
+  - Map Setup gains Track Vector (Off, 30 s – 20 min: a dashed line to
+    where the airplane will be), APT Text and VOR Text (the range up to
+    which identifiers show).
+  - PFD Map Settings: the PFD's Page Menu with the inset or HSI map on.
+    The PFD maps have their own copy, with text decluttering sooner (APT
+    7.5 NM, VOR 25 NM). The inset can be north up; the HSI map is always
+    heading up.
+- **Flight plan Page Menu**:
+  - Insert After / Insert Before: where the small knob's new waypoint
+    goes relative to the selected one. Before by default. Check the
+    real default. "INSERT AFTER" shows in the window when on.
+  - Change Fields: the three data columns, from DTK, DIS, CUM, ETE,
+    ETA and FUEL.
+    - ETE is the leg's time at the present ground speed.
+    - ETA and FUEL (left on arrival) run from the airplane along the
+      route, for the active waypoint onward.
+  - Restore Defaults: DTK/DIS/CUM and Insert Before.
+- **Utility** also shows the generic timer and minimums from Tmr/Ref
+  (read-only).
 - **Messages** (Alerts window), besides the airspace ones above:
   - WPT ARRIVAL "Arriving at waypoint": 10 seconds or less to the active
     waypoint, not in OBS.

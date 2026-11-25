@@ -11,10 +11,12 @@
 // plan?"): ENT does it, CLR backs out. A page with nothing to offer shows
 // "No options with this page".
 //
-// Map Settings (from the Navigation Map's menu) opens Map Setup: the large
-// knob moves between the GROUP line and the settings, the small knob
-// changes the one under the cursor. Its settings are in state.mapSet and
-// js/g1000-display.js draws all three maps (MFD, PFD inset, HSI) by them.
+// Some options open a setup window: Map Settings (the Navigation Map's,
+// state.mapSet), PFD Map Settings (the PFD's Page Menu with its map on,
+// state.pfdMapSet: the inset and HSI maps) and the flight plan's Change
+// Fields (state.fms.fields). The large knob moves between the GROUP line
+// and the settings, the small knob changes the one under the cursor;
+// ENT, CLR, MENU or a push of the FMS knob puts it away.
 window.G1000_MENU = (function () {
   // Map Setup's groups. A setting's values: what the small knob steps
   // through. Ranges are the map range up to which a symbol shows.
@@ -24,6 +26,9 @@ window.G1000_MENU = (function () {
       { name: 'Map', rows: [
         { key: 'orient', label: 'Orientation', values: ['Heading Up', 'Track Up', 'North Up'] },
         { key: 'ring', label: 'Nav Range Ring', values: ['On', 'Off'] },
+        // Where the airplane will be in this long, at the present track and
+        // ground speed.
+        { key: 'track', label: 'Track Vector', values: TRACK_VECTOR },
       ] },
       { name: 'Aviation', rows: [
         { key: 'fpl', label: 'Active FPL', values: range },
@@ -31,6 +36,9 @@ window.G1000_MENU = (function () {
         { key: 'aptM', label: 'Medium APT', values: range },
         { key: 'aptS', label: 'Small APT', values: range },
         { key: 'vor', label: 'VOR', values: range },
+        // Identifiers: up to this map range.
+        { key: 'aptText', label: 'APT Text', values: range },
+        { key: 'vorText', label: 'VOR Text', values: range },
       ] },
       { name: 'Airspace', rows: [
         { key: 'clsB', label: 'Class B/TMA', values: range },
@@ -39,15 +47,30 @@ window.G1000_MENU = (function () {
       ] },
     ];
   }
+  const TRACK_VECTOR = ['Off', '30 SEC', '60 SEC', '2 MIN', '5 MIN', '10 MIN', '20 MIN'];
   const MAP_DEFAULTS = {
-    orient: 'Heading Up', ring: 'On', fpl: 100, aptL: 100, aptM: 100, aptS: 50, vor: 100, clsB: 100, clsC: 100, clsD: 25,
+    orient: 'Heading Up', ring: 'On', track: 'Off', fpl: 100, aptL: 100, aptM: 100, aptS: 50, vor: 100,
+    aptText: 15, vorText: 100, clsB: 100, clsC: 100, clsD: 25,
   };
+  // The PFD's small maps declutter sooner.
+  const PFD_MAP_DEFAULTS = { ...MAP_DEFAULTS, aptText: 7.5, vorText: 25 };
+  // The flight plan's three data columns (Change Fields), and the choices.
+  const FPL_FIELDS = ['DTK', 'DIS', 'CUM', 'ETE', 'ETA', 'FUEL'];
 
   function create({ state, fms, pages, timer, note, ranges }) {
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     const GROUPS = mapGroups(ranges);
+    // The setup windows: title, groups, and where their settings live.
+    const SETUPS = {
+      map: { title: 'MAP SETUP', groups: GROUPS, target: () => state.mapSet },
+      pfdMap: { title: 'PFD MAP SETUP', groups: GROUPS, target: () => state.pfdMapSet },
+      fields: { title: 'CHANGE FIELDS', target: () => state.fms.fields, groups: [{ name: 'Flight Plan', rows: [
+        { key: 'f1', label: 'Field 1', values: FPL_FIELDS }, { key: 'f2', label: 'Field 2', values: FPL_FIELDS },
+        { key: 'f3', label: 'Field 3', values: FPL_FIELDS }] }] },
+    };
     const fresh = () => ({ pfd: null, mfd: null });
     const freshMap = () => ({ ...MAP_DEFAULTS });
+    const freshPfdMap = () => ({ ...PFD_MAP_DEFAULTS });
     const M = () => state.pageMenu;
 
     // An option: label, and either run (ENT does it) or why (grey; ENT
@@ -56,8 +79,8 @@ window.G1000_MENU = (function () {
     const grey = (label, why = 'not in the mock yet') => ({ label, why });
 
     // ---- The options of what is on show ----
-    function fplOptions(win) {
-      const f = state.fms.fpl, n = f.wpts.length, c = win.cursor;
+    function fplOptions(win, display) {
+      const f = state.fms.fpl, n = f.wpts.length, c = win.cursor, after = state.fms.insertAfter;
       const at = c != null && c < n ? f.wpts[c] : null;
       const none = 'the flight plan is empty';
       return [
@@ -67,6 +90,11 @@ window.G1000_MENU = (function () {
         n >= 2 ? opt('Invert Flight Plan', () => fms.invertPlan(), 'Invert active flight plan?')
           : grey('Invert Flight Plan', 'needs two waypoints'),
         n ? opt('Delete Flight Plan', () => fms.deletePlan(), 'Delete all waypoints in flight plan?') : grey('Delete Flight Plan', none),
+        // Where the small knob's new waypoint goes: before or after the
+        // selected one. The option offers the other way.
+        opt(after ? 'Insert Before' : 'Insert After', () => { state.fms.insertAfter = !after; }),
+        opt('Change Fields', () => openSetup(display, 'fields')),
+        opt('Restore Defaults', () => { state.fms.fields = fms.freshFields(); state.fms.insertAfter = false; }, 'Restore flight plan defaults?'),
         n ? opt('Store Flight Plan', () => {
           const i = fms.storePlan();
           if (i != null) note(`Stored as flight plan ${String(i + 1).padStart(2, '0')}`);
@@ -111,12 +139,15 @@ window.G1000_MENU = (function () {
         return [state.fms.fpl.dto ? opt('Cancel Direct-To NAV', () => fms.cancelDirect())
           : grey('Cancel Direct-To NAV', 'no Direct-To in force')];
       }
-      if (win?.type === 'fpl') return fplOptions(win);
+      if (win?.type === 'fpl') return fplOptions(win, display);
       if (win?.type === 'tmr') return timer.menuOptions(opt);
-      if (display === 'pfd') return [];
+      // The PFD with nothing open: its map's settings, when it shows one.
+      if (display === 'pfd') {
+        return state.pfdMap.layout === 'Map Off' ? [] : [opt('PFD Map Settings', () => openSetup('pfd', 'pfdMap'))];
+      }
       switch (pages.pageKey()) {
         case 'MAP:0': return [
-          opt('Map Settings', () => openMapSetup()),
+          opt('Map Settings', () => openSetup('mfd', 'map')),
           grey('Measure Bearing/Distance'),
           grey('Show Chart', 'charts are not in the mock'),
         ];
@@ -133,9 +164,9 @@ window.G1000_MENU = (function () {
       const first = Math.max(0, items.findIndex((it) => it.run));
       M()[display] = { type: 'menu', items, cursor: first, confirm: null };
     }
-    function openMapSetup() {
+    function openSetup(display, setup) {
       // The cursor starts on GROUP (row -1).
-      M().mfd = { type: 'map', group: 0, cursor: -1 };
+      M()[display] = { type: 'map', setup, group: 0, cursor: -1 };
     }
     const close = (display) => { M()[display] = null; };
     const isOpen = (display) => M()[display] != null;
@@ -178,14 +209,14 @@ window.G1000_MENU = (function () {
       const m = M()[display];
       if (!m) return false;
       if (m.type === 'map') {
-        const rows = GROUPS[m.group].rows;
+        const S = SETUPS[m.setup], groups = S.groups, rows = groups[m.group].rows, set = S.target();
         if (part === 'outer') m.cursor = clamp(m.cursor + steps, -1, rows.length - 1);
         else if (m.cursor === -1) {
-          m.group = (((m.group + steps) % GROUPS.length) + GROUPS.length) % GROUPS.length;
+          m.group = (((m.group + steps) % groups.length) + groups.length) % groups.length;
         } else {
           const row = rows[m.cursor], v = row.values;
-          const i = v.indexOf(state.mapSet[row.key]);
-          state.mapSet[row.key] = v[clamp(i + steps, 0, v.length - 1)];
+          const i = v.indexOf(set[row.key]);
+          set[row.key] = v[clamp(i + steps, 0, v.length - 1)];
         }
         return true;
       }
@@ -199,11 +230,14 @@ window.G1000_MENU = (function () {
       return true;
     }
 
-    // Map Setup's rows for the display: the group, then label and value.
-    const mapRows = (m) => GROUPS[m.group].rows.map((r) => ({ label: r.label, value: state.mapSet[r.key] }));
+    // A setup window for the display: its title, group and rows.
+    function setupView(m) {
+      const S = SETUPS[m.setup], g = S.groups[m.group], set = S.target();
+      return { title: S.title, group: g.name, rows: g.rows.map((r) => ({ label: r.label, value: set[r.key] })) };
+    }
 
-    return { fresh, freshMap, open, close, isOpen, press, turn, push, optionsFor, GROUPS, mapRows };
+    return { fresh, freshMap, freshPfdMap, open, close, isOpen, press, turn, push, optionsFor, GROUPS, setupView };
   }
 
-  return { create, MAP_DEFAULTS };
+  return { create, MAP_DEFAULTS, FPL_FIELDS };
 })();

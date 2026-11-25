@@ -52,6 +52,8 @@ window.G1000_DISPLAY = (function () {
       const src = s.cdi === 'VOR' + (i + 1);
       text(ctx, n.act.toFixed(2), 210, y, { size: 24, color: src ? C.green : C.white });
       text(ctx, navLabel(i), 300, y, { size: 18, color: C.grey });
+      // NAV ID (volume knob push): the Morse identifier is on.
+      if (s.vol.navId[i]) text(ctx, 'ID', 350, y, { size: 16 });
     }
     // COM, top right: active (inside) then standby (outside, by the knob).
     for (let i = 0; i < 2; i++) {
@@ -63,6 +65,8 @@ window.G1000_DISPLAY = (function () {
       if (tuning) box(ctx, 802, y - 14, 112, 28, { fill: 'transparent', stroke: C.cyan });
       text(ctx, vol ? `${s.vol.com[i]}%` : c.stby.toFixed(3), 808, y, { size: 24, color: tuning ? C.cyan : C.white });
       text(ctx, 'COM' + (i + 1), 1016, y, { size: 22, align: 'right' });
+      // Squelch off (volume knob push).
+      if (s.vol.sqOff[i]) text(ctx, 'SQ', 930, y, { size: 14, align: 'center', color: C.white });
     }
   }
 
@@ -109,13 +113,36 @@ window.G1000_DISPLAY = (function () {
     text(ctx, 'ACTIVATE?', x + w / 2, y + 185, { size: 20, align: 'center', color: on ? C.black : C.cyan });
   }
 
+  // One flight plan data field for a row (js/g1000-fms.js rows()): DTK,
+  // DIS and ETE are the leg's; CUM the plan's so far; ETA and FUEL (left
+  // on arrival) from the airplane along the route, at the present ground
+  // speed and fuel flow, for the active waypoint and those after it.
+  const hhmm = (h) => `${Math.floor(h)}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+  function fplField(fd, r, s, G) {
+    const gs = Math.max(G.tas(), 30);
+    switch (fd) {
+      case 'DTK': return r.dtk == null ? '' : pad3(r.dtk) + '°';
+      case 'DIS': return r.dis == null ? '' : r.dis.toFixed(1);
+      case 'CUM': return r.dis == null ? '' : r.cum.toFixed(0);
+      case 'ETE': return r.dis == null ? '' : hhmm(r.dis / gs);
+      case 'ETA': {
+        if (r.toGo == null) return '__:__';
+        const d = new Date(s.t * 1000 + (r.toGo / gs) * 3600000 + Date.UTC(2026, 0, 1, 17, 0, 0));
+        return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+      }
+      case 'FUEL': return r.toGo == null ? '___' : (s.fuel - G.fuelFlow() * (r.toGo / gs)).toFixed(1);
+    }
+    return '';
+  }
+
   function fplWindow(ctx, s, G, win, x, y, w, h) {
     box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
     text(ctx, 'ACTIVE FLIGHT PLAN', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
     const cols = [x + 40, x + w * 0.45, x + w * 0.7, x + w - 12];
-    text(ctx, 'DTK', cols[1], y + 48, { size: 15, align: 'right', color: C.grey });
-    text(ctx, 'DIS', cols[2], y + 48, { size: 15, align: 'right', color: C.grey });
-    text(ctx, 'CUM', cols[3], y + 48, { size: 15, align: 'right', color: C.grey });
+    // The three data columns (Change Fields).
+    const fields = [s.fms.fields.f1, s.fms.fields.f2, s.fms.fields.f3];
+    fields.forEach((fd, k) => text(ctx, fd, cols[k + 1], y + 48, { size: 15, align: 'right', color: C.grey }));
+    if (s.fms.insertAfter) text(ctx, 'INSERT AFTER', x + 10, y + 48, { size: 12, color: C.grey });
     const rows = G.fms.rows();
     const rowH = 30, top = y + 76;
     const maxRows = Math.floor((h - 90 - (win.prompt ? 40 : 0)) / rowH);
@@ -135,12 +162,8 @@ window.G1000_DISPLAY = (function () {
       const color = sel ? C.black : r.active ? C.magenta : C.white;
       if (r.active) text(ctx, s.fms.fpl.dto ? 'D→' : '➔', x + 6, ry, { size: 15, color: C.magenta });
       text(ctx, r.id, cols[0], ry, { size: 22, color });
-      if (r.dtk != null) {
-        const c = r.active ? C.magenta : C.white;
-        text(ctx, pad3(r.dtk) + '°', cols[1], ry, { size: 20, align: 'right', color: c });
-        text(ctx, r.dis.toFixed(1), cols[2], ry, { size: 20, align: 'right', color: c });
-        text(ctx, r.cum.toFixed(0), cols[3], ry, { size: 20, align: 'right', color: c });
-      }
+      const c = r.active ? C.magenta : C.white;
+      fields.forEach((fd, k) => text(ctx, fplField(fd, r, s, G), cols[k + 1], ry, { size: 20, align: 'right', color: c }));
     }
     if (win.prompt) {
       box(ctx, x + 10, y + h - 46, w - 20, 36, { fill: C.cyan, stroke: null });
@@ -174,7 +197,8 @@ window.G1000_DISPLAY = (function () {
     const rowH = 27, head = 78, foot = m.confirm ? 96 : 44;
     // (The PFD's stops below the baro box.)
     const pfd = display === 'pfd', maxH = pfd ? 280 : 560;
-    const h = m.type === 'map' ? 420 : Math.min(maxH, head - rowH / 2 + Math.max(2, m.items.length) * rowH + foot);
+    // A setup window: room for its longest group (PFD: from the baro box down).
+    const h = m.type === 'map' ? (pfd ? 286 : 420) : Math.min(maxH, head - rowH / 2 + Math.max(2, m.items.length) * rowH + foot);
     const [x, y, w] = pfd ? [640, 776 - h, 378] : [590, 106, 428];
     box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.97)', stroke: C.white });
     if (m.type === 'map') return mapSetup(ctx, s, G, m, x, y, w, h);
@@ -205,9 +229,11 @@ window.G1000_DISPLAY = (function () {
         { size: 14, align: 'center', color: C.grey });
     }
   }
-  // Map Setup: the GROUP line, then the group's settings.
+  // A setup window (Map Setup, PFD Map Setup, Change Fields): the GROUP
+  // line, then the group's settings.
   function mapSetup(ctx, s, G, m, x, y, w, h) {
-    text(ctx, 'MAP SETUP', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    const view = G.menus.setupView(m), rowH = h < 400 ? 24 : 32;
+    text(ctx, view.title, x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
     const fmt = (v) => (typeof v === 'number' ? `${v}NM` : v);
     const line = (label, value, ry, sel) => {
       text(ctx, label, x + 18, ry, { size: 18, color: C.grey });
@@ -216,12 +242,11 @@ window.G1000_DISPLAY = (function () {
       if (sel) box(ctx, x + w - 20 - tw - 8, ry - 13, tw + 16, 26, { fill: C.cyan, stroke: null });
       text(ctx, value, x + w - 20, ry, { size: 19, align: 'right', color: sel ? C.black : C.cyan });
     };
-    line('GROUP', G.menus.GROUPS[m.group].name, y + 60, m.cursor === -1);
+    line('GROUP', view.group, y + 60, m.cursor === -1);
     ctx.strokeStyle = C.grey; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(x + 10, y + 80); ctx.lineTo(x + w - 10, y + 80); ctx.stroke();
-    G.menus.mapRows(m).forEach((r, i) => line(r.label, fmt(r.value), y + 104 + i * 32, m.cursor === i));
-    text(ctx, 'Large knob: setting · small knob: change it', x + w / 2, y + h - 40, { size: 14, align: 'center', color: C.grey });
-    text(ctx, 'Push FMS or CLR to return to the map', x + w / 2, y + h - 20, { size: 14, align: 'center', color: C.grey });
+    view.rows.forEach((r, i) => line(r.label, fmt(r.value), y + 100 + i * rowH, m.cursor === i));
+    text(ctx, 'Large knob: setting · small knob: change · CLR: done', x + w / 2, y + h - 16, { size: 14, align: 'center', color: C.grey });
   }
 
   // The PFD's Timer/References window (js/g1000-timer.js): the timer, the
@@ -402,8 +427,11 @@ window.G1000_DISPLAY = (function () {
       ['FLIGHT TIMER', hms(s.t - st.t0)], ['ODOMETER', st.odo.toFixed(1) + 'NM'],
       ['TRIP ODOMETER', st.trip.toFixed(1) + 'NM'], ['TRIP AVG GS', Math.round(st.trip / hours) + 'KT'],
       ['TRIP MAX GS', Math.round(st.maxGs) + 'KT'],
+      // The PFD's Tmr/Ref window sets these; shown here too.
+      ['GENERIC TIMER', `${hms(s.ref.timer.secs)} ${s.ref.timer.dir}${s.ref.timer.running ? '' : ' (stopped)'}`],
+      ['MINIMUMS', s.ref.mins.mode === 'OFF' ? 'OFF' : `BARO ${s.ref.mins.ft}FT`, C.cyan],
     ], PAGE.x + 30, PAGE.y + 70);
-    hint(ctx, 'MENU: reset the statistics. The generic timer and minimums are not in the mock.');
+    hint(ctx, 'MENU: reset the statistics. Set the timer and minimums with the PFD Tmr/Ref softkey.');
   }
 
   // AUX - System Setup: here only the airspace alert settings.
@@ -421,8 +449,20 @@ window.G1000_DISPLAY = (function () {
       if (sel) box(ctx, x + 330 - tw - 6, ry - 15, tw + 12, 30, { fill: C.cyan, stroke: null });
       text(ctx, v, x + 330, ry, { size: 21, align: 'right', color: sel ? C.black : C.cyan });
     });
+    // The Flight ID: sent with the transponder's replies (ADS-B).
+    const fy = PAGE.y + 110 + rows.length * 40 + 70;
+    text(ctx, 'TRANSPONDER', x, fy - 44, { size: 17, color: C.cyan });
+    text(ctx, 'FLIGHT ID', x, fy, { size: 18, color: C.grey });
+    if (cur === 'ident') identField(ctx, s.mfd.entry, x + 200, fy, G, true, G.pages.matchers['AUX:3']);
+    else {
+      ctx.font = font(21);
+      const tw = ctx.measureText(s.xpdr.flightId).width;
+      if (cur === rows.length) box(ctx, x + 330 - tw - 6, fy - 15, tw + 12, 30, { fill: C.cyan, stroke: null });
+      text(ctx, s.xpdr.flightId, x + 330, fy, { size: 21, align: 'right', color: cur === rows.length ? C.black : C.cyan });
+    }
     hint(ctx, cur == null ? 'Push FMS for the cursor. Other setup items are not in the mock.'
-      : 'Large knob: item · small knob: change · CLR or push FMS: done');
+      : cur === 'ident' ? 'Small knob: character · large knob: position · ENT: done'
+        : cur === rows.length ? 'ENT: edit the Flight ID' : 'Large knob: item · small knob: change · CLR or push FMS: done');
   }
 
   // The Flight Plan Catalog: stored plans on the left, the waypoints of
@@ -853,14 +893,27 @@ window.G1000_DISPLAY = (function () {
     ctx.lineTo(x + w - 2, cy + 24); ctx.lineTo(x + 4, cy + 24); ctx.closePath();
     ctx.fill(); ctx.stroke();
     text(ctx, String(Math.round(alt / 10) * 10), x + w - 8, cy + 1, { size: 30, align: 'right' });
+    // ALT Units, Meters: the metric altitude under the readout, and the
+    // selected altitude's beside its box.
+    const M = s.altUnits.meters, FT_M = 0.3048;
+    if (M) {
+      box(ctx, x + 4, cy + 26, w - 6, 24, { fill: C.black, stroke: C.grey });
+      text(ctx, `${Math.round(alt * FT_M)}M`, x + w - 8, cy + 38, { size: 18, align: 'right' });
+    }
     // Selected altitude box above, baro setting below.
     const al = s.alt;
     const flash = !blinkOn(s, al.flashUntil);
     const sel = al.phase === 'deviate' ? C.yellow : C.cyan;
     box(ctx, x, top - 36, w, 36, { fill: flash ? sel : C.black, stroke: C.grey });
     text(ctx, String(s.altSel), x + w / 2, top - 17, { size: 26, align: 'center', color: flash ? C.black : sel });
+    if (M) {
+      box(ctx, x - 84, top + 2, 82, 28, { fill: C.black, stroke: C.grey });
+      text(ctx, `${Math.round(s.altSel * FT_M)}M`, x - 6, top + 16, { size: 17, align: 'right', color: C.cyan });
+    }
     box(ctx, x, bot, w, 30, { fill: C.black, stroke: C.grey });
-    text(ctx, s.baro === 29.92 ? 'STD BARO' : `${s.baro.toFixed(2)}IN`, x + w / 2, bot + 15,
+    // In inches, or hectopascals (ALT Units, HPA).
+    const baroText = s.altUnits.baro === 'HPA' ? `${Math.round(s.baro * G.HPA)}HPA` : `${s.baro.toFixed(2)}IN`;
+    text(ctx, s.baro === 29.92 ? 'STD BARO' : baroText, x + w / 2, bot + 15,
       { size: 19, align: 'center', color: C.cyan });
   }
 
@@ -942,7 +995,7 @@ window.G1000_DISPLAY = (function () {
     // at its centre and the rose's edge at the map's range.
     const hsiMap = s.pfdMap.layout === 'HSI Map';
     if (hsiMap) {
-      drawMap(ctx, s, G, { ox: cx, oy: cy, ringR: R, circle: R + 4, fill: '#0a1a10', range: G.RANGES[s.pfdMap.range], small: true });
+      drawMap(ctx, s, G, { ox: cx, oy: cy, ringR: R, circle: R + 4, fill: '#0a1a10', range: G.RANGES[s.pfdMap.range], small: true, set: s.pfdMapSet });
     }
     ctx.save();
     ctx.translate(cx, cy);
@@ -1069,6 +1122,8 @@ window.G1000_DISPLAY = (function () {
     text(ctx, 'XPDR', W - 270, y + 19, { size: 20 });
     text(ctx, code, W - 200, y + 19, { size: 22, color: x.entry !== null ? C.cyan : modeColor });
     text(ctx, ident ? 'IDNT' : x.mode, W - 130, y + 19, { size: 22, color: modeColor });
+    // R: replying to an interrogation (a radar sweep every 4.8 s, made up).
+    if (x.mode !== 'STBY' && s.t % 4.8 < 0.6) text(ctx, 'R', W - 84, y + 19, { size: 18, color: C.green });
     const d = new Date(s.t * 1000 + Date.UTC(2026, 0, 1, 17, 0, 0));
     text(ctx, `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`, W - 10, y + 19, { size: 18, align: 'right', color: C.grey });
   }
@@ -1186,7 +1241,8 @@ window.G1000_DISPLAY = (function () {
   // Airspace: Class B blue, C magenta, D blue dashed, as on the charts.
   const AIRSPACE = { B: { color: '#3a8bff', dash: [] }, C: { color: C.magenta, dash: [] }, D: { color: '#3a8bff', dash: [10, 7] } };
   function drawMap(ctx, s, G, v) {
-    const { range } = v, set = s.mapSet, small = v.small;
+    // v.set: the map's settings (the MFD's Map Setup, or the PFD's).
+    const { range } = v, set = v.set, small = v.small;
     // A map setting that is a range: the symbol shows at that map range or
     // less ('Off': never).
     const shows = (val) => val !== 'Off' && range <= val;
@@ -1252,10 +1308,9 @@ window.G1000_DISPLAY = (function () {
       ctx.lineTo(sx + Math.sin(a) * 2000, sy - Math.cos(a) * 2000); ctx.stroke();
     }
     // Airports: towered cyan, non-towered magenta, each size shown up to
-    // its Map Setup range. With the whole state in the database,
-    // identifiers show only at 15 NM range or less (declutter; 7.5 NM on
-    // the small PFD maps), and smaller rings beyond 25 NM.
-    const labels = range <= (small ? 7.5 : 15), ring = (range > 25 ? 6 : 9) * (small ? 0.75 : 1);
+    // its Map Setup range, identifiers up to APT Text's; smaller rings
+    // beyond 25 NM.
+    const labels = shows(set.aptText), ring = (range > 25 ? 6 : 9) * (small ? 0.75 : 1);
     const sized = { L: shows(set.aptL), M: shows(set.aptM), S: shows(set.aptS) };
     const far = (px, py) => Math.hypot(px - ox, py - oy) > 1500;
     for (const ap of G.AIRPORTS) {
@@ -1277,7 +1332,16 @@ window.G1000_DISPLAY = (function () {
         ctx[k ? 'lineTo' : 'moveTo'](px + Math.cos(a) * r, py + Math.sin(a) * r);
       }
       ctx.closePath(); ctx.stroke();
-      text(ctx, small ? n.id : `${n.id} ${n.freq.toFixed(1)}`, px + r + 4, py + 14, { size: small ? 13 : 16, color: C.cyan });
+      if (shows(set.vorText)) text(ctx, small ? n.id : `${n.id} ${n.freq.toFixed(1)}`, px + r + 4, py + 14, { size: small ? 13 : 16, color: C.cyan });
+    }
+    // Track vector: a dashed line to where the airplane will be after the
+    // set time, at the present track (the heading: no wind) and speed.
+    if (set.track !== 'Off') {
+      const [n, unit] = set.track.split(' '), secs = +n * (unit === 'MIN' ? 60 : 1);
+      const len = (G.tas() * secs / 3600) * ppn, a = rad(s.hdg - up);
+      ctx.strokeStyle = C.white; ctx.lineWidth = small ? 2 : 3; ctx.setLineDash([10, 8]);
+      ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + Math.sin(a) * len, oy - Math.cos(a) * len); ctx.stroke();
+      ctx.setLineDash([]);
     }
     // Own ship, pointing along the heading (straight up unless north up).
     // The HSI map leaves it to the HSI's own airplane symbol.
@@ -1302,7 +1366,7 @@ window.G1000_DISPLAY = (function () {
     // Heading or track up (the same here: no wind): own ship two thirds
     // down, the range ring above it. North up: own ship in the middle.
     const ox = x0 + w / 2, oy = y0 + h * (northUp ? 0.5 : 0.66), ringR = h * (northUp ? 0.42 : 0.5);
-    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR, range, northUp });
+    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR, range, northUp, set: s.mapSet });
     if (s.mapSet.ring === 'On') text(ctx, `${range}NM`, ox + ringR * 0.72, oy - ringR * 0.72, { size: 18, color: C.grey });
     // The orientation, top left.
     text(ctx, { 'Heading Up': 'HDG UP', 'Track Up': 'TRK UP', 'North Up': 'NORTH UP' }[s.mapSet.orient], x0 + 10, y0 + 18, { size: 16, color: C.grey });
@@ -1315,10 +1379,12 @@ window.G1000_DISPLAY = (function () {
   function insetMap(ctx, s, G) {
     const { x0, y0, w, h } = INSET, range = G.RANGES[s.pfdMap.range];
     box(ctx, x0, y0, w, h, { fill: '#0a1a10', stroke: C.grey });
-    const ox = x0 + w / 2, oy = y0 + h * 0.72;
-    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR: h * 0.6, range, small: true });
+    // Its own Map Setup (the PFD's Page Menu): north up puts own ship in the middle.
+    const set = s.pfdMapSet, northUp = set.orient === 'North Up';
+    const ox = x0 + w / 2, oy = y0 + h * (northUp ? 0.5 : 0.72);
+    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR: h * (northUp ? 0.42 : 0.6), range, small: true, northUp, set });
     text(ctx, `${range}NM`, x0 + w - 8, y0 + 14, { size: 14, align: 'right', color: C.grey });
-    text(ctx, 'HDG UP', x0 + 8, y0 + 14, { size: 13, color: C.grey });
+    text(ctx, { 'Heading Up': 'HDG UP', 'Track Up': 'TRK UP', 'North Up': 'NORTH UP' }[set.orient], x0 + 8, y0 + 14, { size: 13, color: C.grey });
   }
 
   function navDataBar(ctx, s, G) {

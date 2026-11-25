@@ -146,7 +146,9 @@ window.G1000_PAGES = (function () {
     // The first identifier of the right kind starting with what was typed.
     const matchIn = (list) => (typed) => (typed
       ? list.slice().sort((a, b) => a.id.localeCompare(b.id)).find((w) => w.id.startsWith(typed)) ?? null : null);
-    const matchers = { 'WPT:0': matchIn(airports), 'WPT:3': matchIn(vors), 'AUX:0': matchIn(waypoints) };
+    const matchers = { 'WPT:0': matchIn(airports), 'WPT:3': matchIn(vors), 'AUX:0': matchIn(waypoints),
+      // A Flight ID is whatever was typed.
+      'AUX:3': (typed) => (typed ? { id: typed } : null) };
 
     // The FPL page is the flight plan window over the map (js/g1000-fms.js
     // owns it); other pages close it. A Direct-To window stays.
@@ -191,13 +193,16 @@ window.G1000_PAGES = (function () {
       return null;
     }
 
-    // ---- AUX - System Setup: the airspace alert settings ----
-    // Rows: the altitude buffer, then each class's alerts on or off. With
-    // the cursor out, the large knob picks the row, the small knob changes it.
-    const SETUP_ROWS = ['buffer', 'B', 'C', 'D'];
+    // ---- AUX - System Setup: the airspace alert settings, Flight ID ----
+    // Rows: the altitude buffer, each class's alerts on or off, and the
+    // Flight ID. With the cursor out, the large knob picks the row, the
+    // small knob changes it; ENT on the Flight ID edits it like an
+    // identifier (small knob: character, large knob: position, ENT).
+    const SETUP_ROWS = ['buffer', 'B', 'C', 'D', 'flightId'];
     function setupChange(row, steps) {
       const set = state.alertSet, k = SETUP_ROWS[row];
-      if (k === 'buffer') set.buffer = clamp(set.buffer + steps * 50, 0, 1000);
+      if (k === 'flightId') note('Press ENT to edit the Flight ID');
+      else if (k === 'buffer') set.buffer = clamp(set.buffer + steps * 50, 0, 1000);
       else set[k] = !set[k];
     }
 
@@ -253,10 +258,13 @@ window.G1000_PAGES = (function () {
         if (page === 'WPT:0') p.wpt.airport = m.id;
         if (page === 'WPT:3') p.wpt.vor = m.id;
         if (page === 'AUX:0') p.tripTo = m.id;
+        if (page === 'AUX:3') state.xpdr.flightId = m.id;
         p.cursor = p.entry = null;
         return true;
       }
-      if (page === 'FPL:1') {
+      if (page === 'AUX:3') {
+        if (SETUP_ROWS[p.cursor] === 'flightId') { p.cursor = 'ident'; p.entry = { ident: state.xpdr.flightId, pos: 0 }; }
+      } else if (page === 'FPL:1') {
         // ENT on a stored plan: the Page Menu, to activate or delete it.
         openMenu();
       } else if (page === 'NRST:0') {

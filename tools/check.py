@@ -788,6 +788,83 @@ G1000_CHECKS = r"""() => {
     try { draw(cv.getContext('2d'), s, G); } catch (e) { errors.push(`g1000: standby ${id}: ${e}`); }
   }
 
+  // The standby altimeter's knob: its own setting, 100 ft per 0.10 inHg.
+  G.reset();
+  G.turn('stby_baro', 'outer', -20);
+  expect(s.stbyBaro === 29.92 && Math.abs(G.standbyAlt() - (s.trueAlt - 200)) < 1 && s.baro === 30.12,
+    `standby knob: ${s.stbyBaro}, ${G.standbyAlt().toFixed(0)} ft`);
+
+  // ALT Units: PFD Opt, ALT Units; Meters on; HPA, and the knob in hPa.
+  G.press('softkey:3', 'pfd'); G.press('softkey:8', 'pfd');
+  expect(G.menu('pfd') === 'alt-units', `ALT Units menu: ${G.menu('pfd')}`);
+  G.press('softkey:5', 'pfd'); G.press('softkey:8', 'pfd');
+  expect(s.altUnits.meters && s.altUnits.baro === 'HPA', `ALT units ${JSON.stringify(s.altUnits)}`);
+  G.turn('crs_baro', 'outer', 1);
+  expect(Math.round(s.baro * G.HPA) === 1021, `hPa step: ${(s.baro * G.HPA).toFixed(1)}`);
+
+  // Volume knob pushes: COM squelch off, NAV ident on (the radio tuned).
+  G.push('com_volume'); G.push('nav_volume');
+  expect(s.vol.sqOff[0] && !s.vol.sqOff[1] && s.vol.navId[0], `squelch/ID: ${JSON.stringify(s.vol)}`);
+
+  // Flight ID (System Setup): ENT on it, type N12, ENT.
+  mt('outer', 2 - s.mfd.group); mt('inner', 3 - s.mfd.last[2]);
+  G.push('fms', 'mfd'); mt('outer', 4); G.press('ent', 'mfd');
+  expect(s.mfd.cursor === 'ident', `Flight ID entry: ${s.mfd.cursor}`);
+  over(() => s.mfd.entry, 'N12');
+  G.press('ent', 'mfd');
+  expect(s.xpdr.flightId === 'N12', `Flight ID ${s.xpdr.flightId}`);
+
+  // PFD Map Settings: the PFD's own (orientation, text), not the MFD's.
+  G.reset();
+  s.pfdMap.layout = 'Inset Map';
+  G.press('menu', 'pfd');
+  expect(s.pageMenu.pfd?.items[0]?.label === 'PFD Map Settings', 'PFD Page Menu with the inset map');
+  G.press('ent', 'pfd');
+  G.turn('fms', 'outer', 1, 'pfd'); G.turn('fms', 'inner', 2, 'pfd');
+  expect(s.pfdMapSet.orient === 'North Up' && s.mapSet.orient === 'Heading Up', `PFD map ${s.pfdMapSet.orient}, MFD ${s.mapSet.orient}`);
+  G.turn('fms', 'outer', 2, 'pfd'); G.turn('fms', 'inner', 2, 'pfd');
+  expect(s.pfdMapSet.track === '60 SEC', `track vector ${s.pfdMapSet.track}`);
+  G.press('clr', 'pfd');
+
+  // FPL: Insert After puts the new waypoint after the selected one; Change
+  // Fields picks the columns; the rows carry the distance to go.
+  G.fms.activatePlan(['KPAE', 'KAWO']);
+  G.press('fpl', 'pfd'); G.push('fms', 'pfd');
+  G.turn('fms', 'outer', -9, 'pfd');
+  G.press('menu', 'pfd');
+  const fmenu = () => s.pageMenu.pfd;
+  G.turn('fms', 'outer', fmenu().items.findIndex((it) => it.label === 'Insert After') - fmenu().cursor, 'pfd');
+  G.press('ent', 'pfd');
+  expect(s.fms.insertAfter, 'Insert After');
+  type('KBV'); G.press('ent', 'pfd');
+  expect(f().wpts.join() === 'KPAE,KBVS,KAWO', `insert after KPAE: ${f().wpts}`);
+  G.press('menu', 'pfd');
+  G.turn('fms', 'outer', fmenu().items.findIndex((it) => it.label === 'Change Fields') - fmenu().cursor, 'pfd');
+  G.press('ent', 'pfd');
+  G.turn('fms', 'outer', 1, 'pfd'); G.turn('fms', 'inner', 3, 'pfd');
+  expect(s.fms.fields.f1 === 'ETE', `field 1 ${s.fms.fields.f1}`);
+  G.press('clr', 'pfd');
+  const fr0 = G.fms.rows();
+  // (KBVS went in before the active waypoint: the leg is still to KAWO.)
+  expect(fr0[0].toGo == null && fr0[1].toGo == null && fr0[2].active
+    && Math.abs(fr0[2].toGo - G.bearingDist(s, G.fms.byId.KAWO).dist) < 0.01, `rows toGo: ${fr0.map((r) => r.toGo)}`);
+
+  // Every screen draws: each MFD page, each PFD window and map layout,
+  // with metres, hPa and the new fields on.
+  const cv = document.createElement('canvas');
+  cv.width = G1000_DISPLAY.W; cv.height = G1000_DISPLAY.H;
+  const cx2 = cv.getContext('2d');
+  const drawAll = (what) => {
+    try { G1000_DISPLAY.drawPFD(cx2, s, G); G1000_DISPLAY.drawMFD(cx2, s, G); }
+    catch (e) { errors.push(`g1000: drawing ${what}: ${e}`); }
+  };
+  Object.assign(s.altUnits, { meters: true, baro: 'HPA' });
+  Object.assign(s.fms.fields, { f1: 'ETE', f2: 'ETA', f3: 'FUEL' });
+  s.mapSet.track = '2 MIN';
+  P.GROUPS.forEach((g, gi) => g.pages.forEach((_, pi) => { P.goPage(gi, pi); drawAll(`${g.id}:${pi}`); }));
+  for (const layout of ['Inset Map', 'HSI Map']) { s.pfdMap.layout = layout; drawAll(layout); }
+  for (const k of ['softkey:9', 'softkey:10', 'softkey:11']) { G.press(k, 'pfd'); drawAll(k); }
+
   // Nearest Frequencies: sections in order, nearest first; ENT tunes COM.
   G.reset();
   const fr = P.nearestFreqs();
