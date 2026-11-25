@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-t="tests.title"></title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="cards">
+<header class="bar">
+  <h1 data-t="tests.title"></h1>
+</header>
+<main>
+  <form class="modal-card" id="start-form">
+    <p class="modal-intro" data-t="tests.intro"></p>
+    <fieldset>
+      <legend data-t="tests.pick"></legend>
+      <div class="choices" id="start-tests"></div>
+    </fieldset>
+    <div class="modal-actions">
+      <a class="cards-viewer" href="cards.html" data-t="tests.cards"></a>
+      <button type="submit" class="primary" id="start-go" data-t="start.go"></button>
+    </div>
+  </form>
+  <form class="modal-card test" id="test" hidden>
+    <h2 id="test-title"></h2>
+    <p class="done-score" id="test-score" hidden></p>
+    <ul class="done-topics" id="test-topics" hidden></ul>
+    <ol class="test-list" id="test-list"></ol>
+    <div class="modal-actions">
+      <button type="button" id="test-quit" data-t="tests.another"></button>
+      <button type="submit" class="primary" id="test-submit"></button>
+      <button type="button" class="primary" id="test-retake" data-t="tests.retake" hidden></button>
+    </div>
+  </form>
+</main>
+<script src="i18n/en.js"></script>
+<script src="i18n/questions.en.js"></script>
+<script src="i18n/tests.en.js"></script>
+<script src="js/focus.js"></script>
+<script src="js/test.js"></script>
+</body>
+</html>

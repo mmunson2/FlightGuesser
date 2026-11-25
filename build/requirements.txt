@@ -1,0 +1,5 @@
+numpy
+playwright
+pypdfium2
+pillow
+cadquery-ocp  # STEP engine model (build/step_mesh.py)
