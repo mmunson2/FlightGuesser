@@ -57,7 +57,9 @@ window.G1000_SYSTEMS = (function () {
   const SWITCH_A = { beacon: 1.5, land: 7, taxi: 7, nav: 2, strobe: 2, pitot: 9 };
   // Switch positions in flight, where the mock starts.
   const SWITCHES = { bat: true, alt: true, avn1: true, avn2: true, stby: 'arm',
-                     beacon: true, land: false, taxi: false, nav: true, strobe: true, pitot: false };
+                     beacon: true, land: false, taxi: false, nav: true, strobe: true, pitot: false,
+                     // Not wired to anything yet (procedure practice): ELT on = transmitting.
+                     fuelPump: false, cabinPwr: false, elt: false };
   // TEST springs back to OFF after this long (s), standing for a held press.
   const TEST_S = 1.5;
   // The test lamp lights with the standby battery over this charge (0-1).

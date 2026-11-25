@@ -299,6 +299,8 @@ the GFC 700 AFMS:
     alternator off (the battery drains faster).
   - Rocker angles: FlightGear's on (-37°), but off at -20° (FlightGear's
     0° sticks out too far). The lights don't light the exterior lights.
+  - FUEL PUMP, CABIN PWR 12V and the ELT's remote rocker (ARM/ON) flip
+    but do nothing yet: procedure practice only. All start off / ARM.
 - **PFD Opt → ALT Units** (Meters, IN, HPA):
   - Meters adds metric boxes under the altitude readout and beside the
     selected altitude. The real overlay may sit elsewhere.

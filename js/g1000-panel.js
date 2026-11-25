@@ -255,7 +255,7 @@ window.G1000_PANEL = (function () {
         const k = centreOf(STBY, 'mfd');
         if (Math.hypot(hit.point.x - k.x, hit.point.y - k.y) > 0.008) return zoneAt(hit);
       }
-      if (SWITCH.has(pid)) return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, sw: true };
+      if (SWITCH.has(pid) && G1000_SWITCHES.isSwitch(pid, hit.point)) return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, sw: true };
       if (pid === AUDIO_KNOB && hit.point.y < AUDIO_KNOB_Y) {
         return { pid: BACKUP, mesh: hit.object, display: displayAt(hit.point.x), point: hit.point, inner: false };
       }
