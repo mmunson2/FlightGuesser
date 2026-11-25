@@ -137,13 +137,16 @@ window.G1000_SWITCHES = (function () {
     scene.add(eltLamp);
 
     // Move the push-pull controls and the switches to their positions
-    // (only those that moved).
+    // (only those that moved). True if anything changed, so the viewer
+    // draws a frame (it draws only on a change: viewer.js).
     function update(state, lampOn) {
       const sys = state.sys;
+      let changed = false;
       for (const l of slides) {
         const dz = (Math.round(l.get(state) * 1000) / 1000) * l.travel * l.dir;
         if (dz === l.shown) continue;
         l.shown = dz;
+        changed = true;
         l.idx.forEach((i, k) => l.pos.setZ(i, l.from[k] + dz));
         l.pos.needsUpdate = true;
         l.mesh.geometry.computeBoundingSphere();
@@ -170,14 +173,17 @@ window.G1000_SWITCHES = (function () {
         dirty.add(l);
       }
       for (const l of dirty) {
+        changed = true;
         l.pos.needsUpdate = true;
         if (l.nrm) l.nrm.needsUpdate = true;
         l.mesh.geometry.computeBoundingSphere();
         l.mesh.geometry.computeBoundingBox();
       }
+      const lit = [lamp.visible, eltLamp.visible];
       lamp.visible = lampOn && meshById.standby_battery_switch?.visible !== false;
       eltLamp.visible = sys.sw.elt && meshById.elt_remote_switch?.visible !== false
         && performance.now() % ELT_FLASH_MS < ELT_LIT_MS;
+      return changed || lit[0] !== lamp.visible || lit[1] !== eltLamp.visible;
     }
 
     const label = (s, v) => NAMES[s.key] + ' · ' + (s.key === 'stby' ? STBY_LABEL[v] : s.key === 'elt' ? (v ? 'ON' : 'ARM')
