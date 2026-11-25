@@ -271,6 +271,50 @@ the GFC 700 AFMS:
     STD BARO on the PFD doesn't change it.
   - Its knob works in Operate mode (scroll or drag, 0.01 inHg a click).
     Only the knob responds, not the dial.
+  - The magnetic compass: the card in its window (ticks every 5°, N E S
+    W and 3, 6, 12... every 30°), read from behind, so headings to the
+    right of the lubber line are lower. The card is physics, not rules:
+    it lies square to the apparent gravity and points along the earth's
+    field (dip 69° for Washington, from memory) in that plane. That gives
+    about 34° of lag turning through north and lead through south at 15°
+    of bank (UNOS), and about 15° toward north accelerating at 2 kt/s on
+    east or west (ANDS). Its swing (2.2 rad/s, damping 0.35) is made up;
+    check it doesn't swing more than a real one. No deviation is modelled;
+    the deviation card under it is FlightGear's (its numbers are theirs).
+- **Panel switches** (js/g1000-switches.js, js/g1000-systems.js), flipped
+  by clicking in Operate mode:
+  - MASTER ALT/BAT interlocked as a split rocker (ALT on pulls BAT on,
+    BAT off takes ALT off). ALT off: no alternator, the battery carries the
+    load. BAT and ALT off: the main bus is dead.
+  - STBY BATT: a click goes ARM ↔ OFF; scrolling down from OFF goes to
+    TEST, which springs back to OFF after 1.5 s and lights the green test
+    lamp if the standby battery is over half charged (threshold made up).
+    In OFF the standby battery doesn't take the essential bus.
+  - Which unit is on which bus is from the breaker panel's rows: PFD on
+    the essential bus or avionics bus 1; MFD, audio panel and autopilot on
+    avionics bus 2 (turning it off disconnects the AP). Check: with BUS 2
+    off, does the real PFD revert or stay as it is? Here it stays.
+  - Loads on the main bus (amps, made up): base 10, beacon 1.5, landing
+    7, taxi 7, nav 2, strobe 2, pitot heat 9. They only show with the
+    alternator off (the battery drains faster).
+  - Rocker angles: FlightGear's on (-37°), but off at -20° (FlightGear's
+    0° sticks out too far). The lights don't light the exterior lights.
+  - FUEL PUMP, CABIN PWR 12V and the ELT's remote rocker (ARM/ON) flip
+    but do nothing yet: procedure practice only. All start off / ARM.
+    ELT ON flashes its red lamp (0.6 s lit every second; check the real
+    rate).
+  - The ignition key turns like a G1000 knob (scroll or drag): OFF, R,
+    L, BOTH, START. OFF stops the engine; back on, it runs again at once
+    (the windmilling propeller; no starter model). One magneto drops the
+    RPM: R 70, L 55 (made up, inside the POH's 150 max and 50 between).
+    START springs back to BOTH after 1.5 s.
+  - Throttle and mixture: drag along the shaft (toward the panel pushes
+    in) or scroll (up: in, 5% a notch); Page Up/Down and Home/End still
+    work. Travel about 8 cm, knob 1.5 cm off the panel fully in (made up
+    from the model, which draws them pulled right out). No mixture vernier
+    lock button: it slides freely.
+  - CABIN HT and CABIN AIR pull out the same way (drawn pushed in, closed;
+    6 cm of pull, made up). They do nothing yet: procedure practice.
 - **PFD Opt → ALT Units** (Meters, IN, HPA):
   - Meters adds metric boxes under the altitude readout and beside the
     selected altitude. The real overlay may sit elsewhere.

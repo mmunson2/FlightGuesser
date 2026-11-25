@@ -32,6 +32,12 @@ from MM and PC figures and placing them by station (`build/extras.py`).
   its own glass part (`landing_light_lens`), the cowling's nose strut arch
   is closed and a slot cut in the belly, the ADF antenna is dropped.
 
+- The instrument panel's face (FlightGear's `panel_1_glass`, which the
+  build had skipped as glass), and concave polygons ear-clipped in
+  `build/ac3d.py` instead of fanned: the fan covered the standby
+  instruments' holes and z-fought around the STBY BATT switch and the
+  Hobbs meter.
+
 ## Visible on preflight (high priority)
 
 | Part | Source |

@@ -112,6 +112,27 @@ COPLANAR_UNDER = {"hstab": ["elevatorleft", "elevatorright"], "elevatorright": [
                   "rudder_1": ["vstab.001"], "ruddercableports": ["ruddercableportshole"]}
 
 
+# Objects whose polygons double back on themselves, which no triangulation
+# of them as written draws right: (file, object) -> the object's vertex
+# indices as one outline, holes bridged in. The flap indicator's frame is a
+# rectangle with an L-shaped window (the lever's slot and the placard);
+# as written it covered the scale with a black triangle.
+OUTLINES = {("Flaps/flaps.ac", "rect"): [0, 1, 2, 4, 5, 7, 9, 11, 13, 4, 2, 3]}
+
+
+def redraw_outline(o, ring):
+    """Replace an ac3d.Obj's triangles with the polygon `ring` (vertex
+    indices) ear-clipped, keeping each vertex's uv and the material."""
+    uv_of = {}
+    for t, uv in zip(o.tris, o.uvs):
+        for v, c in zip(t, uv):
+            uv_of.setdefault(int(v), tuple(c))
+    tris = [[ring[k] for k in t] for t in ac3d.triangulate(o.verts[ring])]
+    o.tris = np.array(tris, dtype=np.int64)
+    o.uvs = np.array([[uv_of[v] for v in t] for t in tris])
+    o.mats = [o.mats[0]] * len(tris)
+
+
 def coplanar_holding(a, b, tol=0.003):
     """Mask of triangles in a that hold, in their plane, any sample point
     (centroid, corners pulled 2% in) of a coplanar triangle of b."""
@@ -465,7 +486,9 @@ SOURCES = [
         r"toggle-stbybatt": "standby_battery_switch",
         r"toggle-cabin-pwr": "cabin_power_switch",
         r".*_breaker-fg1000|BreakersBase-fg1000": "circuit_breakers",
-        r"Panel|panel|panel_1_1-fg1000|bolts-fg1000|switchbase|togglebase": "instrument_panel",
+        # panel_1_glass is the panel's face around the instruments (FlightGear
+        # gives it the interior panel lightmap), not glass.
+        r"Panel|panel|panel_1_1-fg1000|panel_1_glass|bolts-fg1000|switchbase|togglebase": "instrument_panel",
         r"Pedestal-fg1000": "pedestal",
         r"pilotseat_(left|right)-fg1000": "front_seats",
         r"backseat_left-fg1000": "rear_seat",
@@ -506,10 +529,23 @@ SOURCES = [
 # light cones and lit-state copies, inner copies of the glass, the compass
 # deviation card (placed off the panel), rudder trim and the ADF antenna (not on a G1000 C172S), and
 # the interior's own magneto switch (the magneto file's is used).
+# Objects that move in Operate mode, kept in a piece of their own so the
+# viewer can find them: (file, object) -> the piece's `moves` name. The
+# ignition key turns (js/g1000-switches.js); the switch's face stays. The
+# throttle, mixture and the cabin heat and air knobs slide in and out of
+# their mounts (heat and air share a part, so each is a piece).
+MOVING = {("magneto-switch/magneto-switch-fg1000.ac", r"key|start"): "key",
+          ("c172sp-panel/c172sp-interior.ac", r"Throttle-fg1000|Mixture-fg1000"): "lever",
+          ("c172sp-panel/c172sp-interior.ac", r"CabinHeat-fg1000"): "heat",
+          ("c172sp-panel/c172sp-interior.ac", r"CabinAir-fg1000"): "air"}
+
+# Skipped in one file only: the magnetic compass's glass (an opaque sheet
+# here; js/g1000-panel.js draws the live card in its window).
+SKIP_IN = {"mag-compass/mag-compass.ac": r"Glass"}
 SKIP = re.compile(r".*[Hh]ot[Ss]pot.*|sun_and_view_blocker|panel_blocker|Propeller\.Fast|PropellerCowlPlugs"
                   r"|landinglight|taxilight|BeaconOffX|courtesyon-[lr]|dome_lighton_.*|radiator"
-                  r"|glas_.*|.*window_interior|panel_1_glass|glass_pan.*|magsw|testlamp|click-S"
-                  r"|RudderTrim.*|legend|Deviation-Card|Antenna_ADF")
+                  r"|glas_.*|.*window_interior|glass_pan.*|magsw|testlamp|click-S"
+                  r"|RudderTrim.*|Deviation-Card|Antenna_ADF")
 
 
 # Corrections to FlightGear's geometry (geometry_audit.md), applied to
@@ -639,11 +675,19 @@ SCREEN_RGB = (0.04, 0.05, 0.06)
 GLASS_RGB = (0.75, 0.85, 0.95)
 
 
+# Textures replaced by our own edits (tools/placards.py), by the .ac's
+# texture name: the flap indicator without the 172P's AVOID SLIPS WITH
+# FLAPS EXTENDED placard (FlightGear's model is a 172P fitted as a 172S).
+TEXTURE_OVERRIDES = {"flaps.png": Path(__file__).resolve().parent / "placards" / "flaps.png"}
+
+
 def _texture(c172p, ac_path, name, cache={}):
-    """An .ac texture name -> its file (next to the .ac, else anywhere in
-    the c172p data by file name), or None."""
+    """An .ac texture name -> its file (TEXTURE_OVERRIDES, next to the .ac,
+    else anywhere in the c172p data by file name), or None."""
     if not name:
         return None
+    if Path(name).name in TEXTURE_OVERRIDES:
+        return TEXTURE_OVERRIDES[Path(name).name]
     here = ac_path.parent / name
     if here.is_file():
         return here
@@ -686,6 +730,9 @@ def load(c172p):
             for o in aobjs:
                 if not len(o.tris):
                     continue
+                ring = next((r for (f, n), r in OUTLINES.items() if rel.endswith(f) and n == o.name), None)
+                if ring is not None:
+                    redraw_outline(o, ring)
                 rgb = np.array([mats[i].rgb if i < len(mats) else (0.7, 0.7, 0.7) for i in o.mats], dtype=np.float64)
                 tex = _texture(c172p, path, o.texture)
                 uvs = o.uvs if tex is not None and o.uvs is not None and len(o.uvs) == len(o.tris) else None
@@ -734,11 +781,12 @@ def load(c172p):
                 m = rest & test(c)
                 rest &= ~m
                 if m.any() and pid:
-                    merged.setdefault(pid, {}).setdefault((tex, behind), []).append(
+                    merged.setdefault(pid, {}).setdefault((tex, behind, None), []).append(
                         (c[m], None if uv is None else uv[m], rgb[m]))
             split.append((name, c[rest], None if uv is None else uv[rest], rgb[rest], tex, behind))
         for name, c, uv, rgb, tex, behind in split:
-            if SKIP.fullmatch(name) and not (name == "magsw" and "magneto" in rel):
+            if (SKIP.fullmatch(name) and not (name == "magsw" and "magneto" in rel)
+                    or any(rel.endswith(f) and re.fullmatch(rx, name) for f, rx in SKIP_IN.items())):
                 continue
             pid = next((p for rx, p in table.items() if re.fullmatch(rx, name)), None)
             if pid is None:
@@ -746,7 +794,8 @@ def load(c172p):
                 continue
             if pid in GLASS_PARTS:
                 uv, tex, rgb = None, None, np.full_like(rgb, GLASS_RGB)
-            merged.setdefault(pid, {}).setdefault((tex, behind), []).append((c, uv, rgb))
+            moves = next((m for (f, rx), m in MOVING.items() if rel.endswith(f) and re.fullmatch(rx, name)), None)
+            merged.setdefault(pid, {}).setdefault((tex, behind, moves), []).append((c, uv, rgb))
     CUT_HOLES[:] = [(cx, cz, r, y_min) for cx, cz, r, y_min, _ in holes]
     for cx, cz, r, y_min, pids in holes:
         for pid in pids:
@@ -759,20 +808,22 @@ def load(c172p):
             if not len(hits(skin[near], cx + r * 1.5, cz)):
                 continue                      # this part has no skin here
             collar = hole_collar(skin[near], (cx, cz), r, y_min)
-            by_key.setdefault((None, True), []).append((collar, None, np.full_like(collar, SKIN_RGB)))
+            by_key.setdefault((None, True, None), []).append((collar, None, np.full_like(collar, SKIN_RGB)))
             for key, chunks in by_key.items():
                 for i, (c, uv, rgb) in enumerate(chunks):
                     chunks[i] = cut_hole(c, uv, rgb, (cx, cz), r, y_min)
     parts = []
     for pid, by_tex in merged.items():
         pieces = []
-        for (tex, behind), chunks in by_tex.items():
+        for (tex, behind, moves), chunks in by_tex.items():
             cuv = None if tex is None else np.vstack([u if u is not None else np.zeros((len(c), 3, 2))
                                                       for c, u, _ in chunks])
             pieces.append(piece(np.vstack([c for c, _, _ in chunks]), cuv, np.vstack([r for _, _, r in chunks]),
                                 None if tex is None else str(tex)))
             if behind:
                 pieces[-1]["behind"] = True
+            if moves:
+                pieces[-1]["moves"] = moves
         parts.append({"id": pid, "system": SYSTEM_OF.get(pid, "cabin"),
                       "kind": "target",
                       "glass": pid in GLASS_PARTS, "ask": SYSTEM_OF.get(pid) in ASK_SYSTEMS, "pieces": pieces})

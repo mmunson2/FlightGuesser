@@ -1,7 +1,9 @@
 // The mock G1000 (js/g1000.js) on the 3D panel: live PFD and MFD screens
 // (js/g1000-display.js on canvas textures), live standby instrument faces
 // (js/g1000-standby.js), and, in Operate mode, the
-// bezel keys and knobs. js/viewer.js calls attach() once the model is
+// bezel keys and knobs and the panel's switches (js/g1000-switches.js).
+// A unit with no power (js/g1000-systems.js powered()) shows a dark screen
+// and ignores its keys. js/viewer.js calls attach() once the model is
 // built, tick() every frame and click() for left clicks while operating.
 //
 // The model has one part per kind of key or knob, covering both displays
@@ -17,10 +19,14 @@ window.G1000_PANEL = (function () {
     standby_altimeter: 'stby_baro',
     // The audio panel's volume (small) and squelch (large) knob.
     audio_volume_knob: 'gma_vol',
+    // The ignition key (js/g1000-systems.js turnMags; js/g1000-switches.js
+    // turns the 3D key).
+    ignition_switch: 'mags',
   };
   // The standby altimeter is one part, gauge and knob; the knob is the only
   // piece that stands proud of the bezel (in front of this depth).
   const STBY = 'standby_altimeter', STBY_KNOB_Z = 0.36;
+  const IGN = 'ignition_switch';
   const KEYS = {
     nav_transfer_key: 'nav_transfer', com_transfer_key: 'com_transfer', direct_to_key: 'direct_to',
     fpl_key: 'fpl', clr_key: 'clr', ent_key: 'ent', menu_key: 'menu', proc_key: 'proc',
@@ -95,17 +101,23 @@ window.G1000_PANEL = (function () {
       const parent = meshById[id], box = new THREE.Box3().setFromObject(parent);
       const w = box.max.x - box.min.x;
       const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = SB.SIZE;
+      const isCompass = id === 'magnetic_compass';
+      canvas.width = isCompass ? SB.compass.WIDTH : SB.SIZE;
+      canvas.height = isCompass ? SB.compass.HEIGHT : SB.SIZE;
       const texture = new THREE.CanvasTexture(canvas);
       texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
       if ('colorSpace' in texture) texture.colorSpace = THREE.SRGBColorSpace;
       else texture.encoding = THREE.sRGBEncoding;
       const r = id === 'standby_attitude_indicator' ? 0.0255 : 0.0305;
-      const plane = new THREE.Mesh(new THREE.CircleGeometry(r, 64),
+      // The compass: its window (the model's glass, 31 x 15 mm, its face
+      // 0.343 deep, inside the casing's 0.339 lip); the rest a dial disc.
+      const geometry = isCompass ? new THREE.PlaneGeometry(0.031, 0.015) : new THREE.CircleGeometry(r, 64);
+      const plane = new THREE.Mesh(geometry,
         new THREE.MeshBasicMaterial({ map: texture, toneMapped: false, transparent: true }));
       // Facing the pilot, like the screens.
       plane.rotation.y = Math.PI;
-      plane.position.set((box.min.x + box.max.x) / 2, box.max.y - w / 2, 0.3664);
+      if (isCompass) plane.position.set(-0.0005, 0.2395, 0.3428);
+      else plane.position.set((box.min.x + box.max.x) / 2, box.max.y - w / 2, 0.3664);
       plane.renderOrder = 1;
       scene.add(plane);
       return { id, parent, plane, ctx: canvas.getContext('2d'), texture };
@@ -225,6 +237,14 @@ window.G1000_PANEL = (function () {
       return { key, parent, led };
     });
 
+    // ---- The panel's switches ----
+    const SWX = G1000_SWITCHES.attach({ THREE, scene, meshById });
+    const SWITCH = G1000_SWITCHES.PARTS;
+    // Whether a control has power: a display's bezel, or the audio panel
+    // (avionics bus 2). The standby altimeter's knob needs none.
+    const hasPower = (c) => (c.pid === STBY || c.pid === IGN ? true
+      : AUDIO.has(c.pid) || c.pid === BACKUP ? G.systems.buses().avn2 : G.systems.powered(c.display));
+
     const ray = new THREE.Raycaster();
     // The first visible, solid part under the pointer, if it is one the
     // mock operates: { pid, display, point, inner }.
@@ -238,6 +258,13 @@ window.G1000_PANEL = (function () {
       if (pid === STBY) {
         const k = centreOf(STBY, 'mfd');
         if (Math.hypot(hit.point.x - k.x, hit.point.y - k.y) > 0.008) return zoneAt(hit);
+      }
+      if (G1000_SWITCHES.LEVER_PARTS.has(pid)) {
+        const lever = SWX.leverAt(pid, hit.point);
+        if (lever) return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, lever };
+      }
+      if (SWITCH.has(pid) && G1000_SWITCHES.isSwitch(pid, hit.point)) {
+        return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, sw: true };
       }
       if (pid === AUDIO_KNOB && hit.point.y < AUDIO_KNOB_Y) {
         return { pid: BACKUP, mesh: hit.object, display: displayAt(hit.point.x), point: hit.point, inner: false };
@@ -274,6 +301,7 @@ window.G1000_PANEL = (function () {
       // the rest are on both.
       const where = ['autopilot', 'audio_panel'].includes(c.mesh.userData.part.system) ? '' : ' · ' + c.display.toUpperCase();
       if (c.pid === STBY) return 'Standby altimeter knob (baro)';
+      if (c.pid === IGN) return 'MAGNETOS · ' + G.state.sys.sw.mags.toUpperCase();
       if (c.pid === BACKUP) return 'DISPLAY BACKUP button';
       if (c.pid === 'softkeys') {
         const i = softkeyAt(c.point, c.display);
@@ -292,6 +320,15 @@ window.G1000_PANEL = (function () {
       if (turnedAt && performance.now() - turnedAt < 50) return lastSaid;
       const c = controlAt(e);
       if (!c) return null;
+      if (c.sw) {
+        const said = SWX.click(G, c.pid, c.point);
+        redraw(true);
+        return said;
+      }
+      if (c.lever) return leverName(c.lever);
+      if (!hasPower(c)) return name(c) + ' · no power';
+      // The key doesn't push.
+      if (c.pid === IGN) return name(c);
       // Named before pressing: a softkey's label changes with its menu.
       const said = name(c) + (c.pid in KNOBS ? ' · push' : '');
       // The MFD's autopilot keys belong to another unit's layout (context
@@ -310,9 +347,24 @@ window.G1000_PANEL = (function () {
     renderer.domElement.parentElement.addEventListener('wheel', (e) => {
       if (!operating) return;
       const c = controlAt(e);
+      if (c?.lever) {
+        e.preventDefault();
+        e.stopPropagation();
+        moveLever(c.lever, (e.deltaY < 0 ? 1 : -1) * 0.05 * G1000_SWITCHES.leverById(c.lever).dir);
+        return;
+      }
+      if (c?.sw) {
+        e.preventDefault();
+        e.stopPropagation();
+        const said = SWX.scroll(G, c.pid, c.point, e.deltaY < 0 ? 1 : -1);
+        redraw(true);
+        onTurn?.(said);
+        return;
+      }
       if (!c || !(c.pid in KNOBS)) return;
       e.preventDefault();
       e.stopPropagation();
+      if (!hasPower(c)) { onTurn?.(name(c) + ' · no power'); return; }
       // A mouse wheel notch (about 100 px) is one click of the knob;
       // trackpad deltas add up to one.
       const dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
@@ -456,7 +508,7 @@ window.G1000_PANEL = (function () {
       if (!e || drag) return;
       hoverEvent = null;
       const c = operating && !e.gone && e.buttons === 0 ? controlAt(e) : null;
-      renderer.domElement.style.cursor = !c ? '' : c.pid in KNOBS ? 'grab' : 'pointer';
+      renderer.domElement.style.cursor = !c ? '' : c.pid in KNOBS || c.lever ? 'grab' : 'pointer';
       if (c && CONCENTRIC.has(KNOBS[c.pid])) {
         if (shown !== c.pid + ':' + c.display + ':' + c.inner) showOverlay(c);
       } else if (shown) hideOverlay(false);
@@ -465,7 +517,7 @@ window.G1000_PANEL = (function () {
     renderer.domElement.addEventListener('pointerdown', (e) => {
       if (!operating || e.button !== 0) return;
       const c = controlAt(e);
-      if (!c || !(c.pid in KNOBS)) return;
+      if (!c || !(c.pid in KNOBS) || !hasPower(c)) return;
       // OrbitControls listens on the same element: switch it off until the
       // drag ends, so the drag turns the knob instead of the camera.
       controls.enabled = false;
@@ -478,6 +530,51 @@ window.G1000_PANEL = (function () {
       drag.piece.visible = true;
       showOverlay(c, drag);
     }, { capture: true });
+    // ---- Push-pull controls (throttle, mixture, cabin heat and air):
+    // dragged along their shafts as they look on screen (toward the panel
+    // pushes in), or scrolled (up: in). ----
+    const leverName = (id) => G1000_SWITCHES.leverLabel(id, G.state);
+    function moveLever(id, by) {
+      if (G1000_SWITCHES.moveLever(G, id, by)) redraw(true);
+      onTurn?.(leverName(id));
+    }
+    let slide = null;
+    const toScreen = (v) => {
+      const p = v.clone().project(camera), r = renderer.domElement.getBoundingClientRect();
+      return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
+    };
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      if (!operating || e.button !== 0) return;
+      const c = controlAt(e);
+      if (!c?.lever) return;
+      const ax = SWX.leverAxis(c.lever, G.state);
+      // Where 0 and 1 are on screen, from where it is now.
+      const a = toScreen(ax.zero), b = toScreen(ax.one);
+      const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+      if (len2 < 25) return;            // seen end on: nothing to drag along
+      controls.enabled = false;
+      slide = { lever: c.lever, id: e.pointerId, x: e.clientX, y: e.clientY, dx, dy, len2, start: ax.value };
+      renderer.domElement.style.cursor = 'grabbing';
+      renderer.domElement.setPointerCapture(e.pointerId);
+      onTurn?.(leverName(c.lever));
+    }, { capture: true });
+    renderer.domElement.addEventListener('pointermove', (e) => {
+      if (!slide || e.pointerId !== slide.id) return;
+      const t = ((e.clientX - slide.x) * slide.dx + (e.clientY - slide.y) * slide.dy) / slide.len2;
+      const want = Math.min(1, Math.max(0, slide.start + t));
+      moveLever(slide.lever, want - G1000_SWITCHES.leverById(slide.lever).get(G.state));
+      slide.moved = true;
+    });
+    const endSlide = (e) => {
+      if (!slide || e.pointerId !== slide.id) return;
+      if (slide.moved) turnedAt = performance.now();
+      slide = null;
+      hoverEvent = e;
+      controls.enabled = true;
+    };
+    renderer.domElement.addEventListener('pointerup', endSlide, { capture: true });
+    renderer.domElement.addEventListener('pointercancel', endSlide);
+
     renderer.domElement.addEventListener('pointermove', (e) => {
       if (!drag || e.pointerId !== drag.id) return;
       const a = angleAt(drag, e);
@@ -543,7 +640,8 @@ window.G1000_PANEL = (function () {
       if (!force && now - lastDraw < 66) return;
       lastDraw = now;
       for (const s of screens) {
-        (s.id === 'pfd' ? D.drawPFD : D.drawMFD)(s.ctx, G.state, G);
+        if (G.systems.powered(s.id)) (s.id === 'pfd' ? D.drawPFD : D.drawMFD)(s.ctx, G.state, G);
+        else { s.ctx.fillStyle = '#000'; s.ctx.fillRect(0, 0, s.canvas.width, s.canvas.height); }
         s.texture.needsUpdate = true;
       }
       for (const g of gauges) {
@@ -555,6 +653,7 @@ window.G1000_PANEL = (function () {
       const now = performance.now();
       G.tick((now - lastT) / 1000);
       lastT = now;
+      SWX.update(G.state, G.systems.testLamp());
       // The screens follow their display's part: hidden, faded by the
       // quiz's x-ray.
       for (const s of screens) {

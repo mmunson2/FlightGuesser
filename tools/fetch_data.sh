@@ -40,13 +40,14 @@ for f in LICENSE README.md Models/c172-common.ac \
     Models/Interior/Panel/Instruments/magneto-switch/magneto-switch-fg1000.ac \
     Models/Interior/FE-ELT/elt-fg1000.ac Models/Interior/Panel/Flaps/flaps.ac \
     Models/Interior/Yoke/yoke-fg1000.ac Models/Interior/Pedals/pedals.ac \
-    Models/Interior/Panel/c172sp-panel/panel-fg1000.png \
+    Models/Interior/Panel/c172sp-panel/panel-fg1000.png Models/Interior/Panel/c172sp-panel/panelglass.png \
     Models/fuselage.png Models/interior.png Models/panel.png Models/panel_parts.png Models/tail.png \
     Models/wing.png Models/prop.png Models/lights.png Models/glass-alpha.png \
     Models/Interior/Panel/c172sp-panel/interior-fg1000.png \
     Models/Interior/Panel/Instruments/asi/asi.png Models/Interior/Panel/Instruments/AI/AI.png \
     Models/Interior/Panel/Instruments/alt/alt.png Models/Interior/Panel/Instruments/hobbs/hobbs.png \
     Models/Interior/Panel/Instruments/mag-compass/mag-compass.png \
+    Models/Interior/Panel/Instruments/mag-compass/compass-correction-card.png \
     Models/Interior/Panel/Instruments/magneto-switch/magneto-switch.png \
     Models/Interior/Panel/Instruments/gear/breakers-switches.png \
     Models/Interior/Panel/Flaps/flaps.png Models/Interior/Yoke/yoke-fg1000.png Models/Interior/Yoke/yoke.png \
