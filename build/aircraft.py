@@ -110,6 +110,27 @@ COPLANAR_UNDER = {"hstab": ["elevatorleft", "elevatorright"], "elevatorright": [
                   "rudder_1": ["vstab.001"], "ruddercableports": ["ruddercableportshole"]}
 
 
+# Objects whose polygons double back on themselves, which no triangulation
+# of them as written draws right: (file, object) -> the object's vertex
+# indices as one outline, holes bridged in. The flap indicator's frame is a
+# rectangle with an L-shaped window (the lever's slot and the placard);
+# as written it covered the scale with a black triangle.
+OUTLINES = {("Flaps/flaps.ac", "rect"): [0, 1, 2, 4, 5, 7, 9, 11, 13, 4, 2, 3]}
+
+
+def redraw_outline(o, ring):
+    """Replace an ac3d.Obj's triangles with the polygon `ring` (vertex
+    indices) ear-clipped, keeping each vertex's uv and the material."""
+    uv_of = {}
+    for t, uv in zip(o.tris, o.uvs):
+        for v, c in zip(t, uv):
+            uv_of.setdefault(int(v), tuple(c))
+    tris = [[ring[k] for k in t] for t in ac3d.triangulate(o.verts[ring])]
+    o.tris = np.array(tris, dtype=np.int64)
+    o.uvs = np.array([[uv_of[v] for v in t] for t in tris])
+    o.mats = [o.mats[0]] * len(tris)
+
+
 def coplanar_holding(a, b, tol=0.003):
     """Mask of triangles in a that hold, in their plane, any sample point
     (centroid, corners pulled 2% in) of a coplanar triangle of b."""
@@ -501,7 +522,7 @@ SOURCES = [
 SKIP = re.compile(r".*[Hh]ot[Ss]pot.*|sun_and_view_blocker|panel_blocker|Propeller\.Fast|PropellerCowlPlugs"
                   r"|landinglight|taxilight|BeaconOffX|courtesyon-[lr]|dome_lighton_.*|radiator"
                   r"|glas_.*|.*window_interior|glass_pan.*|magsw|testlamp|click-S"
-                  r"|RudderTrim.*|legend|Deviation-Card")
+                  r"|RudderTrim.*|Deviation-Card")
 
 
 def ac_to_scene(v):
@@ -568,6 +589,9 @@ def load(c172p):
             for o in aobjs:
                 if not len(o.tris):
                     continue
+                ring = next((r for (f, n), r in OUTLINES.items() if rel.endswith(f) and n == o.name), None)
+                if ring is not None:
+                    redraw_outline(o, ring)
                 rgb = np.array([mats[i].rgb if i < len(mats) else (0.7, 0.7, 0.7) for i in o.mats], dtype=np.float64)
                 tex = _texture(c172p, path, o.texture)
                 uvs = o.uvs if tex is not None and o.uvs is not None and len(o.uvs) == len(o.tris) else None
