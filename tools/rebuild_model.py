@@ -1,10 +1,11 @@
 """Rebuild data/scenedata.js without the engine's STEP file.
 
-    .venv/Scripts/python.exe tools/rebuild_model.py
+    .venv/Scripts/python.exe tools/rebuild_model.py [REF]
 
 `make model` needs the GrabCAD engine (a manual, personal-use download)
 tessellated into engine.npz. Where that isn't available, this takes the
-engine's STEP parts (engine.PARTS) from the committed data/scenedata.js,
+engine's STEP parts (engine.PARTS) from data/scenedata.js as committed
+at REF (default HEAD; in a merge, the side whose engine.py is newer),
 decoded from its packed positions, and rebuilds everything else from the
 source data (tools/fetch_data.sh). Positions repack exactly as long as the
 scene's bounds don't change. Run from the repo root.
@@ -24,8 +25,8 @@ import build_model  # noqa: E402
 import engine  # noqa: E402
 
 
-def committed_engine():
-    text = subprocess.run(["git", "show", "HEAD:data/scenedata.js"], cwd=ROOT, check=True,
+def committed_engine(ref="HEAD"):
+    text = subprocess.run(["git", "show", f"{ref}:data/scenedata.js"], cwd=ROOT, check=True,
                           capture_output=True, text=True).stdout
     old = json.loads(text.split("=", 1)[1].rstrip().rstrip(";"))
     lo, scale = np.array(old["min"]), np.array(old["scale"])
@@ -50,6 +51,6 @@ def committed_engine():
 
 
 if __name__ == "__main__":
-    parts = committed_engine()
+    parts = committed_engine(sys.argv[1] if len(sys.argv) > 1 else "HEAD")
     engine.load = lambda _dir: parts
     build_model.main(str(C172P), str(KPAE), "unused", str(SCENEDATA))

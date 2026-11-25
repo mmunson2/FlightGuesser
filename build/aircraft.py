@@ -31,11 +31,11 @@ SYSTEMS = {
     "fuel": ["fuel_caps", "fuel_vent", "fuel_selector", "fuel_pump_switch"],
     "landing_gear": ["nose_wheel", "nose_gear_strut", "nose_gear_torque_links", "main_wheels", "main_gear_legs", "brakes",
                      "wheel_fairings", "parking_brake"],
-    "lights": ["beacon", "left_nav_light", "right_nav_light", "tail_nav_light", "landing_light", "taxi_light",
+    "lights": ["beacon", "left_nav_light", "right_nav_light", "tail_nav_light", "landing_light", "landing_light_lens",
+               "taxi_light",
                "beacon_switch", "landing_light_switch", "taxi_light_switch", "nav_light_switch",
                "strobe_switch", "panel_dimmers", "dome_lights", "courtesy_lights"],
-    "antennas": ["com_antennas", "transponder_antenna", "marker_antenna", "elt_antenna", "nav_antenna",
-                 "adf_antenna"],
+    "antennas": ["com_antennas", "transponder_antenna", "marker_antenna", "elt_antenna", "nav_antenna"],
     "pitot_static": ["pitot_tube", "pitot_heat_switch", "alternate_static_source"],
     "electrical": ["master_switch_bat", "master_switch_alt", "avionics_switch", "standby_battery_switch",
                    "cabin_power_switch", "circuit_breakers", "elt_remote_switch"],
@@ -56,6 +56,8 @@ SYSTEMS = {
     "cabin": ["heat_and_air", "instrument_panel", "pedestal", "front_seats", "rear_seat", "cabin_floor",
               "cabin_interior", "sun_visors", "cabin_air_vents", "overhead_console", "hand_microphone"],
 }
+# Parts drawn as tinted glass (no texture), which let clicks through.
+GLASS_PARTS = {"windows", "landing_light_lens"}
 SYSTEM_OF = {pid: sys for sys, ids in SYSTEMS.items() for pid in ids}
 
 # Objects that hold several parts, split by triangle: object name -> [(part,
@@ -291,6 +293,12 @@ def cut_hole(c, uv, rgb, centre, r, y_min):
     cross = p[:, :, 0] * q[:, :, 1] - p[:, :, 1] * q[:, :, 0]
     centre_in = (cross >= 0).all(1) | (cross <= 0).all(1)
     hit = (c[:, :, 1].min(1) > y_min) & ((edge < r) | centre_in)
+    return cut_outline(c, uv, rgb, ring, hit)
+
+
+def cut_outline(c, uv, rgb, ring, hit):
+    """Cuts the convex outline `ring` (x, z rows, counter-clockwise) out of
+    the triangles marked `hit`, as cut_hole does."""
     if not hit.any():
         return c, uv, rgb
     keep_c, keep_uv, keep_rgb = [c[~hit]], [None if uv is None else uv[~hit]], [rgb[~hit]]
@@ -298,8 +306,8 @@ def cut_hole(c, uv, rgb, centre, r, y_min):
     for k in np.where(hit)[0]:
         rows = [np.concatenate([c[k][j], uv[k][j] if nu else [], rgb[k][j]]) for j in range(3)]
         rest, pieces = rows, []
-        for j in range(HOLE_SIDES):
-            a, b = ring[j], ring[(j + 1) % HOLE_SIDES]
+        for j in range(len(ring)):
+            a, b = ring[j], ring[(j + 1) % len(ring)]
             outside = _clip(rest, a, b, keep_left=False)
             if len(outside) >= 3:
                 pieces.append(outside)
@@ -338,6 +346,8 @@ def _top_rgb(name, c, rgb):
 SPLIT_OBJECTS = {
     **{name: [(None, _window_fan)] for name in ("windowframeleftext", "windowframerightext",
                                                 "windowframeleftint-fg1000", "windowframerightint-fg1000")},
+    # FlightGear's firewall object also carries the aft cabin bulkhead (FS 113).
+    "Firewall-fg1000": [("cabin_interior", lambda c: c[:, :, 2].mean(1) < 0.0)],
     "fuselage": [(None, _inlet_photo), ("wing_struts", lambda c: np.abs(c[:, :, 0]).max(1) > 0.6)],
     **{name: [("left_wing", lambda c: _outboard(c, 1)), ("right_wing", lambda c: _outboard(c, -1))]
        for name in ("wing_center", "wing_leading_edge_center")},
@@ -439,14 +449,14 @@ SOURCES = [
         r"LeftNavLight": "left_nav_light",
         r"RightNavLight": "right_nav_light",
         r"RearNavLight": "tail_nav_light",
-        r"lightlanding|landinglightcover": "landing_light",
+        r"lightlanding": "landing_light",
+        r"landinglightcover": "landing_light_lens",       # glass over the landing and taxi lights
         r"lighttaxi": "taxi_light",
         r"VHFAntenna": "com_antennas",
         r"TransponderAntenna": "transponder_antenna",
         r"MarkerAntenna": "marker_antenna",
         r"ELTAntenna": "elt_antenna",
         r"Antenna_VOR": "nav_antenna",
-        r"Antenna_ADF": "adf_antenna",
         r"PitotTube": "pitot_tube",
         r"Panel_0|Panel_1|gloveboxdoor|gloveboxlock": "instrument_panel",   # with the glareshield
         r"SeatMounts\.[01]": "front_seats",
@@ -517,7 +527,7 @@ SOURCES = [
 ]
 # Never drawn: click hot spots, view blockers, the blurred propeller disc,
 # light cones and lit-state copies, inner copies of the glass, the compass
-# deviation card (placed off the panel), rudder trim (not on a C172S), and
+# deviation card (placed off the panel), rudder trim and the ADF antenna (not on a G1000 C172S), and
 # the interior's own magneto switch (the magneto file's is used).
 # Objects that move in Operate mode, kept in a piece of their own so the
 # viewer can find them: (file, object) -> the piece's `moves` name. The
@@ -535,7 +545,117 @@ SKIP_IN = {"mag-compass/mag-compass.ac": r"Glass"}
 SKIP = re.compile(r".*[Hh]ot[Ss]pot.*|sun_and_view_blocker|panel_blocker|Propeller\.Fast|PropellerCowlPlugs"
                   r"|landinglight|taxilight|BeaconOffX|courtesyon-[lr]|dome_lighton_.*|radiator"
                   r"|glas_.*|.*window_interior|glass_pan.*|magsw|testlamp|click-S"
-                  r"|RudderTrim.*|Deviation-Card")
+                  r"|RudderTrim.*|Deviation-Card|Antenna_ADF")
+
+
+# Corrections to FlightGear's geometry (geometry_audit.md), applied to
+# each object as it is read:
+# - The landing gear moves GEAR_AFT aft: POH Fig. 6-9 puts the main wheels
+#   at FS 58.2 and the nose wheel at FS -6.8, where FlightGear had 51.7 and
+#   -13.0 (its 65 in wheelbase is right; the fuselage's door posts match the
+#   MM's stations).
+# - The wings shrink in span outboard of SPAN_ROOT to the 172S's 36 ft 1 in
+#   (tips at WS 216.5; FlightGear's are at WS 222).
+# - The transponder antenna moves aft to its POH arm, FS 86.3 (FlightGear's
+#   is at FS 50), at the belly's height there.
+GEAR = re.compile(r"NoseWheel(Strut)?|Axle|TopLink|BottomLink|(Left|Right)Wheel(Strut|Brake)?|fairing[123]")
+GEAR_AFT = 0.16
+SPAN_ROOT, SPAN_TIP, SPAN_TIP_WAS = 0.60, 216.5 * 0.0254, 5.64
+MOVE = {"TransponderAntenna": (0.0, 0.021, -0.932)}
+
+
+# The cowling's nose strut slot: FlightGear's (a roofed arch in the lower
+# cowling, NOSE_ARCH: x half-width, z range) is closed flush with the skin,
+# since the strut moved aft; an oval slot (NOSE_SLOT: x half-width, z
+# range) is cut in the belly where the strut and torque links now cross it.
+NOSE_ARCH = (0.104, (0.893, 1.078))
+NOSE_SLOT = (0.055, (0.787, 0.89))
+
+
+def _close_arch(c, uv, rgb):
+    """Drops every face of the arch (roof, walls, rim and the skin between
+    them) and fans a patch across the opening they leave, its uvs and
+    colours taken from the surrounding skin."""
+    w, (z0, z1) = NOSE_ARCH
+    cen = c.mean(1)
+    drop = (np.abs(cen[:, 0]) < w) & (cen[:, 2] > z0) & (cen[:, 2] < z1) & (cen[:, 1] < -0.60)
+    keep = ~drop
+    # The opening's edge: edges of the dropped faces also on a kept face.
+    def key(p):
+        return tuple(np.round(p, 5))
+    kept = {}
+    for k in np.where(keep)[0]:
+        for j in range(3):
+            kept.setdefault(key(c[k, j]), (None if uv is None else uv[k, j], rgb[k, j]))
+    ring, attrs = {}, {}
+    for k in np.where(drop)[0]:
+        for j in range(3):
+            if key(c[k, j]) in kept:                 # the skin's uv there, not the arch wall's
+                ring[key(c[k, j])] = c[k, j]
+                attrs[key(c[k, j])] = kept[key(c[k, j])]
+    # The outer skin only (the rim's step leaves two heights at a spot).
+    low = {}
+    for k_, p in ring.items():
+        xz = (round(p[0], 3), round(p[2], 3))
+        if xz not in low or p[1] < ring[low[xz]][1]:
+            low[xz] = k_
+    pts = np.array([ring[k_] for k_ in low.values()])
+    # Heights on a plane fitted to the skin round the opening (the arch's
+    # aft lip stands higher), so the patch lies flat with it.
+    skin = pts[pts[:, 1] < -0.76]
+    A = np.column_stack([np.ones(len(skin)), skin[:, 0] ** 2, skin[:, 2]])
+    coef = np.linalg.lstsq(A, skin[:, 1], rcond=None)[0]
+    lip = pts[:, 1] >= -0.76
+    pts[lip, 1] = np.column_stack([np.ones(lip.sum()), pts[lip, 0] ** 2, pts[lip, 2]]) @ coef
+    mid = pts.mean(0)
+    mid[1] = np.array([1.0, mid[0] ** 2, mid[2]]) @ coef
+    order = np.argsort(np.arctan2(pts[:, 2] - mid[2], pts[:, 0] - mid[0]))
+    pts = pts[order]
+    n = len(pts)
+    fc = np.array([[mid, pts[i], pts[(i + 1) % n]] for i in range(n)])
+    if np.cross(fc[0, 1] - fc[0, 0], fc[0, 2] - fc[0, 0])[1] > 0:   # face down, as the belly does
+        fc = fc[:, [0, 2, 1]]
+    # The two sides map to different texture islands (and the arch's lip to
+    # a dark one): the patch takes one flat texel of plain skin.
+    skin_keys = [k_ for k_ in low.values() if ring[k_][1] < -0.76]      # not the lip's texels
+    pick = {sgn: attrs[min((k_ for k_ in skin_keys if np.sign(ring[k_][0]) == sgn),
+                           key=lambda k_: abs(ring[k_][0]))] for sgn in (-1.0, 1.0)}
+    side = [pick[1.0] for i in range(n)]                     # one texel: the two islands shade differently
+    fr = np.array([np.tile(r_, (3, 1)) for _, r_ in side])
+    fu = None if uv is None else np.array([np.tile(u_, (3, 1)) for u_, _ in side])
+    return (np.concatenate([c[keep], fc]), None if uv is None else np.concatenate([uv[keep], fu]),
+            np.concatenate([rgb[keep], fr]))
+
+
+def _cut_slot(c, uv, rgb):
+    w, (z0, z1) = NOSE_SLOT
+    t = np.linspace(0, 2 * np.pi, 32, endpoint=False)          # an oval, counter-clockwise in x, z
+    ring = np.column_stack([w * np.cos(t), (z0 + z1) / 2 + (z1 - z0) / 2 * np.sin(t)])
+    lo, hi = ring.min(0), ring.max(0)
+    hit = ((c[:, :, 1].min(1) < -0.74) & (c[:, :, 0].max(1) > lo[0]) & (c[:, :, 0].min(1) < hi[0])
+           & (c[:, :, 2].max(1) > lo[1]) & (c[:, :, 2].min(1) < hi[1]))
+    return cut_outline(c, uv, rgb, ring, hit)
+
+
+def _patch(name, c, uv, rgb):
+    if name == "fuselage_cowling":
+        return _close_arch(c, uv, rgb)
+    if name == "fuselage":
+        return _cut_slot(c, uv, rgb)
+    return c, uv, rgb
+
+
+def _correct(name, c):
+    c = c.copy()
+    if GEAR.fullmatch(name):
+        c[..., 2] -= GEAR_AFT
+    if name in MOVE:
+        c += MOVE[name]
+    x = c[..., 0]
+    out = (np.abs(x) > SPAN_ROOT) & (c[..., 1] > 0.0)
+    k = (SPAN_TIP - SPAN_ROOT) / (SPAN_TIP_WAS - SPAN_ROOT)
+    c[..., 0] = np.where(out, np.sign(x) * (SPAN_ROOT + (np.abs(x) - SPAN_ROOT) * k), x)
+    return c
 
 
 def ac_to_scene(v):
@@ -628,6 +748,8 @@ def load(c172p):
         if offset is not None:
             shift = fg_to_scene(np.array([offset], dtype=np.float64))[0]
             objs = [(name, c + shift, uv, rgb, tex) for name, c, uv, rgb, tex in objs]
+        objs = [(name, _correct(name, c), uv, rgb, tex) for name, c, uv, rgb, tex in objs]
+        objs = [(name, *_patch(name, c, uv, rgb), tex) for name, c, uv, rgb, tex in objs]
         objs = [(name, c, uv, _top_rgb(name, c, rgb), tex) for name, c, uv, rgb, tex in objs]
         corners = {name: c for name, c, *_ in objs}
         for name, c in corners.items():
@@ -670,7 +792,7 @@ def load(c172p):
             if pid is None:
                 unmatched.append(name)
                 continue
-            if pid == "windows":
+            if pid in GLASS_PARTS:
                 uv, tex, rgb = None, None, np.full_like(rgb, GLASS_RGB)
             moves = next((m for (f, rx), m in MOVING.items() if rel.endswith(f) and re.fullmatch(rx, name)), None)
             merged.setdefault(pid, {}).setdefault((tex, behind, moves), []).append((c, uv, rgb))
@@ -704,7 +826,7 @@ def load(c172p):
                 pieces[-1]["moves"] = moves
         parts.append({"id": pid, "system": SYSTEM_OF.get(pid, "cabin"),
                       "kind": "target",
-                      "glass": pid == "windows", "ask": SYSTEM_OF.get(pid) in ASK_SYSTEMS, "pieces": pieces})
+                      "glass": pid in GLASS_PARTS, "ask": SYSTEM_OF.get(pid) in ASK_SYSTEMS, "pieces": pieces})
     missing = set(SYSTEM_OF) - set(merged)
     if missing:
         raise SystemExit(f"parts with no objects: {sorted(missing)}")

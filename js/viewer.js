@@ -25,6 +25,12 @@
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x14161a);
+  // A sky panorama behind the airplane (data/textures.js; build/sky.py).
+  if (window.SCENE_SKY) {
+    const sky = new THREE.TextureLoader().load(window.SCENE_SKY);
+    sky.mapping = THREE.EquirectangularReflectionMapping;
+    scene.background = sky;
+  }
   scene.add(new THREE.HemisphereLight(0xffffff, 0x505060, 1.0));
   scene.add(new THREE.AmbientLight(0xffffff, 0.35));
   const sun = new THREE.DirectionalLight(0xffffff, 0.7);
