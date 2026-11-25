@@ -168,4 +168,4 @@ footer a { color: #8fb8d8; }
 .diagram-hint { position: absolute; right: 1rem; bottom: .6rem; margin: 0; font-size: 12px; color: #a9aeb6;
   pointer-events: none; }
 body.diagram-on .systems { visibility: hidden; }
-.views[hidden] { display: none; }
+.views[hidden], .body-toggle[hidden] { display: none; }

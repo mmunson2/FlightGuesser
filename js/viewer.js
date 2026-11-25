@@ -42,8 +42,12 @@
   scene.add(fill);
 
   const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 200);
-  const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
+  // First person by default, orbit as an option, the pilot's seat in
+  // Operate mode (js/camera.js). Movement keys are off while typing or
+  // with a dialog open.
+  const rig = CAMERA_RIG.create({ THREE, camera, dom: renderer.domElement,
+    ignoreKeys: (e) => e.target.matches('input, select, textarea')
+      || !!document.querySelector('.modal:not([hidden])') });
 
   function decode(b64, Type) {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -124,7 +128,7 @@
   // the keys and knobs work. A pressed key lights for a moment, a turning
   // knob while it turns.
   const avionics = G1000_PANEL.attach({
-    THREE, scene, camera, renderer, controls, meshes, meshById, highlight: HIGHLIGHT,
+    THREE, scene, camera, renderer, controls: rig, meshes, meshById, highlight: HIGHLIGHT,
   });
   // Parts made of several (GROUPS in build/aircraft.py): both ailerons, the
   // three nav lights. A group id works wherever a part id does in a question.
@@ -134,9 +138,7 @@
   // Camera presets (VIEWS in build/build_model.py).
   function goView(name) {
     const v = SCENE_DATA.views[name];
-    camera.position.set(...v.position);
-    controls.target.set(...v.target);
-    controls.update();
+    rig.goTo(v.position, v.target);
   }
 
   // Hiding. Right click hides the part under the cursor; the Hide button and
@@ -153,7 +155,7 @@
   hideBtn.addEventListener('click', () => hide(selection));
 
   function sync() {
-    for (const m of meshes) m.visible = !m.userData.hidden;
+    for (const m of meshes) m.visible = !m.userData.hidden && !m.userData.reaching;
     for (const [sys, box] of Object.entries(boxes)) {
       const own = meshes.filter((m) => m.userData.part.system === sys);
       const shown = own.filter((m) => m.visible).length;
@@ -228,6 +230,10 @@
   const resetBtn = document.getElementById('g1000-reset');
   function setOperate(on) {
     avionics.setOperate(on);
+    // In the seat: look and zoom only, so the presets and modes go away.
+    if (on) rig.setMode('seat'); else rig.leaveSeat();
+    viewsEl.hidden = on || document.body.classList.contains('diagram-on');
+    camModeEl.hidden = on;
     operateBtn.classList.toggle('on', on);
     operateBtn.setAttribute('aria-pressed', on);
     resetBtn.hidden = !on;
@@ -238,10 +244,7 @@
   }
   operateBtn.addEventListener('click', () => {
     setOperate(!avionics.operating);
-    if (avionics.operating) {
-      goView('panel');
-      picked.textContent = t('operate.hint');
-    }
+    if (avionics.operating) picked.textContent = t('operate.hint');
   });
   // Failures (js/g1000-systems.js): choosing one fails that system, or
   // fixes it if it has failed (ticked); the last entry fixes everything.
@@ -330,7 +333,9 @@
 
   renderer.domElement.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
   renderer.domElement.addEventListener('pointerup', (e) => {
-    // Ignore drags: they rotate (left) or pan (right) the camera.
+    // Ignore drags: they look around, or rotate (left) and pan (right) an
+    // orbit.
+    if (rig.consumeDrag()) return;
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
     if (e.button === 2) {
       const mesh = meshAt(e, (p) => !p.glass);
@@ -726,6 +731,16 @@
   const diagramEl = document.getElementById('diagram');
   sceneToggle.append(...['aircraft', 'diagram'].map((id) => choice('scene', id, t('scene.' + id), id === 'aircraft')));
   sceneToggle.addEventListener('change', (e) => showDiagram(e.target.value === 'diagram'));
+  // First person or orbit, remembered between visits.
+  const camModeEl = document.getElementById('cam-mode');
+  let camMode = 'fly';
+  try { if (localStorage.getItem('flightguesser.camera') === 'orbit') camMode = 'orbit'; } catch (err) { /* private window */ }
+  rig.setMode(camMode);
+  camModeEl.append(...['fly', 'orbit'].map((id) => choice('cam-mode', id, t('camera.' + id), id === camMode, t('camera.' + id + 'Tip'))));
+  camModeEl.addEventListener('change', (e) => {
+    rig.setMode(e.target.value);
+    try { localStorage.setItem('flightguesser.camera', e.target.value); } catch (err) { /* private window */ }
+  });
   viewsEl.append(...Object.keys(SCENE_DATA.views).map((name) => {
     const b = Object.assign(document.createElement('button'), { type: 'button', textContent: t('view.' + name) });
     // A view with `solo` (the engine, under the cowling) shows those
@@ -743,7 +758,8 @@
   function showDiagram(on) {
     sceneToggle.querySelector(`input[value="${on ? 'diagram' : 'aircraft'}"]`).checked = true;
     diagramEl.hidden = !on;
-    viewsEl.hidden = on;
+    viewsEl.hidden = on || avionics.operating;
+    camModeEl.hidden = on || avionics.operating;
     document.body.classList.toggle('diagram-on', on);
     if (on) DIAGRAM.show();
   }
@@ -858,13 +874,42 @@
   resize();
 
   goView(Object.keys(SCENE_DATA.views)[0]);
-  renderer.setAnimationLoop(() => { controls.update(); avionics.tick(); renderer.render(scene, camera); });
+  // In the seat the yokes are in the way of the lower panel: while the
+  // pointer is over one, both go, as if reaching past them. The ray tests
+  // the yokes' shape even while hidden, so they come back once it leaves.
+  const yokes = meshById.control_wheels;
+  let hoverAt = null;
+  renderer.domElement.addEventListener('pointermove', (e) => { hoverAt = e; });
+  renderer.domElement.addEventListener('pointerleave', () => { hoverAt = null; });
+  function reachPastYokes() {
+    if (!yokes) return;
+    let reaching = yokes.userData.reaching;
+    if (rig.mode !== 'seat') reaching = false;
+    else if (!hoverAt) reaching = false;
+    // Not mid-drag: a knob turned behind the yoke keeps it out of the way.
+    else if (hoverAt.buttons === 0) {
+      const r = renderer.domElement.getBoundingClientRect();
+      ray.setFromCamera({ x: ((hoverAt.clientX - r.left) / r.width) * 2 - 1,
+                          y: -((hoverAt.clientY - r.top) / r.height) * 2 + 1 }, camera);
+      reaching = ray.intersectObject(yokes, false).length > 0;
+    }
+    if (reaching !== !!yokes.userData.reaching) {
+      yokes.userData.reaching = reaching;
+      yokes.visible = !yokes.userData.hidden && !reaching;
+    }
+  }
+  renderer.setAnimationLoop(() => {
+    rig.update();
+    reachPastYokes();
+    avionics.tick();
+    renderer.render(scene, camera);
+  });
   showStart();
 
   // For tools/check.py and tools/shot.py, which drive the page headless.
   // Not used by the app itself.
   window.FLIGHT_DEBUG = {
-    THREE, renderer, camera, controls, nameKey, nameMatches, GRADE, namePromptKey, settings,
+    THREE, renderer, camera, controls: rig.orbit, rig, nameKey, nameMatches, GRADE, namePromptKey, settings,
     meshes: () => meshes, meshById: () => meshById, meshesOf, GROUPS, askable,
     showDiagram, goView, explore, question: () => question, avionics, setOperate,
     select: (id) => setSelection(meshesOf(id)),

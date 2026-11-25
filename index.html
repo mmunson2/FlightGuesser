@@ -74,6 +74,7 @@
       </div>
       <div class="scene-bar">
         <div class="views" id="views" role="group" data-t-aria-label="view.label"></div>
+        <div class="body-toggle" id="cam-mode" role="radiogroup" data-t-aria-label="camera.label"></div>
         <div class="body-toggle" id="scene-toggle" role="radiogroup" data-t-aria-label="scene.label"></div>
       </div>
     </div>
@@ -114,6 +115,7 @@
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="controls-title">
       <h2 id="controls-title" data-t="controls.title"></h2>
       <dl class="controls-list">
+        <dt data-t="controls.move.key"></dt><dd data-t="controls.move"></dd>
         <dt data-t="controls.rotate.key"></dt><dd data-t="controls.rotate"></dd>
         <dt data-t="controls.pan.key"></dt><dd data-t="controls.pan"></dd>
         <dt data-t="controls.zoom.key"></dt><dd data-t="controls.zoom"></dd>
@@ -125,6 +127,7 @@
         <dt data-t="controls.undo.key"></dt><dd data-t="controls.undo"></dd>
         <dt data-t="controls.submit.key"></dt><dd data-t="controls.submit"></dd>
         <dt data-t="controls.operate.key"></dt><dd data-t="controls.operate"></dd>
+        <dt data-t="controls.seat.key"></dt><dd data-t="controls.seat"></dd>
         <dt data-t="controls.knob.key"></dt><dd data-t="controls.knob"></dd>
         <dt data-t="controls.switch.key"></dt><dd data-t="controls.switch"></dd>
         <dt data-t="controls.lever.key"></dt><dd data-t="controls.lever"></dd>
@@ -144,7 +147,7 @@
     'https://unpkg.com/three@0.147.0/build/three.min.js',
     'https://unpkg.com/three@0.147.0/examples/js/controls/OrbitControls.js',
     'i18n/en.js', 'i18n/questions.en.js', 'data/scenedata.js', 'data/textures.js', 'js/grade.js', 'js/focus.js', 'js/diagram.js',
-    'data/wa-nav.js', 'js/g1000-fms.js', 'js/g1000-pages.js', 'js/g1000-menu.js', 'js/g1000-timer.js', 'js/g1000-systems.js', 'js/g1000-alerts.js', 'js/g1000-checklists.js', 'js/g1000-checklist.js', 'js/g1000-gma.js', 'js/g1000.js', 'js/g1000-display.js', 'js/g1000-standby.js', 'js/g1000-switches.js', 'js/g1000-panel.js', 'js/viewer.js',
+    'data/wa-nav.js', 'js/g1000-fms.js', 'js/g1000-pages.js', 'js/g1000-menu.js', 'js/g1000-timer.js', 'js/g1000-systems.js', 'js/g1000-alerts.js', 'js/g1000-checklists.js', 'js/g1000-checklist.js', 'js/g1000-gma.js', 'js/g1000.js', 'js/g1000-display.js', 'js/g1000-standby.js', 'js/g1000-switches.js', 'js/g1000-panel.js', 'js/camera.js', 'js/viewer.js',
   ]) document.body.append(Object.assign(document.createElement('script'), { src, async: false }));
 </script>
 </body>
