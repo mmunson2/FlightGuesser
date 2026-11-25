@@ -36,6 +36,64 @@ def _tokens(path):
         yield line.rstrip("\n")
 
 
+def triangulate(pts):
+    """A polygon's corners (n, 3) -> corner index triples. A convex polygon
+    is fanned from its first corner; a concave one is ear-clipped, since a
+    fan covers its notches. Exporters write a face with holes (the panel's
+    instrument cutouts) as one concave polygon, the holes bridged into the
+    outline by a doubled edge."""
+    n = len(pts)
+    fan = [(0, k, k + 1) for k in range(1, n - 1)]
+    if n == 3:
+        return fan
+    normal = np.zeros(3)                  # Newell's normal
+    for k in range(n):
+        a, b = pts[k], pts[(k + 1) % n]
+        normal += [(a[1] - b[1]) * (a[2] + b[2]), (a[2] - b[2]) * (a[0] + b[0]), (a[0] - b[0]) * (a[1] + b[1])]
+    axis = int(np.argmax(np.abs(normal)))
+    if normal[axis] == 0:
+        return fan
+    p2 = pts[:, [d for d in range(3) if d != axis]]
+    if normal[axis] < 0:                  # make the polygon counter-clockwise in 2D
+        p2 = p2[:, ::-1]
+    scale = np.ptp(p2, axis=0).max() or 1.0
+    eps = 1e-9 * scale * scale
+
+    def cross(a, b, c):
+        return (p2[b, 0] - p2[a, 0]) * (p2[c, 1] - p2[a, 1]) - (p2[b, 1] - p2[a, 1]) * (p2[c, 0] - p2[a, 0])
+
+    if all(cross(k, (k + 1) % n, (k + 2) % n) >= -eps for k in range(n)):
+        return fan
+    ring, out = list(range(n)), []
+
+    def inside(q, a, b, c):
+        if any(np.array_equal(p2[q], p2[v]) for v in (a, b, c)):
+            return False
+        return cross(a, b, q) > eps and cross(b, c, q) > eps and cross(c, a, q) > eps
+
+    while len(ring) > 3:
+        m = len(ring)
+        for k in range(m):
+            a, b, c = ring[k - 1], ring[k], ring[(k + 1) % m]
+            if cross(a, b, c) > eps and not any(inside(q, a, b, c) for q in ring if q not in (a, b, c)):
+                out.append((a, b, c))
+                del ring[k]
+                break
+        else:
+            # Only flat corners left to clip: drop a straight-through one
+            # (not a bridge's out-and-back spike), else give up and fan.
+            for k in range(m):
+                a, b, c = ring[k - 1], ring[k], ring[(k + 1) % m]
+                if abs(cross(a, b, c)) <= eps and np.dot(p2[b] - p2[a], p2[c] - p2[b]) >= 0:
+                    del ring[k]
+                    break
+            else:
+                out += [(ring[0], ring[k], ring[k + 1]) for k in range(1, len(ring) - 1)]
+                return out
+    out.append(tuple(ring))
+    return out
+
+
 def read(path):
     """-> (materials, objects)"""
     lines = list(_tokens(path))
@@ -94,9 +152,9 @@ def read(path):
                     uv = [(float(r[1]), float(r[2])) if len(r) >= 3 else (0.0, 0.0) for r in rows]
                     i += 1 + nref
                     if flags & 0xF == 0 and nref >= 3:  # polygon (1, 2: lines)
-                        for k in range(1, nref - 1):
-                            tris.append((refs[0], refs[k], refs[k + 1]))
-                            uvs.append((uv[0], uv[k], uv[k + 1]))
+                        for a, b, c in triangulate(np.asarray(verts)[refs]):
+                            tris.append((refs[a], refs[b], refs[c]))
+                            uvs.append((uv[a], uv[b], uv[c]))
                             mats.append(mat)
             elif key == "kids":
                 kids = int(line.split()[1])

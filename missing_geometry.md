@@ -26,6 +26,12 @@ from MM and PC figures and placing them by station (`build/extras.py`).
   `rudder_cables` extended to the rudder bar, `elevator_trim_cables`,
   `trim_tab_actuator`).
 
+- The instrument panel's face (FlightGear's `panel_1_glass`, which the
+  build had skipped as glass), and concave polygons ear-clipped in
+  `build/ac3d.py` instead of fanned: the fan covered the standby
+  instruments' holes and z-fought around the STBY BATT switch and the
+  Hobbs meter.
+
 ## Visible on preflight (high priority)
 
 | Part | Source |

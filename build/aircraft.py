@@ -455,7 +455,9 @@ SOURCES = [
         r"toggle-stbybatt": "standby_battery_switch",
         r"toggle-cabin-pwr": "cabin_power_switch",
         r".*_breaker-fg1000|BreakersBase-fg1000": "circuit_breakers",
-        r"Panel|panel|panel_1_1-fg1000|bolts-fg1000|switchbase|togglebase": "instrument_panel",
+        # panel_1_glass is the panel's face around the instruments (FlightGear
+        # gives it the interior panel lightmap), not glass.
+        r"Panel|panel|panel_1_1-fg1000|panel_1_glass|bolts-fg1000|switchbase|togglebase": "instrument_panel",
         r"Pedestal-fg1000": "pedestal",
         r"pilotseat_(left|right)-fg1000": "front_seats",
         r"backseat_left-fg1000": "rear_seat",
@@ -498,7 +500,7 @@ SOURCES = [
 # the interior's own magneto switch (the magneto file's is used).
 SKIP = re.compile(r".*[Hh]ot[Ss]pot.*|sun_and_view_blocker|panel_blocker|Propeller\.Fast|PropellerCowlPlugs"
                   r"|landinglight|taxilight|BeaconOffX|courtesyon-[lr]|dome_lighton_.*|radiator"
-                  r"|glas_.*|.*window_interior|panel_1_glass|glass_pan.*|magsw|testlamp|click-S"
+                  r"|glas_.*|.*window_interior|glass_pan.*|magsw|testlamp|click-S"
                   r"|RudderTrim.*|legend|Deviation-Card")
 
 
