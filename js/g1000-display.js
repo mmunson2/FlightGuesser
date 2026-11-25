@@ -159,6 +159,7 @@ window.G1000_DISPLAY = (function () {
     const [x, y, w, h] = display === 'pfd' ? [660, 548, 358, 228] : [600, 106, 418, H - 34 - 160];
     if (win.type === 'dto') dtoWindow(ctx, s, G, win, x, y, w, Math.min(h, 228));
     else if (win.type === 'nrst') pfdNearest(ctx, s, G, win, x, y, w, h);
+    else if (win.type === 'tmr') timerWindow(ctx, s, G, win, x, 500, w, 276);
     else fplWindow(ctx, s, G, win, x, y, w, h);
   }
 
@@ -220,6 +221,43 @@ window.G1000_DISPLAY = (function () {
     G.menus.mapRows(m).forEach((r, i) => line(r.label, fmt(r.value), y + 104 + i * 32, m.cursor === i));
     text(ctx, 'Large knob: setting · small knob: change it', x + w / 2, y + h - 40, { size: 14, align: 'center', color: C.grey });
     text(ctx, 'Push FMS or CLR to return to the map', x + w / 2, y + h - 20, { size: 14, align: 'center', color: C.grey });
+  }
+
+  // The PFD's Timer/References window (js/g1000-timer.js): the timer, the
+  // V-speeds, the minimums. Each field the cursor can take is drawn by
+  // `field`, which boxes it cyan under the cursor.
+  const hms = (sec) => [sec / 3600, (sec / 60) % 60, sec % 60].map((v) => String(Math.floor(v)).padStart(2, '0')).join(':');
+  function timerWindow(ctx, s, G, win, x, y, w, h) {
+    box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
+    text(ctx, 'TIMER / REFERENCES', x + w / 2, y + 20, { size: 19, align: 'center', color: C.cyan });
+    const r = s.ref, t = r.timer, F = G1000_TIMER.FIELDS;
+    let n = 0;
+    // The next cursor stop's value at (fx, fy), right-aligned.
+    const field = (str, fx, fy, color = C.cyan) => {
+      const sel = win.cursor === n++;
+      ctx.font = font(19);
+      const tw = ctx.measureText(str).width;
+      if (sel) box(ctx, fx - tw - 4, fy - 13, tw + 8, 26, { fill: C.cyan, stroke: null });
+      text(ctx, str, fx, fy, { size: 19, align: 'right', color: sel ? C.black : color });
+    };
+    const rowY = (i) => y + 54 + i * 29;
+    text(ctx, 'TIMER', x + 12, rowY(0), { size: 16, color: C.grey });
+    field(hms(t.secs), x + 180, rowY(0), t.expired && !blinkOn(s, s.t + 1) ? C.yellow : C.white);
+    field(t.dir, x + 236, rowY(0));
+    field(G.timer.action(), x + w - 12, rowY(0));
+    text(ctx, 'REFERENCES', x + 12, rowY(1), { size: 15, color: C.grey });
+    G1000_TIMER.VSPEEDS.forEach((v, i) => {
+      const ref = r.v[v.key];
+      text(ctx, v.name, x + 30, rowY(2 + i), { size: 18 });
+      field(`${ref.kt}KT`, x + 210, rowY(2 + i));
+      field(ref.on ? 'ON' : 'OFF', x + w - 12, rowY(2 + i), ref.on ? C.cyan : C.grey);
+    });
+    text(ctx, 'MINIMUMS', x + 12, rowY(6), { size: 16, color: C.grey });
+    field(r.mins.mode, x + 210, rowY(6), r.mins.mode === 'OFF' ? C.grey : C.cyan);
+    field(`${r.mins.ft}FT`, x + w - 12, rowY(6));
+    console.assert(n === F.length, 'timer window fields');
+    text(ctx, 'Large knob: field · small knob: change · ENT: timer', x + w / 2, y + h - 16,
+      { size: 14, align: 'center', color: C.grey });
   }
 
   // The PFD's Nearest Airports window: identifier, bearing, distance.
@@ -475,7 +513,9 @@ window.G1000_DISPLAY = (function () {
       ctx.strokeRect(i * w + 3, y + 3, w - 6, 28);
       // The selected option of a menu shows lit (cyan).
       const on = (menu === 'xpdr' && ({ Standby: 'STBY', On: 'ON', Alt: 'ALT' })[label] === s.xpdr.mode)
-        || (menu === 'engine' && label === s.eisPage);
+        || (menu === 'engine' && label === s.eisPage)
+        // A softkey's window open on the PFD.
+        || (menu === 'pfd' && ({ 'Tmr/Ref': 'tmr', Nearest: 'nrst' })[label] === s.fms.win.pfd?.type);
       if (on) box(ctx, i * w + 3, y + 3, w - 6, 28, { fill: C.cyan, stroke: null });
       text(ctx, label, i * w + w / 2, y + 17, { size: label.length > 7 ? 15 : 18, align: 'center',
         color: on ? C.black : live.includes(i) ? C.white : '#5b6068' });
@@ -618,6 +658,14 @@ window.G1000_DISPLAY = (function () {
       }
     }
     ctx.restore();
+    // V-speed references that are on (Tmr/Ref): a cyan tag outside the
+    // tape's right edge at the speed, when it is on the tape.
+    for (const v of G1000_TIMER.VSPEEDS) {
+      const ref = s.ref.v[v.key], y = yOf(ref.kt);
+      if (!ref.on || y < top + 10 || y > bot - 10) continue;
+      box(ctx, x + w + 2, y - 11, 22, 22, { fill: C.black, stroke: C.cyan });
+      text(ctx, v.tag, x + w + 13, y + 1, { size: 16, align: 'center', color: C.cyan });
+    }
     // Readout.
     const color = s.ias >= sp.vne ? C.red : s.ias >= sp.yellow[0] ? C.yellow : C.white;
     ctx.fillStyle = C.black;
@@ -651,7 +699,22 @@ window.G1000_DISPLAY = (function () {
     const yb = Math.min(bot - 8, Math.max(top + 8, yOf(s.altSel)));
     ctx.fillStyle = C.cyan;
     ctx.fillRect(x, yb - 16, 9, 32);
+    // Minimums bug (Tmr/Ref, BARO): a bar across the tape's left half,
+    // cyan, yellow once below.
+    const mins = s.ref.mins, minColor = mins.below ? C.yellow : C.cyan;
+    if (mins.mode === 'BARO') {
+      const ym = yOf(mins.ft);
+      ctx.fillStyle = minColor;
+      ctx.beginPath(); ctx.moveTo(x, ym - 9); ctx.lineTo(x + 14, ym); ctx.lineTo(x, ym + 9); ctx.fill();
+      ctx.fillRect(x, ym - 2, 46, 4);
+    }
     ctx.restore();
+    // The minimums box, left of the baro setting.
+    if (mins.mode === 'BARO') {
+      box(ctx, x - 150, bot, 146, 30, { fill: C.black, stroke: C.grey });
+      text(ctx, 'BARO MIN', x - 143, bot + 15, { size: 13, color: minColor });
+      text(ctx, `${mins.ft}FT`, x - 8, bot + 15, { size: 16, align: 'right', color: minColor });
+    }
     // Readout.
     ctx.fillStyle = C.black;
     ctx.strokeStyle = C.white;

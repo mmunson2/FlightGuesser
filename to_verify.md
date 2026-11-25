@@ -127,6 +127,28 @@ the GFC 700 AFMS:
     from 5,000 ft. Check the thresholds and whether hard surface counts.
   - The defaults (100 NM, small airports 50 NM) are scaled to the mock's
     100 NM maximum. The real ones are larger.
+- **Tmr/Ref softkey** (js/g1000-timer.js): a window in the PFD's lower
+  right.
+  - Generic timer: UP or DN, START?/STOP?/RESET? on ENT. The small knob
+    sets the time in whole minutes while the timer is stopped. A count
+    down shows "Timer expired" at zero and then counts up. Check the real
+    expiry behaviour and how the time is entered (the real unit may
+    take hours, minutes and seconds separately).
+  - The cursor opens on UP/DN. ENT from any field runs the timer's action.
+  - References, each ON/OFF with an adjustable speed: Vglide 68, Vr 55,
+    Vx 62, Vy 74 KIAS (this POH). When on, each shows as a cyan G, R, X
+    or Y tag beside the airspeed tape. Check the real defaults, which
+    Garmin sets per airplane, and how tags show when the speed is off
+    the tape.
+  - Minimums: OFF or BARO (no radar altimeter in a 172), in 10 ft
+    steps. BARO puts a bug on the altitude tape and a BARO MIN box left
+    of the baro setting. Both turn yellow below minimums, with a
+    "MINIMUMS" note once on the way down. The real aural alert and its
+    100 ft-above cue aren't modelled. TEMP COMP isn't in the mock.
+  - Page Menu: All References On, All References Off, Restore Defaults.
+    Check the names.
+  - The Tmr/Ref and Nearest softkeys light up while their window is
+    open.
 - **PFD Nearest softkey**: opens a Nearest Airports window. Push FMS for
   the cursor; D→ offers the selection.
 - **Fuel**: 48 gal usable at start, burning at a made-up fuel flow (from

@@ -38,7 +38,7 @@ window.G1000_MENU = (function () {
     orient: 'Heading Up', ring: 'On', fpl: 100, aptL: 100, aptM: 100, aptS: 50, vor: 100,
   };
 
-  function create({ state, fms, pages, note, ranges }) {
+  function create({ state, fms, pages, timer, note, ranges }) {
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     const GROUPS = mapGroups(ranges);
     const fresh = () => ({ pfd: null, mfd: null });
@@ -107,6 +107,7 @@ window.G1000_MENU = (function () {
           : grey('Cancel Direct-To NAV', 'no Direct-To in force')];
       }
       if (win?.type === 'fpl') return fplOptions(win);
+      if (win?.type === 'tmr') return timer.menuOptions(opt);
       if (display === 'pfd') return [];
       switch (pages.pageKey()) {
         case 'MAP:0': return [

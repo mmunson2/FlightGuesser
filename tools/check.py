@@ -584,6 +584,43 @@ G1000_CHECKS = r"""() => {
   expect(!s.pageMenu.mfd && P.pageKey() === 'MAP:0', 'push FMS should close Map Setup');
   expect(G.airportSize(G.fms.byId.KPAE) === 'L', 'Paine (9,010 ft) should be a large airport');
 
+  // Tmr/Ref: a 2-minute count down, set and started with the knobs and
+  // ENT; it expires and counts up. Then Vy on, and BARO minimums.
+  G.reset();
+  const pt = (part, n) => G.turn('fms', part, n, 'pfd'), r = s.ref;
+  G.press('softkey:9', 'pfd');
+  expect(s.fms.win.pfd?.type === 'tmr', 'Tmr/Ref softkey opened no window');
+  pt('inner', 1);
+  expect(r.timer.dir === 'DN', `timer direction ${r.timer.dir}`);
+  pt('outer', -1); pt('inner', 2);
+  expect(r.timer.secs === 120 && G.timer.action() === 'START?', `timer set ${r.timer.secs} s, ${G.timer.action()}`);
+  G.press('ent', 'pfd');
+  run(60);
+  expect(r.timer.running && Math.abs(r.timer.secs - 60) < 1 && G.timer.action() === 'STOP?', `count down at ${r.timer.secs}`);
+  run(70);
+  expect(r.timer.expired && Math.abs(r.timer.secs - 10) < 1, `after expiry ${r.timer.secs} s, expired ${r.timer.expired}`);
+  G.press('ent', 'pfd');
+  expect(!r.timer.running && G.timer.action() === 'RESET?', `stopped: ${G.timer.action()}`);
+  G.press('ent', 'pfd');
+  expect(r.timer.secs === 120 && G.timer.action() === 'START?', `reset to ${r.timer.secs}`);
+  // Vy: the large knob to its ON/OFF (Vglide, Vr, Vx before it).
+  pt('outer', 8); pt('inner', 1);
+  expect(r.v.y.on && !r.v.x.on, `Vy on: ${JSON.stringify(r.v)}`);
+  // The Page Menu: All References On.
+  G.press('menu', 'pfd');
+  expect(s.pageMenu.pfd?.items[0].label === 'All References On', 'Tmr/Ref menu');
+  G.press('ent', 'pfd');
+  expect(Object.values(r.v).every((v) => v.on), 'All References On');
+  // BARO minimums at 3,400 ft: an alert on descending through them.
+  pt('outer', 1); pt('inner', 1); pt('outer', 1); pt('inner', 240);
+  expect(r.mins.mode === 'BARO' && r.mins.ft === 3400, `minimums ${r.mins.mode} ${r.mins.ft}`);
+  run(2);
+  expect(!r.mins.below, 'below minimums at 3,500 ft');
+  s.manual.pitch = -3;
+  expect(run(120, () => r.mins.below) && s.note?.text === 'MINIMUMS', `no MINIMUMS alert: ${s.note?.text}`);
+  G.press('clr', 'pfd');
+  expect(!s.fms.win.pfd, 'CLR should close Tmr/Ref');
+
   // Transponder: XPDR, Code, four digits, back on the XPDR menu.
   G.reset();
   G.press('softkey:7', 'pfd'); G.press('softkey:7', 'pfd');
