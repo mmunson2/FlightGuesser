@@ -44,8 +44,11 @@ window.G1000_SWITCHES = (function () {
                   stby: 'STBY BATT', beacon: 'BEACON', land: 'LAND', nav: 'NAV', strobe: 'STROBE',
                   taxi: 'TAXI', pitot: 'PITOT HEAT', fuelPump: 'FUEL PUMP', cabinPwr: 'CABIN PWR 12V', elt: 'ELT' };
   const PARTS = new Set(SWITCHES.map((s) => s.pid));
-  // The STBY BATT test lamp, right of the switch.
+  // The STBY BATT test lamp, right of the switch; the ELT's red lamp,
+  // above its rocker (elt-fg1000.ac eltlamp), which flashes while the ELT
+  // is ON (transmitting).
   const TEST_LAMP = [0.356, 0.021, 0.3628];
+  const ELT_LAMP = [-0.308, 0.1315, 0.3627], ELT_FLASH_MS = 1000, ELT_LIT_MS = 600;
 
   function attach({ THREE, scene, meshById }) {
     // Each switch's vertices, as drawn, to turn from.
@@ -64,6 +67,13 @@ window.G1000_SWITCHES = (function () {
     lamp.renderOrder = 1;
     lamp.visible = false;
     scene.add(lamp);
+    const eltLamp = new THREE.Mesh(new THREE.CircleGeometry(0.0022, 24),
+      new THREE.MeshBasicMaterial({ color: 0xff2a1a, toneMapped: false }));
+    eltLamp.rotation.y = Math.PI;
+    eltLamp.position.set(...ELT_LAMP);
+    eltLamp.renderOrder = 1;
+    eltLamp.visible = false;
+    scene.add(eltLamp);
 
     // Move the levers to the switches' positions (only those that moved).
     function update(sys, lampOn) {
@@ -93,6 +103,8 @@ window.G1000_SWITCHES = (function () {
         l.mesh.geometry.computeBoundingBox();
       }
       lamp.visible = lampOn && meshById.standby_battery_switch?.visible !== false;
+      eltLamp.visible = sys.sw.elt && meshById.elt_remote_switch?.visible !== false
+        && performance.now() % ELT_FLASH_MS < ELT_LIT_MS;
     }
 
     // The switch a hit on a part is: the avionics rocker's half by where;

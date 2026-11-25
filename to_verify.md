@@ -301,6 +301,8 @@ the GFC 700 AFMS:
     0° sticks out too far). The lights don't light the exterior lights.
   - FUEL PUMP, CABIN PWR 12V and the ELT's remote rocker (ARM/ON) flip
     but do nothing yet: procedure practice only. All start off / ARM.
+    ELT ON flashes its red lamp (0.6 s lit every second; check the real
+    rate).
 - **PFD Opt → ALT Units** (Meters, IN, HPA):
   - Meters adds metric boxes under the altitude readout and beside the
     selected altitude. The real overlay may sit elsewhere.
