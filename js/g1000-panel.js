@@ -466,16 +466,32 @@ window.G1000_PANEL = (function () {
     renderer.domElement.addEventListener('pointercancel', endDrag);
 
     // Flying by hand with the autopilot off: arrows for pitch and bank,
-    // Page Up/Down for power. Not while a dialog or text field has focus.
+    // Page Up/Down for power, Home/End for the mixture (richer, leaner).
+    // With the MFD map's pointer out (RANGE push) the arrows move it
+    // instead, as the joystick would. Not while a dialog or text field
+    // has focus.
     document.addEventListener('keydown', (e) => {
       if (!operating || e.target.matches('input, select, textarea')
         || document.querySelector('.modal:not([hidden])')) return;
+      const pan = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+      if (pan && G.state.pan) {
+        e.preventDefault();
+        G.pan(...pan);
+        redraw(true);
+        return;
+      }
       const input = { ArrowUp: { pitch: -0.5 }, ArrowDown: { pitch: 0.5 }, ArrowLeft: { roll: -3 },
-        ArrowRight: { roll: 3 }, PageUp: { power: 0.05 }, PageDown: { power: -0.05 } }[e.key];
+        ArrowRight: { roll: 3 }, PageUp: { power: 0.05 }, PageDown: { power: -0.05 },
+        Home: { mixture: 0.02 }, End: { mixture: -0.02 } }[e.key];
       if (!input) return;
       e.preventDefault();
       G.fly(input);
     });
+
+    // The aural alerts (js/g1000-audio.js): heard only while operating,
+    // and while sound is on (the toolbar's Sound button).
+    const audio = G1000_AUDIO.create();
+    let soundOn = true;
 
     // ---- Every frame: the simulation, and the screens at ~15 Hz ----
     let lastT = performance.now(), lastDraw = 0;
@@ -496,6 +512,8 @@ window.G1000_PANEL = (function () {
       const now = performance.now();
       G.tick((now - lastT) / 1000);
       lastT = now;
+      if (audio.on !== (operating && soundOn)) audio.on = operating && soundOn;
+      audio.update(G.state);
       // The screens follow their display's part: hidden, faded by the
       // quiz's x-ray.
       for (const s of screens) {
@@ -527,6 +545,8 @@ window.G1000_PANEL = (function () {
       setOperate(on) { operating = on; },
       onTurn(fn) { onTurn = fn; },
       reset() { G.reset(); redraw(true); },
+      get sound() { return soundOn; },
+      set sound(on) { soundOn = !!on; },
       // For tools (tools/shot.py --js): where a part's control is.
       controlAt, softkeyAt, screens, gauges, overlay,
     };

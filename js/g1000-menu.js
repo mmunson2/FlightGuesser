@@ -16,7 +16,13 @@
 // state.pfdMapSet: the inset and HSI maps) and the flight plan's Change
 // Fields (state.fms.fields). The large knob moves between the GROUP line
 // and the settings, the small knob changes the one under the cursor;
-// ENT, CLR, MENU or a push of the FMS knob puts it away.
+// ENT, CLR, MENU or a push of the FMS knob puts it away. Parallel Track
+// is one too (state.fms.ptk).
+//
+// Closest Point of FPL opens its own small window: type the reference
+// waypoint (small knob: character, large knob: position), ENT shows the
+// point on the plan nearest it, and ENT again saves that point as a user
+// waypoint. CLR backs out.
 window.G1000_MENU = (function () {
   // Map Setup's groups. A setting's values: what the small knob steps
   // through. Ranges are the map range up to which a symbol shows.
@@ -60,6 +66,7 @@ window.G1000_MENU = (function () {
   function create({ state, fms, pages, timer, note, ranges }) {
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     const GROUPS = mapGroups(ranges);
+    const PTK_DIST = Array.from({ length: 50 }, (_, i) => i + 1);
     // The setup windows: title, groups, and where their settings live.
     const SETUPS = {
       map: { title: 'MAP SETUP', groups: GROUPS, target: () => state.mapSet },
@@ -67,6 +74,9 @@ window.G1000_MENU = (function () {
       fields: { title: 'CHANGE FIELDS', target: () => state.fms.fields, groups: [{ name: 'Flight Plan', rows: [
         { key: 'f1', label: 'Field 1', values: FPL_FIELDS }, { key: 'f2', label: 'Field 2', values: FPL_FIELDS },
         { key: 'f3', label: 'Field 3', values: FPL_FIELDS }] }] },
+      ptk: { title: 'PARALLEL TRACK', target: () => state.fms.ptk, groups: [{ name: 'Active Flight Plan', rows: [
+        { key: 'side', label: 'Direction', values: ['Left', 'Right'] }, { key: 'dist', label: 'Distance', values: PTK_DIST },
+        { key: 'on', label: 'Parallel Track', values: ['Off', 'On'] }] }] },
     };
     const fresh = () => ({ pfd: null, mfd: null });
     const freshMap = () => ({ ...MAP_DEFAULTS });
@@ -99,8 +109,11 @@ window.G1000_MENU = (function () {
           const i = fms.storePlan();
           if (i != null) note(`Stored as flight plan ${String(i + 1).padStart(2, '0')}`);
         }) : grey('Store Flight Plan', none),
-        grey('Closest Point of FPL'),
-        grey('Parallel Track'),
+        n >= 2 ? opt('Closest Point of FPL', () => { M()[display] = { type: 'cpa', entry: { ident: '', pos: 0 }, result: null }; })
+          : grey('Closest Point of FPL', 'needs two waypoints'),
+        // Offsets the plan's legs; not with a Direct-To or OBS.
+        f.active != null && !f.dto && !state.fms.obs ? opt('Parallel Track', () => openSetup(display, 'ptk'))
+          : grey('Parallel Track', 'needs an active flight plan leg (not a Direct-To or OBS)'),
         grey('Select Departure', 'procedures are not in the mock yet'),
         grey('Select Arrival', 'procedures are not in the mock yet'),
         grey('Select Approach', 'procedures are not in the mock yet'),
@@ -148,9 +161,29 @@ window.G1000_MENU = (function () {
       switch (pages.pageKey()) {
         case 'MAP:0': return [
           opt('Map Settings', () => openSetup('mfd', 'map')),
-          grey('Measure Bearing/Distance'),
+          // From the pointer (own ship if it wasn't out) to wherever it
+          // then goes.
+          state.pan?.measure ? opt('Stop Measuring', () => { state.pan.measure = null; })
+            : opt('Measure Bearing/Distance', () => {
+              state.pan ??= { lat: state.lat, lon: state.lon, measure: null };
+              state.pan.measure = { lat: state.pan.lat, lon: state.pan.lon };
+            }),
           grey('Show Chart', 'charts are not in the mock'),
         ];
+        case 'WPT:4': {
+          const u = pages.shownUser(), none = 'there are no user waypoints';
+          return [
+            opt('Create New User WPT', () => {
+              const w = fms.addUser({ lat: state.lat, lon: state.lon });
+              if (w) { state.mfd.wpt.user = w.id; note(`${w.id} created at the present position`); }
+            }),
+            u ? opt('Delete User WPT', () => { if (fms.removeUser(u.id)) state.mfd.wpt.user = null; }, `Delete ${u.id}?`) : grey('Delete User WPT', none),
+            u ? opt('Delete All User WPTs', () => {
+              state.fms.user.map((w) => w.id).forEach((id) => fms.removeUser(id));
+              state.mfd.wpt.user = null;
+            }, 'Delete all user waypoints?') : grey('Delete All User WPTs', none),
+          ];
+        }
         case 'AUX:1': return utilityOptions();
         case 'FPL:1': return catalogOptions();
         default: return [];
@@ -195,6 +228,7 @@ window.G1000_MENU = (function () {
         close(display);
         return false;
       }
+      if (m.type === 'cpa') return cpaKey(key, display, m);
       if (m.confirm) {
         if (key === 'ent') { const { run } = m.confirm; close(display); run(); return true; }
         if (key === 'clr') { m.confirm = null; return true; }
@@ -205,9 +239,33 @@ window.G1000_MENU = (function () {
       close(display);
       return false;
     }
+    // Closest Point of FPL: ENT finds the point, ENT again saves it.
+    function cpaKey(key, display, m) {
+      if (key === 'clr') {
+        if (m.result) m.result = null; else close(display);
+        return true;
+      }
+      if (key !== 'ent') { close(display); return false; }
+      if (m.result) {
+        const w = fms.addUser({ lat: m.result.lat, lon: m.result.lon, name: `CLOSEST POINT TO ${m.result.ref}` });
+        if (w) note(`${w.id} created: the plan's closest point to ${m.result.ref}`);
+        close(display);
+        return true;
+      }
+      const ref = fms.match(m.entry.ident);
+      if (!ref) { note('No waypoint matches ' + (m.entry.ident || '(blank)')); return true; }
+      m.entry.ident = ref.id;
+      m.result = { ...fms.closestPoint(ref.id), ref: ref.id };
+      return true;
+    }
     function turn(part, steps, display) {
       const m = M()[display];
       if (!m) return false;
+      if (m.type === 'cpa') {
+        m.result = null;
+        if (part === 'inner') fms.editChar(m.entry, steps); else fms.moveCursor(m.entry, steps);
+        return true;
+      }
       if (m.type === 'map') {
         const S = SETUPS[m.setup], groups = S.groups, rows = groups[m.group].rows, set = S.target();
         if (part === 'outer') m.cursor = clamp(m.cursor + steps, -1, rows.length - 1);

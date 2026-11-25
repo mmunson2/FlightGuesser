@@ -29,6 +29,8 @@ window.G1000_ALERTS = (function () {
     wpt: { title: 'WPT ARRIVAL', text: 'Arriving at waypoint' },
     timer: { title: 'TIMER EXPIRD', text: 'Timer has expired.' },
     database: { title: 'DATABASE EXPIRE', text: 'Navigation database has expired.' },
+    // The GPS's loss of integrity (the 'gps' failure).
+    loi: { title: 'LOI', text: 'GPS integrity lost. Crosscheck with other NAVS.' },
   };
   const LEVELS = ['warning', 'caution'];
 
@@ -69,6 +71,7 @@ window.G1000_ALERTS = (function () {
       if (nav && !nav.obs && nav.remaining >= 0 && (nav.remaining / Math.max(gs(), 30)) * 3600 <= 10) found.wpt = nav.leg.to.id;
       if (state.ref.timer.expired) found.timer = '';
       if (dbExpires != null && now() >= dbExpires) found.database = '';
+      if (state.sys.failed.gps) found.loi = '';
       return found;
     }
 

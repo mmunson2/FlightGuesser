@@ -46,7 +46,7 @@ the GFC 700 AFMS:
   - The box flashes 5 seconds at 1,000 ft out and again at 200 ft.
   - It turns yellow when off by more than 200 ft after reaching the
     altitude.
-  - The aural alert isn't modelled.
+  - Its aural alert is a made-up chime (see Aural alerts below).
 - **NAV capture**:
   - Arms when off course by 7° or more.
   - Intercepts at up to 45°.
@@ -96,10 +96,10 @@ the GFC 700 AFMS:
     Check the real menus of Airport Information, Trip Planning and
     Nearest.
   - Active Flight Plan (both displays): Activate Leg, Invert Flight Plan,
-    Delete Flight Plan and Store Flight Plan work. Closest Point of FPL,
-    Parallel Track and Select Departure/Arrival/Approach are grey. The
-    real list is longer (Insert Before/After, Change Fields, airways), and
-    its order is from memory.
+    Delete Flight Plan, Store Flight Plan, Insert Before/After, Change
+    Fields, Closest Point of FPL and Parallel Track work. Select
+    Departure/Arrival/Approach are grey. The real list is longer
+    (airways), and its order is from memory.
   - Invert flies the reversed plan from its first leg. Delete keeps a
     Direct-To to a waypoint outside the plan.
   - Direct-To window: Cancel Direct-To NAV. It goes back to the plan's
@@ -129,7 +129,7 @@ the GFC 700 AFMS:
     the HSI map. The real PFD maps have their own settings.
   - Airspace colours: B blue, C magenta, D blue dashed, as on the
     sectional. Check against the G1000's own symbols.
-  - Heading Up and Track Up look the same because there's no wind.
+  - Track Up differs from Heading Up by the wind's drift.
   - Airport size goes by the longest runway: large from 8,100 ft, medium
     from 5,000 ft. Check the thresholds and whether hard surface counts.
   - The defaults (100 NM, small airports 50 NM) are scaled to the mock's
@@ -150,8 +150,8 @@ the GFC 700 AFMS:
   - Minimums: OFF or BARO (no radar altimeter in a 172), in 10 ft
     steps. BARO puts a bug on the altitude tape and a BARO MIN box left
     of the baro setting. Both turn yellow below minimums, with a
-    "MINIMUMS" note once on the way down. The real aural alert and its
-    100 ft-above cue aren't modelled. TEMP COMP isn't in the mock.
+    "MINIMUMS" note and a spoken "Minimums" once on the way down. The
+    100 ft-above cue isn't modelled. TEMP COMP isn't in the mock.
   - Page Menu: All References On, All References Off, Restore Defaults.
     Check the names.
   - The Tmr/Ref and Nearest softkeys light up while their window is
@@ -326,7 +326,8 @@ the GFC 700 AFMS:
 - **PFD Nearest softkey**: opens a Nearest Airports window. Push FMS for
   the cursor; D→ offers the selection.
 - **Fuel**: 48 gal usable at start, burning at a made-up fuel flow (from
-  power and altitude, not the POH). Trip Planning assumes no wind.
+  power, altitude and the mixture, not the POH). Trip Planning uses the
+  present ground speed, wind included.
 - **GPS CDI scale**: ENR 2.0 NM full scale; TERM 1.0 NM within 31 NM of
   the plan's departure or destination airport. The 0.3 NM approach scale
   isn't modelled.
@@ -372,7 +373,117 @@ the GFC 700 AFMS:
 - **Simplified**:
   - The airplane's kinematics and the systems model's rates are made up.
     The annunciation thresholds are the POH's.
-  - There is no wind.
+  - The wind is one steady vector at every altitude (the Wind list in
+    Operate mode), with no gusts or shear.
+
+### Section 2 additions (written from memory of the pilot's guide)
+
+- **Wind**:
+  - Ground speed and track include the wind: GS and TRK on the MFD, the
+    track vector, Trip Planning, ETE/ETA, the Utility odometer, and the
+    airspace "ahead" check. A magenta diamond on the HSI rose marks the
+    track.
+  - GPS and VOR NAV steer by track, so they crab into a crosswind.
+  - The PFD's wind window (PFD Opt, Wind): Option 1 is head/tail and
+    crosswind components with arrows; Option 2 is an arrow relative to the
+    nose plus speed; Option 3 is the arrow plus direction (magnetic) and
+    speed. Check the layouts, and whether Option 3's direction is
+    magnetic or true.
+  - "NO WIND DATA" under 30 kt TAS is a guess at the real threshold.
+  - The window sits left of the HSI, at x 306, so it clears the inset
+    map. The real position differs.
+- **Bearing 1/2** (PFD Opt):
+  - Each press cycles Off, NAV, GPS, Off. ADF is skipped.
+  - The pointers are cyan, BRG1 a single line and BRG2 a double. Their
+    info windows (distance, ident, source) sit at the HSI's lower left
+    and right.
+  - With nothing received a window shows NO DATA. The VOR range is the
+    mock's flat 60 NM.
+- **DME** (PFD Opt):
+  - The window shows its tuning, frequency and slant range.
+  - Only VOR/DME and VORTAC stations (NASR's kind) give a distance.
+  - The ADF/DME softkey cycles the DME tuning between NAV1, NAV2 and HOLD.
+    On the real unit it opens a tuning window.
+- **Map pan and Measure**:
+  - Pushing RANGE on the MFD's Navigation Map or FPL page brings out a
+    pointer. With it out, the arrow keys move it an eighth of the range
+    per press, standing in for the joystick. The map centres on the
+    pointer.
+  - ENT on empty map makes a user waypoint; on a waypoint it names it.
+  - D→ offers the waypoint under the pointer.
+  - CLR stops measuring, then puts the pointer away.
+  - Measure Bearing/Distance (Page Menu) measures from where the pointer
+    was when you picked it.
+  - The PFD inset map can't be panned.
+- **Parallel Track** (FPL Page Menu): a setup window with Direction,
+  Distance (1–50 NM) and On/Off.
+  - It offsets the active leg sideways. A Direct-To or OBS isn't offset,
+    and the option is grey with one.
+  - Corners aren't joined. The real unit's transition legs aren't
+    modelled.
+- **Closest Point of FPL** (FPL Page Menu): type a reference waypoint,
+  and ENT shows the bearing and distance from it to the plan's closest
+  point. ENT again saves that point as a user waypoint.
+  - Check whether the real unit names it after the reference, and
+    whether it inserts it in the plan. The mock only saves it.
+- **User waypoints**:
+  - Names default to USR001, USR002 and so on.
+  - Made with WPT – User WPT Information's Page Menu (at the present
+    position), at the map pointer, or as a closest point.
+  - On the page, the large knob moves between name, REF WPT, radial and
+    distance. The small knob steps 1° or 1 NM. ENT renames, or picks the
+    reference.
+  - One in a flight plan, Direct-To or stored plan can't be deleted or
+    renamed.
+  - Shown on maps as small cyan squares, with the small airports.
+  - Nearest User WPTs lists those within 200 NM.
+- **GPS Status (AUX)**: the constellation is made up: twelve satellites
+  plus two WAAS. EPU 0.02 NM, HFOM 25 ft and VFOM 33 ft are typical
+  values, not computed.
+- **LOI** (Failures, "GPS integrity"):
+  - There is no GPS course: the CDI shows LOI in amber, and GPS NAV drops
+    to ROL.
+  - An LOI message appears, and GPS Status shows LOI with three
+    satellites.
+  - Dead reckoning (the NXi's DR mode) isn't modelled.
+- **Mixture, Lean page, totalizer**:
+  - The mixture's keys are Home (richer) and End (leaner). The mock
+    starts leaned for best power at 3,500 ft.
+  - Full rich at sea level is 1.35 × the peak-EGT mixture, richer with
+    altitude.
+  - EGT falls 500 °F per unit rich of peak and 700 lean of it. Cylinder 2
+    runs leanest and peaks first. CHT tracks EGT.
+  - Leaning below 0.55 × peak stops the engine. All of these numbers are
+    made up.
+  - Lean softkeys: Cyl Slct shows the next cylinder's numbers. Assist
+    marks the first cylinder to peak and shows ΔPEAK (now minus its
+    peak).
+  - The System page's CALC FUEL shows GAL USED and GAL REM. Its softkeys
+    are Rst Fuel (53 gal, full usable), Dec Fuel and Inc Fuel (1 gal),
+    and Rst Used.
+  - The totalizer counts from the fuel flow alone, so a leaked tank
+    shows as a difference from TANKS. Check the softkey names and steps
+    against the NXi.
+- **Checklists** (MFD Checklist softkey):
+  - The lists are transcribed from the POH (2007), sections 3 and 4,
+    amplified procedures excluded. Every emergency and abnormal list is
+    in one Emergency group.
+  - Check the wording against the airplane's own POH, especially:
+    - two-line responses joined with " / ";
+    - degree signs restored where the PDF text garbled them;
+    - shortened WARNING/NOTE boxes.
+  - ENT checks an item and moves on. CLR unchecks. The Emergency softkey
+    jumps to the group; Exit closes.
+  - The real NXi's checklist editor and its own Cessna checklist content
+    may differ.
+- **Aural alerts** (js/g1000-audio.js), heard in Operate mode with Sound
+  on. All of these are made-up Web Audio tones, not Garmin's sounds:
+  - AP disconnect: a falling two-tone, about 1.5 s;
+  - altitude alerter: three short beeps, at 1,000 ft out and on
+    deviation;
+  - warning: a chime every 2 s until acknowledged;
+  - caution: one tone;
+  - minimums: the browser's speech saying "Minimums".
 
 ## The engine model
 

@@ -526,7 +526,7 @@ G1000_CHECKS = r"""() => {
   G.press('ent', 'mfd'); G.press('ent', 'mfd');
   expect(f().wpts.join() === 'KBVS,KAWO,KPAE' && f().active === 1, `Invert: ${JSON.stringify(f())}`);
   // A grey option says why and leaves the menu open.
-  G.press('menu', 'mfd'); menuTo('Parallel Track', 'mfd'); G.press('ent', 'mfd');
+  G.press('menu', 'mfd'); menuTo('Select Approach', 'mfd'); G.press('ent', 'mfd');
   expect(s.pageMenu.mfd && /not in the mock/.test(s.note?.text), `grey option: ${s.note?.text}`);
   const stored = s.fms.catalog.length;
   menuTo('Store Flight Plan', 'mfd'); G.press('ent', 'mfd');
@@ -881,6 +881,226 @@ G1000_CHECKS = r"""() => {
   G.press('softkey:7', 'pfd'); G.press('softkey:7', 'pfd');
   for (const d of [7, 7, 0, 0]) G.press('softkey:' + d, 'pfd');
   expect(s.xpdr.code === '7700' && G.menu('pfd') === 'xpdr', `XPDR code ${s.xpdr.code}, menu ${G.menu('pfd')}`);
+
+  // ---- Section 2: wind, bearings, DME, pan, FPL geometry, user
+  // waypoints, GPS status, lean and totalizer, checklists, aural alerts ----
+  {
+  const sk = (d, ...keys) => keys.forEach((k) => G.press('softkey:' + k, d));
+  const angle2 = (x, y) => ((((x - y) % 360) + 540) % 360) - 180;
+
+  // Wind from the west on a northbound airplane: drift right, a crosswind
+  // from the left; the ground speed under the TAS.
+  G.reset();
+  G.setWind(270, 20);
+  const lon0 = s.lon;
+  run(60);
+  const drift = angle2(G.track(), s.hdg);
+  expect(drift > 7 && drift < 13 && s.lon > lon0 + 0.002, `wind drift ${drift.toFixed(1)}°, GS ${G.gs().toFixed(0)}, TAS ${G.tas().toFixed(0)}`);
+  G.setWind(s.hdg, 20);
+  expect(Math.abs(G.gs() - (G.tas() - 20)) < 0.01 && Math.abs(angle2(G.track(), s.hdg)) < 0.01, `headwind GS ${G.gs().toFixed(1)}`);
+  G.setWind(270, 20);
+  const wi = G.windInfo();
+  expect(wi.cross < -15 && Math.abs(wi.rel + 70) < 25, `wind window: cross ${wi.cross.toFixed(1)}, rel ${wi.rel.toFixed(0)}`);
+  sk('pfd', 3, 2, 3);
+  expect(s.windShow === '2' && G.menu('pfd') === 'wind', `Wind Option 2: ${s.windShow} ${G.menu('pfd')}`);
+  sk('pfd', 5, 10, 10);
+  expect(s.windShow === 'Off' && G.menu('pfd') === 'pfd', `Wind Off and back: ${s.windShow} ${G.menu('pfd')}`);
+  // GPS NAV in a 25 kt crosswind: crabbed, on course.
+  G.reset();
+  G.setWind(270, 25);
+  G.fms.directTo('KBVS');
+  G.press('nav'); G.press('ap');
+  run(400);
+  nav = G.navSolution();
+  expect(a().lat === 'GPS' || a().lat === 'NAV', `NAV mode ${a().lat}`);
+  expect(nav && Math.abs(nav.xtk) < 0.3 && Math.abs(angle2(s.hdg, G.track())) > 8, `crosswind NAV: xtk ${nav?.xtk.toFixed(2)}, crab ${angle2(s.hdg, G.track()).toFixed(1)}`);
+
+  // Bearing 1: NAV1 (PAE), GPS, off; DME on NAV1 (PAE is a VOR/DME),
+  // ADF/DME tunes it NAV2 then HOLD.
+  G.reset();
+  sk('pfd', 3, 4);
+  const pae = G.NAVAIDS.find((n) => n.id === 'PAE'), bp = G.bearingTo(s.brg[0]);
+  expect(s.brg[0] === 'NAV1' && bp?.id === 'PAE' && Math.abs(angle2(bp.brg, G.toMag(G.bearingDist(s, pae).brg))) < 0.01, `Bearing 1: ${s.brg[0]} ${JSON.stringify(bp)}`);
+  sk('pfd', 4);
+  expect(s.brg[0] === 'GPS' && G.bearingTo('GPS') === null, `Bearing 1 GPS with no leg: ${s.brg[0]}`);
+  sk('pfd', 4, 6);
+  expect(s.brg[0] === null && s.brg[1] === 'NAV2', `Bearing 1 off, 2 NAV2: ${s.brg}`);
+  sk('pfd', 3);
+  const dm = G.dmeInfo(), flat = G.bearingDist(s, pae).dist;
+  expect(s.dme.on && dm.id === 'PAE' && dm.dist >= flat && dm.dist - flat < 0.3, `DME: ${JSON.stringify(dm)} vs ${flat.toFixed(2)}`);
+  sk('pfd', 10, 6, 6);
+  expect(s.dme.src === 'HOLD' && s.dme.hold === s.nav[1].act, `DME tuning ${s.dme.src} ${s.dme.hold}`);
+
+  // Map pan: RANGE push on the Navigation Map; the arrows move it a range
+  // ahead; ENT there makes USR001; measuring; CLR, CLR.
+  G.reset();
+  G.push('range', 'mfd');
+  expect(s.pan && Math.abs(s.pan.lat - s.lat) < 1e-9, 'RANGE push: pan pointer at own ship');
+  G.pan(0, 8);
+  const pd = G.bearingDist(s, s.pan);
+  expect(Math.abs(pd.dist - G.RANGES[s.range]) < 0.05 && Math.abs(angle2(pd.brg, s.hdg)) < 1, `pan ${pd.dist.toFixed(2)} NM at ${pd.brg.toFixed(0)}`);
+  G.press('ent', 'mfd');
+  expect(s.fms.user[0]?.id === 'USR001' && Math.abs(s.fms.user[0].lat - s.pan.lat) < 1e-9, `ENT at the pointer: ${JSON.stringify(s.fms.user)}`);
+  G.press('direct_to', 'mfd');
+  expect(s.fms.win.mfd?.ident === 'USR001', `D→ at the pointer offers ${s.fms.win.mfd?.ident}`);
+  G.press('direct_to', 'mfd');
+  G.press('menu', 'mfd'); menuTo('Measure Bearing/Distance', 'mfd'); G.press('ent', 'mfd');
+  G.pan(8, 0);
+  expect(s.pan.measure && Math.abs(G.bearingDist(s.pan.measure, s.pan).dist - G.RANGES[s.range]) < 0.05, 'measuring from where the pointer was');
+  drawAll('pan and measure');
+  G.press('clr', 'mfd');
+  expect(s.pan && !s.pan.measure, 'CLR stops measuring');
+  G.press('clr', 'mfd');
+  expect(!s.pan, 'CLR again puts the pointer away');
+
+  // Parallel Track: 2 NM right moves the course, so the airplane is 2 NM
+  // further left of it; Closest Point of FPL to KAWO, saved.
+  G.reset();
+  G.fms.activatePlan(['KPAE', 'KBVS']);
+  const x0 = G.navSolution().xtk;
+  G.press('fpl', 'mfd'); G.press('menu', 'mfd'); menuTo('Parallel Track', 'mfd'); G.press('ent', 'mfd');
+  expect(s.pageMenu.mfd?.setup === 'ptk', 'Parallel Track window');
+  mt('outer', 3); mt('inner', 1); G.press('ent', 'mfd');
+  expect(G.fms.leg().ptk && Math.abs(G.navSolution().xtk - (x0 - 2)) < 0.05, `parallel track xtk ${G.navSolution().xtk.toFixed(2)} from ${x0.toFixed(2)}`);
+  s.fms.ptk.on = 'Off';
+  const awo = G.fms.byId.KAWO, cp = G.fms.closestPoint('KAWO');
+  expect(cp && cp.dist < Math.min(G.bearingDist(awo, G.fms.byId.KPAE).dist, G.bearingDist(awo, G.fms.byId.KBVS).dist), `closest point ${JSON.stringify(cp)}`);
+  G.press('menu', 'mfd'); menuTo('Closest Point of FPL', 'mfd'); G.press('ent', 'mfd');
+  s.pageMenu.mfd.entry.ident = 'KAWO';
+  G.press('ent', 'mfd');
+  expect(Math.abs(s.pageMenu.mfd?.result?.dist - cp.dist) < 1e-6, 'Closest Point window result');
+  drawAll('closest point');
+  G.press('ent', 'mfd');
+  const cpw = s.fms.user[0];
+  expect(cpw && Math.abs(G.bearingDist(awo, cpw).dist - cp.dist) < 0.01 && !s.pageMenu.mfd, `closest point saved: ${JSON.stringify(cpw)}`);
+  // A user waypoint in a plan can't be deleted.
+  G.fms.directTo(cpw.id);
+  expect(!G.fms.removeUser(cpw.id) && s.fms.user.length === 1, 'deleting a user waypoint in use');
+
+  // User WPT Information: create at P.POS, rename, place by radial and
+  // distance from KPAE; Nearest User WPTs lists it.
+  G.reset();
+  P.goPage(1, 4);
+  G.press('menu', 'mfd'); menuTo('Create New User WPT', 'mfd'); G.press('ent', 'mfd');
+  expect(s.fms.user.length === 1 && P.shownUser().id === 'USR001', 'Create New User WPT');
+  G.push('fms', 'mfd'); G.press('ent', 'mfd');
+  s.mfd.entry.ident = 'HOME'; G.press('ent', 'mfd');
+  expect(P.shownUser().id === 'HOME' && G.fms.byId.HOME === P.shownUser() && G.fms.match('HOM')?.id === 'HOME', `rename: ${P.shownUser().id}`);
+  mt('outer', 1); G.press('ent', 'mfd');
+  s.mfd.entry.ident = 'KPAE'; G.press('ent', 'mfd');
+  mt('outer', 1); mt('inner', 90); mt('outer', 1); mt('inner', 10);
+  const home = P.shownUser(), hb = G.bearingDist(G.fms.byId.KPAE, home);
+  expect(home.ref?.id === 'KPAE' && Math.abs(hb.dist - 10) < 0.01 && Math.abs(angle2(G.toMag(hb.brg, G.magVarAt(G.fms.byId.KPAE.lat, G.fms.byId.KPAE.lon)), 90)) < 0.5,
+    `radial/distance: ${JSON.stringify(home.ref)} -> ${hb.brg.toFixed(1)}° ${hb.dist.toFixed(2)}NM`);
+  G.press('clr', 'mfd');
+  G.press('direct_to', 'mfd');
+  expect(s.fms.win.mfd?.ident === 'HOME', `D→ from User WPT offers ${s.fms.win.mfd?.ident}`);
+  G.press('direct_to', 'mfd');
+  expect(P.nearestUser()[0]?.w.id === 'HOME', 'Nearest User WPTs');
+  P.goPage(4, 4); drawAll('Nearest User WPTs'); P.goPage(1, 4); drawAll('User WPT');
+
+  // LOI: no GPS course, GPS NAV back to ROL, the message, the status page.
+  G.reset();
+  G.fms.directTo('KBVS');
+  G.press('nav'); G.press('ap');
+  G.fail('gps', true);
+  run(2);
+  expect(G.navSolution() === null && a().lat === 'ROL' && s.alerts.messages.some((m) => m.id === 'loi') && P.gpsStatus().solution === 'LOI',
+    `LOI: nav ${!!G.navSolution()}, ${a().lat}, ${s.alerts.messages.map((m) => m.id)}`);
+  P.goPage(2, 2); drawAll('GPS Status with LOI');
+  G.fail('gps', false);
+  expect(P.gpsStatus().sats.every((x) => x.used), 'GPS Status: all used');
+
+  // Lean: Assist finds the first cylinder to peak as the mixture comes
+  // back; fuel flow falls with it; too lean stops the engine.
+  G.reset();
+  sk('mfd', 0, 1);
+  expect(G.menu('mfd') === 'lean' && s.eisPage === 'Lean', `Lean page: ${G.menu('mfd')}`);
+  sk('mfd', 4);
+  const ff0 = G.fuelFlow();
+  for (let i = 0; i < 40 && s.sys.lean.peaked == null; i++) { G.fly({ mixture: -0.01 }); run(5); }
+  expect(s.sys.lean.peaked === 1 && G.fuelFlow() < ff0, `lean assist: peaked ${s.sys.lean.peaked}, FF ${G.fuelFlow().toFixed(1)} from ${ff0.toFixed(1)}`);
+  drawAll('lean assist');
+  s.mixture = 0.2; run(2);
+  expect(!s.sys.running, 'too lean: the engine stops');
+  s.mixture = 1; run(2);
+  expect(s.sys.running, 'enriched: it runs again');
+  // Totalizer: System page softkeys, and what was burnt.
+  sk('mfd', 2);
+  expect(G.menu('mfd') === 'system', `System softkeys: ${G.menu('mfd')}`);
+  sk('mfd', 3);
+  expect(s.sys.tot.rem === 53, `Rst Fuel: ${s.sys.tot.rem}`);
+  sk('mfd', 4, 4, 6);
+  const used0 = s.sys.tot.used, ffT = G.fuelFlow();
+  run(360);
+  expect(s.sys.tot.used === s.sys.tot.used && Math.abs(s.sys.tot.used - ffT / 10) < 0.2 && Math.abs(s.sys.tot.rem - (51 - s.sys.tot.used)) < 1e-6 && used0 === 0,
+    `totalizer: used ${s.sys.tot.used.toFixed(2)}, rem ${s.sys.tot.rem.toFixed(2)}`);
+  drawAll('system page');
+  sk('mfd', 10);
+  expect(G.menu('mfd') === 'mfd' && s.eisPage === 'Engine', `EIS Back: ${G.menu('mfd')} ${s.eisPage}`);
+
+  // Checklist: open, ENT to the first item, ENT checks it; Emergency;
+  // Exit.
+  G.reset();
+  sk('mfd', 11);
+  expect(G.checklist.isOpen() && G.menu('mfd') === 'checklist', 'Checklist open');
+  G.press('ent', 'mfd');
+  const first = G.checklist.stops()[0];
+  expect(s.chk.cursor === first, `ENT on GROUP to the first item: ${s.chk.cursor}`);
+  G.press('ent', 'mfd');
+  expect(G.checklist.checked()[first] && s.chk.cursor === G.checklist.stops()[1], 'ENT checks and moves on');
+  mt('outer', -1); G.press('clr', 'mfd');
+  expect(!G.checklist.checked()[first], 'CLR unchecks');
+  drawAll('checklist');
+  sk('mfd', 11);
+  expect(/emergency/i.test(G.checklist.group().group) && s.chk.cursor === 'list', 'Emergency softkey');
+  mt('inner', 3);
+  expect(s.chk.list === 3, `small knob on CHECKLIST: ${s.chk.list}`);
+  for (let i = 0; i < 60 && s.chk.cursor !== 'next'; i++) G.press('ent', 'mfd');
+  expect(G.checklist.finished(), 'every item checked');
+  drawAll('checklist finished');
+  G.press('ent', 'mfd');
+  expect(s.chk.list === 4, `Go to Next Checklist: ${s.chk.list}`);
+  sk('mfd', 10);
+  expect(!G.checklist.isOpen() && G.menu('mfd') === 'mfd', 'Checklist Exit');
+  expect(G1000_CHECKLISTS.every((g) => g.lists.every((l) => l.name && l.items.length && l.items.every((it) => Array.isArray(it) && it.length >= 1 && it.length <= 2 && it.every((x) => typeof x === 'string' && x.trim())))),
+    'checklist data: [challenge, response] or [note] strings');
+
+  // Aural alerts: what comes due when.
+  G.reset();
+  const AU = G1000_AUDIO, mem = AU.freshMemory();
+  AU.detect(mem, s);
+  G.press('ap'); run(1); G.press('ap'); run(0.5);
+  expect(AU.detect(mem, s).includes('apDisconnect'), 'aural: AP disconnect');
+  expect(!AU.detect(mem, s).includes('apDisconnect'), 'aural: AP disconnect once');
+  s.altSel = Math.round(s.trueAlt + 1100); run(0.5); AU.detect(mem, s);
+  s.trueAlt += 150; run(0.5);
+  expect(AU.detect(mem, s).includes('altitude'), 'aural: altitude alerter');
+  G.fail('oil', true);
+  expect(run(120, () => s.alerts.cas.some((c) => c.id === 'oil')), 'oil pressure warning');
+  expect(AU.detect(mem, s).includes('warning'), 'aural: warning');
+  run(0.5);
+  expect(!AU.detect(mem, s).includes('warning'), 'aural: warning repeats only every 2 s');
+  run(2.5);
+  expect(AU.detect(mem, s).includes('warning'), 'aural: warning repeats until acknowledged');
+  G.press('softkey:11', 'pfd'); run(3);
+  expect(!AU.detect(mem, s).includes('warning'), 'aural: acknowledged warning is quiet');
+  G.fail('oil', false);
+  G.fail('vacuum', true);
+  expect(run(60, () => s.alerts.cas.some((c) => c.id === 'vac')) && AU.detect(mem, s).includes('caution'), 'aural: caution');
+  Object.assign(s.ref.mins, { mode: 'BARO', ft: Math.round(s.trueAlt + 500) }); run(0.5);
+  expect(AU.detect(mem, s).includes('minimums'), 'aural: minimums');
+
+  // Every new window and option draws.
+  G.reset();
+  G.setWind(225, 35);
+  for (const w of ['1', '2', '3']) { s.windShow = w; drawAll('wind ' + w); }
+  s.brg = ['NAV1', 'GPS']; s.dme.on = true; s.dme.src = 'HOLD'; s.dme.hold = 108.0;
+  G.fms.activatePlan(['KPAE', 'KBVS']); s.fms.ptk.on = 'On';
+  s.pfdMap.layout = 'Inset Map'; s.pfdMapSet.orient = 'Track Up'; s.mapSet.orient = 'Track Up';
+  drawAll('bearings, DME, parallel track, track up');
+  G.fail('gps', true); drawAll('LOI');
+  }
 
   G.reset();
   return errors;

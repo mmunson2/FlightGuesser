@@ -220,6 +220,8 @@
     operateBtn.setAttribute('aria-pressed', on);
     resetBtn.hidden = !on;
     failSel.hidden = !on;
+    windSel.hidden = !on;
+    soundBtn.hidden = !on;
     if (on) select(null);
     else picked.textContent = selection.length ? picked.textContent : t('viewer.none');
   }
@@ -246,7 +248,28 @@
     failOptions();
   });
   failOptions();
-  resetBtn.addEventListener('click', () => { avionics.reset(); failOptions(); });
+  // Wind (js/g1000.js setWind): a few winds to see drift, crab and the
+  // PFD's wind window; the one in force ticked.
+  const windSel = document.getElementById('g1000-wind');
+  const WINDS = [[0, 0], [270, 10], [270, 25], [180, 15], [360, 20], [90, 12], [225, 35]];
+  function windOptions() {
+    const w = G1000.state.wind, now = (d, v) => (w.spd === v && (v === 0 || w.dir === d % 360) ? '✓ ' : '');
+    windSel.replaceChildren(new Option(t('tools.wind'), ''),
+      ...WINDS.map(([d, v], i) => new Option(now(d, v) + (v ? `${String(d).padStart(3, '0')}° / ${v} kt` : t('tools.windCalm')), String(i))));
+  }
+  windSel.addEventListener('change', () => {
+    if (windSel.value) G1000.setWind(...WINDS[+windSel.value]);
+    windOptions();
+  });
+  windOptions();
+  const soundBtn = document.getElementById('g1000-sound');
+  soundBtn.addEventListener('click', () => {
+    avionics.sound = !avionics.sound;
+    soundBtn.classList.toggle('on', avionics.sound);
+    soundBtn.setAttribute('aria-pressed', avionics.sound);
+  });
+  soundBtn.classList.add('on');
+  resetBtn.addEventListener('click', () => { avionics.reset(); failOptions(); windOptions(); });
   avionics.onTurn((said) => { picked.textContent = said; });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !controlsEl.hidden) { closeControls(); return; }
