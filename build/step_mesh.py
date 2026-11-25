@@ -6,7 +6,10 @@ have, so it runs from its own venv and writes a .npz the build reads:
   python step_mesh.py in.STEP out.npz [deflection_mm]
 
 Each leaf part instance becomes `<name>#<n>/pos` (float32 N×3, mm, world
-frame) and `<name>#<n>/idx` (uint32 M×3).
+frame), `<name>#<n>/idx` (uint32 M×3) and `<name>#<n>/face` (uint16 M: the
+STEP face each triangle came from, in TopExp order, so the build can split
+a solid that fuses several real parts, such as the crankcase and the fuel
+distribution valve).
 """
 import sys
 
@@ -35,7 +38,7 @@ def name_of(label):
 
 
 def triangles(shape):
-    pos, idx, base = [], [], 0
+    pos, idx, owner, base, k = [], [], [], 0, 0
     exp = TopExp_Explorer(shape, TopAbs_FACE)
     while exp.More():
         face = TopoDS.Face(exp.Current())
@@ -52,9 +55,12 @@ def triangles(shape):
                 a, b, c = tri.Triangle(i).Get()
                 idx.append((base + a - 1, base + c - 1, base + b - 1) if flip
                            else (base + a - 1, base + b - 1, base + c - 1))
+                owner.append(k)
             base += n
+        k += 1
         exp.Next()
-    return np.array(pos, np.float32).reshape(-1, 3), np.array(idx, np.uint32).reshape(-1, 3)
+    return (np.array(pos, np.float32).reshape(-1, 3), np.array(idx, np.uint32).reshape(-1, 3),
+            np.array(owner, np.uint16))
 
 
 def main(src, out, deflection=0.6):
@@ -83,7 +89,7 @@ def main(src, out, deflection=0.6):
             return
         shape = tool.GetShape_s(label).Moved(loc)
         BRepMesh_IncrementalMesh(shape, deflection, False, 0.5, True)
-        pos, idx = triangles(shape)
+        pos, idx, face = triangles(shape)
         if not len(idx):
             return
         name = name_of(label)
@@ -91,6 +97,7 @@ def main(src, out, deflection=0.6):
         counts[name] = n + 1
         meshes[f"{name}#{n}/pos"] = pos
         meshes[f"{name}#{n}/idx"] = idx
+        meshes[f"{name}#{n}/face"] = face
         print(f"{name}#{n}: {len(idx)} tris", flush=True)
 
     for i in range(1, roots.Length() + 1):

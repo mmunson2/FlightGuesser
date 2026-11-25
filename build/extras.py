@@ -32,6 +32,28 @@ drawings; sizes the MM doesn't give are estimates (to_verify.md).
   under each wing between WS 23.62 and 71.62.
 - Static port (MM 34-11-00 Fig. 202; 12-10-00): on the left side of the
   fuselage ahead of the door.
+- Fuel system under the floor (MM 28-20-00 Figs. 201, 204, 206; POH Fig.
+  7-6): a supply line from each wing root down the front door post to the
+  selector valve under the pedestal, the reservoir under the copilot's
+  footwell (access panels 230BT/CT) with its drain and vent, the electric
+  auxiliary fuel pump, the shutoff valve, and the line through the
+  firewall to the strainer; the vent line across the cabin top. One supply
+  line per side (the MM shows a forward and an aft outlet on each tank).
+- Stall warning (MM 27-32-00 Fig. 201: "the scoop assembly is installed on
+  the leading edge of the left wing at WS 91"): scoop, tube and horn at
+  the upper left door post.
+- G1000 units (MM 23-10-00 Fig. 202 and 34-13-00 Fig. 201: "on the
+  avionics shelf in the tailcone"; 77-40-00 Fig. 201; 34-22-00 Fig. 201):
+  the two GIA 63 integrated avionics units, the GTX 33 transponder, the
+  GRS 77 AHRS and GDC 74A air data computer on the shelf above them, and
+  the tailcone fan; the GEA 71 engine/airframe unit forward of the panel
+  under the MFD; the GMU 44 magnetometer inside the left wing, reached
+  through access plate 520HB underneath. Unit sizes are estimates.
+- Engine accessories (MM 79-20-00 Fig. 201: oil cooler "secured to rear of
+  engine baffles", on the left; MM 80-10-00: starter "at the front
+  (propeller end) lower left side of the engine"; MM 37-10-00 Fig. 201:
+  vacuum pump on the accessory housing; Lycoming IPC PC-IO-360-L2A Fig. 20:
+  spin-on oil filter pointing aft from the accessory housing).
 """
 
 import numpy as np
@@ -50,6 +72,12 @@ COLORS = {
     "standby_battery": 0x3a3c40, "exhaust_risers": 0x4f3d30, "muffler": 0x5e544a, "heat_shroud": 0xaab0b5,
     "brake_master_cylinders": 0xa2a6ab, "brake_lines": 0x9aa0a6, "fuel_strainer": 0xb0b4b8,
     "fuel_sump_drains": 0xc4c8cc, "static_port": 0xc4c8cc,
+    "fuel_reservoir": 0xb4b8bc, "fuel_selector_valve": 0x9c8a5c, "fuel_shutoff_valve": 0xa08c5a,
+    "aux_fuel_pump": 0x3c3f44, "fuel_lines": 0x6fa0c8, "stall_warning": 0xd0d2d4,
+    "integrated_avionics_units": 0x26282b, "transponder": 0x303236, "ahrs": 0x2c2e31,
+    "air_data_computer": 0x34363a, "engine_airframe_unit": 0x2a2c2f, "magnetometer": 0x3a3d41,
+    "avionics_shelf": 0xa6aaae, "oil_cooler": 0x2f3133, "starter": 0x3a3c3f, "vacuum_pump": 0x4a4d52,
+    "oil_filter": 0x1f4f9a,
     # Pieces within a part.
     "tray": 0x8c8f93, "cover": 0x404247, "vent": 0xd8d8d0, "hose": 0x1e1f21,
 }
@@ -69,14 +97,14 @@ STANDBY_BATTERY = ((0.24, 0.40), (0.04, 0.11), (0.63, 0.72))
 # the muffler's axis (x from -L to L at y, z) and radii.
 PORTS = {1: [(0.34, -0.166, 1.233), (0.34, -0.166, 1.364)],
          -1: [(-0.34, -0.162, 1.324), (-0.34, -0.163, 1.450)]}
-MUFFLER_Y, MUFFLER_Z, MUFFLER_L, MUFFLER_R = -0.40, 1.36, 0.23, 0.064
+MUFFLER_Y, MUFFLER_Z, MUFFLER_L, MUFFLER_R = -0.40, 1.41, 0.23, 0.064   # forward of the servo
 SHROUD_L, SHROUD_R = 0.17, 0.074
 RISER_R = 0.019
 STACK_TOP = (-0.199, -0.475, 1.362)     # the c172p Exhaust object's upper end
 # Brakes: master cylinders forward of the pilot's pedals (the outboard
 # pedal works the left brake); lines run under the floor at FLOOR_Y.
 PEDAL_X = {1: 0.328, -1: 0.153}
-CYL_Y, CYL_Z, CYL_R = (-0.70, -0.56), 0.64, 0.02
+CYL_Y, CYL_Z, CYL_R = (-0.66, -0.52), 0.64, 0.02
 FLOOR_Y = -0.775
 BRAKE_LINE_R = 0.004
 # Fuel strainer: bowl centre and radius; its drain runs down to the cowling.
@@ -88,6 +116,42 @@ SUMP_DRAINS = [(32.8, 23.3), (55.7, 23.3), (63.4, 16.6), (63.4, 3.3), (37.6, 3.3
 FRONT_SPAR = 0.24                        # m aft of the leading edge (estimate)
 # Static port: FS and height on the left side.
 STATIC_PORT = (14.0, -0.15)
+# Fuel under the floor. The cabin floor is at y -0.67, the belly about
+# -0.79; the door posts at |x| 0.495, z 0.19. Reservoir (x, y, z ranges)
+# under the copilot's footwell; selector valve under the pedestal (the
+# handle, fuel_selector, is at x 0, z 0.17-0.32); pump and shutoff valve
+# between the reservoir and the firewall.
+POST_X, POST_Z = 0.495, 0.19
+UNDER_FLOOR = -0.735
+RESERVOIR = ((-0.25, -0.09), (-0.765, -0.705), (0.46, 0.62))    # under the carpet, above the belly
+SELECTOR_VALVE = (0.0, UNDER_FLOOR, 0.25)
+AUX_PUMP = ((-0.21, -0.07), UNDER_FLOOR, 0.705, 0.032)       # x range, y, z, radius
+SHUTOFF_VALVE = (0.0, UNDER_FLOOR, 0.75)
+WING_OUTLET = (0.56, 0.42, 0.10)                             # |x|, y, z: tank outlet at the root
+VENT_LINE = (0.50, -0.05)                                    # y, z: across the cabin top
+FUEL_LINE_R, VENT_R = 0.006, 0.004
+# Stall warning: the scoop's wing station; the horn at the upper left door post.
+STALL_WS = 91.0
+STALL_HORN = (0.47, 0.28, 0.20)
+# Tailcone avionics shelf, MM FS 142-157, centred on the fuselage.
+SHELF_FS = (142.0, 157.0)
+RACK_Y = (-0.555, -0.355)                                    # the GIA 63s and GTX 33 stand on edge
+RACK_UNITS = [("integrated_avionics_units", 0.025, 0.093), ("integrated_avionics_units", -0.045, 0.022),
+              ("transponder", -0.088, -0.047)]               # x ranges (2.65 in and 1.65 in wide)
+AHRS = ((-0.05, 0.05), (-0.345, -0.26), 0.17)                # x, y, depth from the shelf's aft end
+AIR_DATA = ((-0.05, 0.05), (-0.345, -0.27), 0.14)            # from its forward end
+FAN = (-0.17, -0.42, 0.045)                                  # x, y, radius, on the forward bulkhead
+# GEA 71 under the MFD (x -0.28 to -0.02 at the panel, z 0.35), lying flat.
+GEA = ((-0.23, -0.07), (-0.125, -0.06), (0.40, 0.64))       # behind the standby instruments
+# GMU 44: wing station and chord fraction (access plate 520HB; estimate).
+GMU_WS, GMU_CHORD = 115.0, 0.38
+# Engine accessories (scene coordinates beside the CAD engine), each at
+# the clear spot nearest where the sources put it (tools/geometry.py
+# overlaps finds collisions).
+OIL_COOLER = ((0.17, 0.31), (0.05, 0.17), (1.065, 1.10))     # clear of the injector lines
+STARTER = (0.17, -0.19, (1.52, 1.66), 0.045)
+VACUUM_PUMP = (-0.055, -0.085, (0.93, 1.01), 0.042)
+OIL_FILTER = (-0.025, 0.02, (0.90, 1.01), 0.046)
 
 
 def rgb_of(c, n):
@@ -228,7 +292,7 @@ def exhaust():
                tube([(STACK_TOP[0], MUFFLER_Y - MUFFLER_R + 0.02, STACK_TOP[2]),
                      (STACK_TOP[0], STACK_TOP[1] - 0.01, STACK_TOP[2])], RISER_R, 12)]
     sa, sb = (-SHROUD_L, MUFFLER_Y, MUFFLER_Z), (SHROUD_L, MUFFLER_Y, MUFFLER_Z)
-    shroud = [cylinder(sa, sb, SHROUD_R, 20),
+    shroud = [tube([sa, sb], SHROUD_R, 20),                   # an open sleeve round the muffler
               # The outlet to the cabin heat duct, on the aft side.
               tube([(0.05, MUFFLER_Y, MUFFLER_Z - SHROUD_R + 0.01), (0.05, MUFFLER_Y, MUFFLER_Z - SHROUD_R - 0.03)],
                    0.025, 12)]
@@ -311,10 +375,137 @@ def static_port(parts):
     return [cylinder((x - 0.01, y, z), (x + 0.004, y, z), 0.016, 16)]
 
 
+def fuel_system(parts):
+    """-> (reservoir, selector valve, aux pump, shutoff valve, lines)."""
+    (x0, x1), (y0, y1), (z0, z1) = RESERVOIR
+    cx, cz = (x0 + x1) / 2, (z0 + z1) / 2
+    stack = (x1 - 0.03, y1, z0 + 0.04)
+    reservoir = [box((x0, y0, z0), (x1, y1, z1)),
+                 cylinder((stack[0], y1, stack[2]), (stack[0], y1 + 0.02, stack[2]), 0.018, 12),
+                 ("tray", cylinder((cx, y0, z1 - 0.03), (cx, y0 - 0.012, z1 - 0.03), 0.008, 8))]
+    sx, sy, sz = SELECTOR_VALVE
+    valve = [box((sx - 0.03, sy - 0.025, sz - 0.03), (sx + 0.03, sy + 0.025, sz + 0.03)),
+             tube([(sx, sy + 0.025, sz), (sx, -0.64, sz)], 0.006, 8)]          # shaft to the handle
+    (px0, px1), py, pz, pr = AUX_PUMP
+    pump = [cylinder((px0, py, pz), (px1, py, pz), pr, 16)]
+    vx, vy, vz = SHUTOFF_VALVE
+    shutoff = [box((vx - 0.025, vy - 0.025, vz - 0.02), (vx + 0.025, vy + 0.025, vz + 0.02))]
+    lines = []
+    for side in (1, -1):
+        wx, wy, wz = WING_OUTLET
+        top = (side * POST_X, 0.30, POST_Z)
+        lines.append(tube([(side * wx, wy, wz), (side * POST_X, wy - 0.04, POST_Z), top,
+                           (side * POST_X, UNDER_FLOOR, POST_Z), (side * 0.12, UNDER_FLOOR, sz),
+                           (side * 0.03, sy, sz)], FUEL_LINE_R, 8))
+    lines.append(tube([(sx, sy, sz + 0.03), (sx, sy, sz + 0.12), (x1 - 0.02, UNDER_FLOOR, z0 - 0.05),
+                       (x1 - 0.02, UNDER_FLOOR, z0)], FUEL_LINE_R, 8))           # selector -> reservoir
+    lines.append(tube([(cx, UNDER_FLOOR, z1), (cx, UNDER_FLOOR, pz - pr)], FUEL_LINE_R, 8))  # -> pump
+    lines.append(tube([(px1, py, pz), (vx - 0.025, vy, vz)], FUEL_LINE_R, 8))          # -> shutoff
+    sx_, sy_, sz_ = STRAINER
+    lx = sx_ - STRAINER_R - 0.008
+    lines.append(tube([(vx + 0.025, vy, vz), (lx, -0.62, FIREWALL_Z), (lx, sy_ + 0.03, sz_),
+                       (sx_ - STRAINER_R, sy_ + 0.03, sz_)],
+                      FUEL_LINE_R, 8))                                           # through the firewall
+    vy_, vz_ = VENT_LINE
+    lines.append(tube([(POST_X + 0.06, vy_ - 0.06, vz_), (POST_X, vy_, vz_), (-POST_X, vy_, vz_),
+                       (-POST_X - 0.06, vy_ - 0.06, vz_)], VENT_R, 6))
+    lines.append(tube([(stack[0], y1 + 0.02, stack[2]), (stack[0], y1 + 0.03, stack[2] - 0.05),
+                       (-POST_X, y1 + 0.03, POST_Z - 0.03), (-POST_X, 0.30, POST_Z - 0.03),
+                       (-POST_X, vy_, vz_)], VENT_R, 6))                         # reservoir vent
+    return reservoir, valve, pump, shutoff, lines
+
+
+def wing_skin(parts, side):
+    pid = "left_wing" if side > 0 else "right_wing"
+    wing = np.vstack([tris_of(parts, pid), tris_of(parts, "fuselage")])
+    return wing[(wing[:, :, 1] > 0.25).all(1)]
+
+
+def leading_edge(wing, x):
+    return next(z for z in np.arange(0.6, -1.5, -0.002) if len(hits(wing, x, z)))
+
+
+def stall_warning(parts):
+    wing = wing_skin(parts, 1)
+    x = STALL_WS * IN
+    le = leading_edge(wing, x)
+    y = hits(wing, x, le - 0.015)
+    y = y.min() + 0.35 * (y.max() - y.min())
+    hx, hy, hz = STALL_HORN
+    return [box((x - 0.035, y - 0.014, le - 0.02), (x + 0.035, y + 0.014, le + 0.012)),
+            ("hose", tube([(x, y, le - 0.02), (x - 0.05, y, le - 0.06), (0.62, y, le - 0.06),
+                           (hx + 0.03, hy + 0.05, hz), (hx, hy, hz)], 0.007, 8)),
+            cylinder((hx, hy, hz), (hx - 0.04, hy - 0.01, hz), 0.012, 12),
+            cylinder((hx - 0.04, hy - 0.01, hz), (hx - 0.05, hy - 0.012, hz), 0.03, 16)]
+
+
+def avionics(parts):
+    """-> {part id: pieces} for the G1000 units."""
+    out = {k: [] for k in ("integrated_avionics_units", "transponder", "ahrs", "air_data_computer",
+                           "avionics_shelf", "engine_airframe_unit", "magnetometer")}
+    za, zb = fs(SHELF_FS[1]), fs(SHELF_FS[0])        # aft, forward
+    y0, y1 = RACK_Y
+    for pid, x0, x1 in RACK_UNITS:
+        out[pid].append(box((x0, y0, za + 0.02), (x1, y1, zb - 0.03)))
+    out["avionics_shelf"] += [box((-0.11, y0 - 0.006, za), (0.11, y0, zb)),
+                              box((-0.11, y1 + 0.004, za), (0.11, y1 + 0.01, zb))]
+    (x0, x1), (ay0, ay1), d = AHRS
+    out["ahrs"].append(box((x0, ay0, za + 0.01), (x1, ay1, za + 0.01 + d)))
+    (x0, x1), (ay0, ay1), d = AIR_DATA
+    out["air_data_computer"].append(box((x0, ay0, zb - 0.01 - d), (x1, ay1, zb - 0.01)))
+    fx, fy, fr = FAN
+    out["avionics_shelf"] += [cylinder((fx, fy, zb), (fx, fy, zb - 0.05), fr, 20),
+                              ("tray", box((fx - fr - 0.01, fy - fr - 0.01, zb - 0.055),
+                                           (fx + fr + 0.01, fy + fr + 0.01, zb - 0.05)))]
+    (x0, x1), (gy0, gy1), (z0, z1) = GEA
+    out["engine_airframe_unit"] += [box((x0, gy0, z0), (x1, gy1, z1)),
+                                    ("tray", box((x0 - 0.01, gy0 - 0.006, z0), (x1 + 0.01, gy0, z1 + 0.02)))]
+    wing = wing_skin(parts, 1)
+    x = GMU_WS * IN
+    le = leading_edge(wing, x)
+    te = next(z for z in np.arange(-1.6, 0.6, 0.002) if len(hits(wing, x, z)))
+    z = le - GMU_CHORD * (le - te)
+    y = hits(wing, x, z).min()
+    out["magnetometer"] += [cylinder((x, y + 0.012, z), (x, y + 0.06, z), 0.04, 20),
+                            ("tray", cylinder((x, y + 0.002, z), (x, y - 0.002, z), 0.055, 20))]
+    return out
+
+
+def engine_accessories():
+    """-> (oil cooler, starter, vacuum pump, oil filter)."""
+    (x0, x1), (y0, y1), (z0, z1) = OIL_COOLER
+    cooler = [box((x0, y0, z0), (x1, y1, z1)),
+              ("hose", tube([(x0 + 0.03, y0, (z0 + z1) / 2), (x0 + 0.02, y0 - 0.06, z0 - 0.02),
+                             (0.07, -0.10, 1.03)], 0.011, 10)),
+              ("hose", tube([(x0 + 0.08, y0, (z0 + z1) / 2), (x0 + 0.07, y0 - 0.08, z0 - 0.03),
+                             (0.08, -0.12, 1.02)], 0.011, 10))]
+    x, y, (za, zb), r = STARTER
+    starter = [cylinder((x, y, za), (x, y, zb), r, 20),
+               cylinder((x, y + r, za + 0.03), (x, y + r + 0.03, za + 0.03), 0.018, 12)]     # solenoid
+    x, y, (za, zb), r = VACUUM_PUMP
+    vacuum = [cylinder((x, y, za), (x, y, zb), r, 20),
+              ("hose", tube([(x, y + r, za + 0.02), (x, y + r + 0.05, za - 0.03), (x, 0.02, FIREWALL_Z + 0.01)],
+                            0.009, 8))]
+    x, y, (za, zb), r = OIL_FILTER
+    oil_filter = [cylinder((x, y, za), (x, y, zb - 0.02), r, 20),
+                  ("tray", box((x - 0.03, y - 0.03, zb - 0.02), (x + 0.03, y + 0.03, zb)))]
+    return cooler, starter, vacuum, oil_filter
+
+
 def load(parts):
     """-> parts to add to the aircraft and engine's."""
     risers, muffler, shroud = exhaust()
     cylinders, lines = brakes(parts)
+    reservoir, valve, pump, shutoff, fuel_lines = fuel_system(parts)
+    fuel = [part("fuel_reservoir", "fuel", reservoir), part("fuel_selector_valve", "fuel", valve),
+            part("aux_fuel_pump", "fuel", pump), part("fuel_shutoff_valve", "fuel", shutoff),
+            part("fuel_lines", "fuel", fuel_lines)]
+    stall = part("stall_warning", "flight_controls", stall_warning(parts))
+    units = [part(pid, "avionics", pieces) for pid, pieces in avionics(parts).items()]
+    cooler, starter, vacuum, oil_filter = engine_accessories()
+    engine_parts = [part("oil_cooler", "engine", cooler, ask=True), part("starter", "engine", starter, ask=True),
+                    part("vacuum_pump", "engine", vacuum, ask=True),
+                    part("oil_filter", "engine", oil_filter, ask=True)]
     return [part("firewall", "engine", [firewall(parts)]),
             part("engine_mount", "engine", engine_mount(), ask=True),
             part("exhaust_risers", "engine", risers, ask=True),
@@ -327,4 +518,5 @@ def load(parts):
             part("brake_master_cylinders", "landing_gear", cylinders),
             part("brake_lines", "landing_gear", lines),
             part("fuel_sump_drains", "fuel", sump_drains(parts)),
-            part("static_port", "pitot_static", static_port(parts))]
+            part("static_port", "pitot_static", static_port(parts)),
+            *fuel, stall, *units, *engine_parts]

@@ -33,7 +33,7 @@ SYSTEMS = {
                      "wheel_fairings", "parking_brake"],
     "lights": ["beacon", "left_nav_light", "right_nav_light", "tail_nav_light", "landing_light", "taxi_light",
                "beacon_switch", "landing_light_switch", "taxi_light_switch", "nav_light_switch",
-               "strobe_switch", "panel_dimmers"],
+               "strobe_switch", "panel_dimmers", "dome_lights", "courtesy_lights"],
     "antennas": ["com_antennas", "transponder_antenna", "marker_antenna", "elt_antenna", "nav_antenna",
                  "adf_antenna"],
     "pitot_static": ["pitot_tube", "pitot_heat_switch", "alternate_static_source"],
@@ -53,7 +53,8 @@ SYSTEMS = {
                     "com12_key", "pa_key", "tel_key", "spkr_key", "mkr_mute_key", "hi_sens_key", "dme_key",
                     "adf_key", "nav1_key", "nav2_key", "aux_key", "man_sq_key", "play_key", "pilot_key",
                     "coplt_key", "audio_volume_knob"],
-    "cabin": ["heat_and_air"],
+    "cabin": ["heat_and_air", "instrument_panel", "pedestal", "front_seats", "rear_seat", "cabin_floor",
+              "cabin_interior", "sun_visors", "cabin_air_vents", "overhead_console", "hand_microphone"],
 }
 SYSTEM_OF = {pid: sys for sys, ids in SYSTEMS.items() for pid in ids}
 # Systems whose parts the "name it" quiz asks: the rest of the airplane is
@@ -97,8 +98,7 @@ GDU_TABLE = {
 # The autopilot (GFC 700) keys, read from the PFD bezel's texture
 # (GDU-1044B.png; `tools/labels.py OUT gdu1 'AP\..*'`): left column AP,
 # HDG, NAV, APR, VS, FLC; right FD, ALT, VNV, BC, NOSE UP, NOSE DN. The MFD's
-# texture has another unit's layout (with YD, which a 172 lacks), so its
-# keys are drawn as context.
+# copies of those keys are part of the `mfd` (clicking one names the MFD).
 PFD_AP_KEYS = {
     r"AP\.L0": "ap_key", r"AP\.L1": "hdg_key", r"AP\.L2": "nav_key", r"AP\.L3": "apr_key",
     r"AP\.L4": "vs_key", r"AP\.L5": "flc_key", r"AP\.R0": "fd_key", r"AP\.R1": "alt_key",
@@ -116,13 +116,14 @@ AUDIO_KEYS = {
 }
 SOURCES = [
     (C172 + "c172-common.ac", "ac", None, None, {
-        r"fuselage|Panel_0|Panel_1|gloveboxdoor|gloveboxlock|wing_center|wing_leading_edge_center|wing_1C":
+        r"fuselage|wing_center|wing_leading_edge_center|wing_1C"
+        r"|airvent|airventhole|vent|venthole|handle|windowframe(left|right)ext":
             "fuselage",
         r"wing_left|wing_leading_edge_left|wing_1Ledge|wing_0": "left_wing",
         r"wing_right|wing_leading_edge_right|wing_1Redge": "right_wing",
         r"hstab": "horizontal_stabilizer",
         r"vstab\.001": "vertical_stabilizer",
-        r"leftdoor|rightdoor|leftdoorhandle|rightdoorhandle": "doors",
+        r"leftdoor|rightdoor|leftdoorhandle|rightdoorhandle|charniere[34]": "doors",
         r"baggagedoorexterior|baggagedoorhandle": "baggage_door",
         r"glas|leftwindow|rightwindow": "windows",
         r"TieDown(Left|Right|Tail)": "tie_down_rings",
@@ -131,14 +132,15 @@ SOURCES = [
         r"flaps": "flaps",
         r"elevatorleft|elevatorright": "elevator",
         r"elevatortrim": "elevator_trim_tab",
-        r"rudder_1": "rudder",
+        r"rudder_1|ruddercable.*": "rudder",
         r"Propeller": "propeller",
         r"Spinner": "spinner",
-        r"fuselage_cowling|fuselage_cowling_top": "cowling",
-        r"Exhaust": "exhaust",
+        r"fuselage_cowling|fuselage_cowling_top|oilcompartment(hole)?|radi_box": "cowling",
+        r"Exhaust|fuselageexhausthole": "exhaust",
         r"oildoor": "oil_access_door",
         r"OilCap": "oil_filler_cap",
-        r"FuelCapPort|FuelCapStarboard|fuelportport|fuelportstarboard": "fuel_caps",
+        r"FuelCapPort|FuelCapStarboard|fuelportport|fuelportstarboard|fuelportstar(board|port)hole"
+        r"|fuelcompartment": "fuel_caps",
         r"fuelvent": "fuel_vent",
         r"NoseWheel": "nose_wheel",
         r"NoseWheelStrut|TopLink|BottomLink|Axle": "nose_gear_strut",
@@ -159,12 +161,18 @@ SOURCES = [
         r"Antenna_VOR": "nav_antenna",
         r"Antenna_ADF": "adf_antenna",
         r"PitotTube": "pitot_tube",
+        r"Panel_0|Panel_1|gloveboxdoor|gloveboxlock": "instrument_panel",   # with the glareshield
+        r"SeatMounts\.[01]": "front_seats",
+        r"SeatMounts\.2": "rear_seat",
+        r"carpethole": "cabin_floor",
+        r"wingventhole": "cabin_air_vents",
+        r"courtesyoff": "courtesy_lights",
     }),
     (C172 + "Interior/Panel/c172sp-panel/c172sp-interior.ac", "ac", None, None, {
-        r"Throttle-fg1000": "throttle",
-        r"Mixture-fg1000": "mixture",
+        r"Throttle(Mount)?-fg1000": "throttle",
+        r"Mixture(Mount)?-fg1000": "mixture",
         r"ParkingBrake-fg1000": "parking_brake",
-        r"CabinHeat-fg1000|CabinAir-fg1000": "heat_and_air",
+        r"CabinHeat-fg1000|CabinAir-fg1000|CabinAirMounts-fg1000": "heat_and_air",
         r"TrimWheel-fg1000": "elevator_trim_wheel",
         r"ElevatorTrimPos-fg1000": "elevator_trim_indicator",
         r"FuelSelector(Face|Panel|Both|Left|Right|Off)-fg1000": "fuel_selector",
@@ -180,7 +188,22 @@ SOURCES = [
         r"toggle-fuel": "fuel_pump_switch",
         r"toggle-stbybatt": "standby_battery_switch",
         r"toggle-cabin-pwr": "cabin_power_switch",
-        r".*_breaker-fg1000": "circuit_breakers",
+        r".*_breaker-fg1000|BreakersBase-fg1000": "circuit_breakers",
+        r"Panel|panel|panel_1_1-fg1000|bolts-fg1000|switchbase|togglebase": "instrument_panel",
+        r"Pedestal-fg1000": "pedestal",
+        r"pilotseat_(left|right)-fg1000": "front_seats",
+        r"backseat_left-fg1000": "rear_seat",
+        r"carpet-fg1000": "cabin_floor",
+        r"chassis-fg1000|wing_1[LR]-fg1000|LeftBag-fg1000": "cabin_interior",
+        r"Firewall-fg1000": "firewall",          # its cabin side; extras.py adds the engine side
+        r"visor.*-fg1000": "sun_visors",
+        r"AirVent_(left|right)-fg1000": "cabin_air_vents",
+        r"dome_light_(pilot|copilot)|knob[LR]|panel-dome": "dome_lights",
+        r"CeilingSpeakerFG1000": "overhead_console",
+        r"mike(_chord|_mount)?-fg1000": "hand_microphone",
+        r"doorint_(left|right)-fg1000|doorhandleint_(left|right)-fg1000|doorintstrap(left|right)-fg1000"
+        r"|windlocket(bak)?_(left|right)-fg1000|windowframe(left|right)int-fg1000": "doors",
+        r"baggagedoorinterior-fg1000": "baggage_door",
         r"AltStaticAir-fg1000": "alternate_static_source",
         r"knob-(stbyind|swcb|pedestal|avionics)": "panel_dimmers",
         **{rf"AP\.{k}(\.\d+)?": v for k, v in AUDIO_KEYS.items()},
@@ -200,7 +223,8 @@ SOURCES = [
     (C172 + "Interior/Pedals/pedals.ac", "ac", (-0.56, -0.24, -0.61), None, {r".*": "rudder_pedals"}),
     (C172 + "Interior/Pedals/pedals.ac", "ac", (-0.56, 0.24, -0.61), None, {r".*": "rudder_pedals"}),
     (GDU + "Model/GDU-104X.1.gltf", "gltf", (-0.357, -0.2, 0.05), (1, 0.9, 1), {**GDU_TABLE, **PFD_AP_KEYS, r"Panel|Screen\d|Cover|Lamp\d|screw\..*": "pfd"}),
-    (GDU + "Model/GDU-104X.2.gltf", "gltf", (-0.357, 0.15, 0.05), (1, 0.9, 1), {**GDU_TABLE, r"Panel|Screen\d|Cover|Lamp\d|screw\..*": "mfd"}),
+    (GDU + "Model/GDU-104X.2.gltf", "gltf", (-0.357, 0.15, 0.05), (1, 0.9, 1),
+     {**GDU_TABLE, r"Panel|Screen\d|Cover|Lamp\d|screw\..*|AP\..*": "mfd"}),
 ]
 # Never drawn: click hot spots, view blockers, the blurred propeller disc,
 # light cones and lit-state copies, inner copies of the glass, the compass
@@ -263,9 +287,9 @@ def piece(cpos, cuv, crgb, tex):
 
 
 def load(c172p):
-    """-> (parts, unmatched) where parts is a list of dicts {id, system,
+    """-> parts: a list of dicts {id, system,
     kind, glass, ask, pieces} (one per part id, objects merged by texture;
-    see piece()) and unmatched the object names drawn as context."""
+    see piece()). Every drawn object must match a part (or SKIP)."""
     merged, unmatched = {}, []
     for rel, kind, offset, scale, table in SOURCES:
         path = Path(c172p) / rel
@@ -297,7 +321,7 @@ def load(c172p):
             pid = next((p for rx, p in table.items() if re.fullmatch(rx, name)), None)
             if pid is None:
                 unmatched.append(name)
-                pid = "context"
+                continue
             if pid == "windows":
                 uv, tex, rgb = None, None, np.full_like(rgb, GLASS_RGB)
             merged.setdefault(pid, {}).setdefault(tex, []).append((c, uv, rgb))
@@ -310,20 +334,23 @@ def load(c172p):
             pieces.append(piece(np.vstack([c for c, _, _ in chunks]), cuv, np.vstack([r for _, _, r in chunks]),
                                 None if tex is None else str(tex)))
         parts.append({"id": pid, "system": SYSTEM_OF.get(pid, "cabin"),
-                      "kind": "context" if pid == "context" else "target",
+                      "kind": "target",
                       "glass": pid == "windows", "ask": SYSTEM_OF.get(pid) in ASK_SYSTEMS, "pieces": pieces})
     missing = set(SYSTEM_OF) - set(merged)
     if missing:
         raise SystemExit(f"parts with no objects: {sorted(missing)}")
-    return parts, unmatched
+    # Context lets clicks through, so an unmatched object can't be picked:
+    # give every drawn object a part (or SKIP it).
+    if unmatched:
+        raise SystemExit(f"objects with no part (add them to SOURCES or SKIP): {sorted(set(unmatched))}")
+    return parts
 
 
 if __name__ == "__main__":
     import sys
-    parts, unmatched = load(sys.argv[1])
+    parts = load(sys.argv[1])
     for p in sorted(parts, key=lambda p: p["system"]):
         v = np.vstack([q["verts"] for q in p["pieces"]])
         lo, hi = v.min(0), v.max(0)
         texs = ",".join(Path(q["tex"]).stem if q["tex"] else "-" for q in p["pieces"])
         print(f"{p['system']:16} {p['id']:28} {len(v):6} verts  {np.round(lo, 2)} {np.round(hi, 2)}  {texs}")
-    print("context:", " ".join(sorted(set(unmatched))))

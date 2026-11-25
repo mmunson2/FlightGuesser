@@ -14,7 +14,7 @@
     airframe: 0xd7dbe0, flight_controls: 0x3f6fb5, powerplant: 0x9a6b4a, fuel: 0xe0b030,
     landing_gear: 0x59606a, lights: 0xd85a5a, antennas: 0xa7adb5, pitot_static: 0x4fae6f,
     electrical: 0x3fa7a7, instruments: 0xb48ad8, g1000: 0x3b4250, autopilot: 0x4a5566,
-    audio_panel: 0x44505c, cabin: 0x8c7a66, engine: 0x9fb3c8,
+    audio_panel: 0x44505c, cabin: 0x8c7a66, avionics: 0x5a6b8c, engine: 0x9fb3c8,
   };
   const HIGHLIGHT = 0x36c2ff, RIGHT = 0x3fcf7f, WRONG = 0xff5555, MISSED = 0xffb340;
 

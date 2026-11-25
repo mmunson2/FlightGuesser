@@ -7,6 +7,8 @@
 #   kpae/*.pdf        the FAA airport diagram, for the cycle
 #                     build/airport.py names (DIAGRAM_PDF)
 #   ...Textures/*.png the G1000 and panel textures, for tools/labels.py
+#   schematics/*.pdf  the maintenance manual, POH, Lycoming parts catalog and
+#                     operator manual the extras are drawn from
 # A new FAA cycle: change DIAGRAM_PDF in build/airport.py and CYCLE here,
 # then `make fetch model`.
 set -eu
@@ -48,4 +50,12 @@ for f in GDU-1044B.1.xml GDU-1040.2.xml Model/GDU-104X.1.gltf Model/GDU-104X.1.b
   get "$FG/$f" "$DATA/c172p/fgdata/GDU104X/$f"
 done
 get "https://aeronav.faa.gov/d-tpp/$CYCLE/00142AD.PDF" "$DATA/kpae/00142AD_$CYCLE.pdf"
+# Drawings the extras (build/extras.py) are placed from: read by rendering
+# pages, not by the build.
+S=$DATA/schematics
+get "https://mxdocs.thrustinstitute.com/wp-content/uploads/2025/06/240903411-Cessna-172-Maintenance-Manual_unlocked-compressed.pdf" "$S/cessna-172-mm.pdf"
+get "https://sanfernando35.cap.gov/media/documents/c172gfc700poh_F8505EA32059C.pdf" "$S/c172s-poh-gfc700-2007.pdf"
+get "https://kerrville.cap.gov/media/cms/C172SP_IM_2005_navIII_B45C89F810DC8.pdf" "$S/c172sp-im-2005.pdf"
+get "https://www.lycoming.com/sites/default/files/file/2025-06/PC-IO-360-L2A.pdf" "$S/lycoming-PC-IO-360-L2A.pdf"
+get "https://chapters.eaa.org/eaa245/-/media/3B5A3308519148D58C389A05AEEC001F.ashx" "$S/lycoming-60297-12-operator.pdf"
 echo "source data in $DATA is complete"

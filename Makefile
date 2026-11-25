@@ -11,7 +11,7 @@ STEP := $(ENGINE)/raw/H-O-4-AIR-ENGINE-MODEL-L/STP-H-O-4-AIR-ENGINE-MODEL-L.STEP
 PY := .venv/bin/python
 export FLIGHT_DATA := $(DATA)
 
-.PHONY: help setup fetch model check shot clean-venv
+.PHONY: help setup fetch model check shot geometry clean-venv
 
 help:  ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-16s %s\n", $$1, $$2}'
@@ -38,6 +38,9 @@ check: setup  ## Validate questions, names and the model in headless Chrome
 
 shot: setup  ## Screenshot the app: make shot ARGS="out.png --view panel"
 	$(PY) tools/shot.py $(ARGS)
+
+geometry: setup  ## Report overlapping parts and parts a click can't reach: ARGS=overlaps|hidden
+	$(PY) tools/geometry.py $(ARGS)
 
 clean-venv:  ## Delete .venv
 	rm -rf .venv

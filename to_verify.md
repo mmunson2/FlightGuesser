@@ -15,8 +15,6 @@ limits, KOEL lights (strobes required, beacon not), brakes (one master
 cylinder on each of the pilot's pedals), and the GFC 700 keys on the PFD's
 left edge. Still open:
 
-- The essential bus contents (PECAANS, `ap-ess-bus`). The POH shows them
-  only in a schematic I couldn't read as text.
 - The glide distance of about 1.5 NM per 1,000 ft (`am-glide-ratio`). This
   POH's maximum glide chart is an image.
 
@@ -33,8 +31,8 @@ engine-driven fuel pump failure). Things to check against a real engine:
 ## Parts drawn from the maintenance manual
 
 The firewall, engine mount, exhaust (risers, muffler, heat shroud),
-batteries, brake master cylinders and lines, fuel strainer, sump drains
-and static port follow the Cessna Model 172 Maintenance Manual's drawings
+batteries, brake master cylinders and lines, fuel system, sump drains,
+static port, stall warning, G1000 units and engine accessories follow the Cessna Model 172 Maintenance Manual's drawings
 (`build/extras.py` cites each figure). The manual gives where things go,
 not most sizes, so check against your airplane:
 
@@ -50,6 +48,31 @@ not most sizes, so check against your airplane:
 - **Engine mount** tube layout: the manual shows four firewall bolts only.
 - **Brake lines**: the manual shows them under the floor and out the
   skin to each gear leg; the exact routing is simplified.
+- **Fuel system under the floor** (MM 28-20-00 Figs. 201, 204, 206): the
+  reservoir under the copilot's footwell, the selector valve under the
+  pedestal, the auxiliary pump and shutoff valve between the reservoir and
+  the firewall. Sizes and exact spots are estimates; the supply lines are
+  drawn one per tank down the front door posts (the manual shows two
+  outlets per tank).
+- **G1000 units**: the tailcone shelf (GIA 63 ×2, GTX 33, GRS 77, GDC 74A,
+  fan) is drawn at FS 142–157 from the manual's picture; the station is my
+  estimate. Unit sizes are estimates. The GEA 71 sits under the MFD,
+  forward of the panel. The GMU 44 magnetometer is in the left wing above
+  access plate 520HB; its wing station (115) is read off the access panel
+  drawing.
+- **Stall warning**: the scoop at WS 91 on the left wing's leading edge
+  (the manual's number); the horn at the upper left door post.
+- **Engine accessories**: oil cooler on the left rear baffle, starter at the
+  front lower left (both from the manual's text), oil filter and vacuum pump
+  on the accessory housing. Each sits at the nearest spot clear of the CAD
+  engine's own parts, so the starter is farther out than a real one and the
+  cooler sits a little high and aft. The filter and pump positions on the
+  housing are my reading of Lycoming's parts catalog, not measured.
+- **Engine fuel parts from the CAD model**: the fuel manifold (spider) on
+  top, the four injector lines, the servo under the engine and the lines
+  between them were fused into the crankcase and servo solids; they are
+  now separate parts, split by their CAD faces. Their routing is the CAD
+  designer's, not a real IO-360's.
 
 ## Notecard errors, corrected in the questions
 
