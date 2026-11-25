@@ -313,6 +313,8 @@ the GFC 700 AFMS:
     work. Travel about 8 cm, knob 1.5 cm off the panel fully in (made up
     from the model, which draws them pulled right out). No mixture vernier
     lock button: it slides freely.
+  - CABIN HT and CABIN AIR pull out the same way (drawn pushed in, closed;
+    6 cm of pull, made up). They do nothing yet: procedure practice.
 - **PFD Opt → ALT Units** (Meters, IN, HPA):
   - Meters adds metric boxes under the altitude readout and beside the
     selected altitude. The real overlay may sit elsewhere.

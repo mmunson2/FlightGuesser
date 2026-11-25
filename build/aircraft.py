@@ -522,9 +522,12 @@ SOURCES = [
 # Objects that move in Operate mode, kept in a piece of their own so the
 # viewer can find them: (file, object) -> the piece's `moves` name. The
 # ignition key turns (js/g1000-switches.js); the switch's face stays. The
-# throttle and mixture slide in and out of their mounts.
+# throttle, mixture and the cabin heat and air knobs slide in and out of
+# their mounts (heat and air share a part, so each is a piece).
 MOVING = {("magneto-switch/magneto-switch-fg1000.ac", r"key|start"): "key",
-          ("c172sp-panel/c172sp-interior.ac", r"Throttle-fg1000|Mixture-fg1000"): "lever"}
+          ("c172sp-panel/c172sp-interior.ac", r"Throttle-fg1000|Mixture-fg1000"): "lever",
+          ("c172sp-panel/c172sp-interior.ac", r"CabinHeat-fg1000"): "heat",
+          ("c172sp-panel/c172sp-interior.ac", r"CabinAir-fg1000"): "air"}
 
 # Skipped in one file only: the magnetic compass's glass (an opaque sheet
 # here; js/g1000-panel.js draws the live card in its window).

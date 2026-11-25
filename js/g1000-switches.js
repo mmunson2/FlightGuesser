@@ -49,18 +49,37 @@ window.G1000_SWITCHES = (function () {
   const NAMES = { alt: 'MASTER ALT', bat: 'MASTER BAT', avn1: 'AVIONICS BUS 1', avn2: 'AVIONICS BUS 2',
                   stby: 'STBY BATT', beacon: 'BEACON', land: 'LAND', nav: 'NAV', strobe: 'STROBE',
                   taxi: 'TAXI', pitot: 'PITOT HEAT', fuelPump: 'FUEL PUMP', cabinPwr: 'CABIN PWR 12V', elt: 'ELT' };
-  // The throttle and mixture: their `lever` pieces slide along the scene's
-  // z (into the panel). As drawn both are pulled right out (idle, idle
-  // cutoff), the knob 11 cm from its mount; fully in leaves it 1.5 cm out:
-  // `travel` metres. Their positions are state.power and state.mixture (0-1).
+  // Push-pull controls: a `piece` of a part (build/aircraft.py MOVING)
+  // sliding along the scene's z, `travel` metres, at a position 0-1 (get,
+  // set). `dir` +1: 1 is pushed in (the throttle and mixture, drawn pulled
+  // right out: idle, idle cutoff, the knob 11 cm from its mount, 1.5 cm
+  // when fully in). `dir` -1: 1 is pulled out (CABIN HT and CABIN AIR,
+  // drawn pushed in, closed; 6 cm of pull, made up). Heat and air do
+  // nothing yet (procedure practice).
   const LEVERS = [
-    { pid: 'throttle', key: 'power', travel: 0.081, name: 'THROTTLE' },
-    { pid: 'mixture', key: 'mixture', travel: 0.083, name: 'MIXTURE' },
+    { id: 'throttle', pid: 'throttle', piece: 'lever', dir: 1, travel: 0.081, name: 'THROTTLE',
+      get: (s) => s.power, set: (G, v) => G.fly({ power: v - G.state.power }),
+      label: (v) => (v <= 0.001 ? 'IDLE' : Math.round(v * 100) + '%') },
+    { id: 'mixture', pid: 'mixture', piece: 'lever', dir: 1, travel: 0.083, name: 'MIXTURE',
+      get: (s) => s.mixture, set: (G, v) => G.fly({ mixture: v - G.state.mixture }),
+      label: (v) => (v <= 0.001 ? 'IDLE CUTOFF' : Math.round(v * 100) + '%') },
+    { id: 'cabinHeat', pid: 'heat_and_air', piece: 'heat', dir: -1, travel: 0.06, name: 'CABIN HEAT',
+      get: (s) => s.sys.sw.cabinHeat, set: (G, v) => G.systems.setSwitch('cabinHeat', v),
+      label: (v) => (v <= 0.001 ? 'OFF' : Math.round(v * 100) + '% out') },
+    { id: 'cabinAir', pid: 'heat_and_air', piece: 'air', dir: -1, travel: 0.06, name: 'CABIN AIR',
+      get: (s) => s.sys.sw.cabinAir, set: (G, v) => G.systems.setSwitch('cabinAir', v),
+      label: (v) => (v <= 0.001 ? 'OFF' : Math.round(v * 100) + '% out') },
   ];
   const LEVER_PARTS = new Set(LEVERS.map((l) => l.pid));
-  const leverOf = (pid) => LEVERS.find((l) => l.pid === pid);
-  const leverLabel = (l, v) => l.name + ' · ' + (l.key === 'mixture' && v <= 0.001 ? 'IDLE CUTOFF'
-    : l.key === 'power' && v <= 0.001 ? 'IDLE' : Math.round(v * 100) + '%');
+  const leverById = (id) => LEVERS.find((l) => l.id === id);
+  const leverLabel = (id, state) => { const l = leverById(id); return l.name + ' · ' + l.label(l.get(state)); };
+  // Push (dir +1) or pull a control by `by` of its travel, clamped.
+  function moveLever(G, id, by) {
+    const l = leverById(id), v = l.get(G.state);
+    const next = Math.min(1, Math.max(0, v + by));
+    if (next !== v) l.set(G, next);
+    return next !== v;
+  }
 
   // Parts clicked as switches (the ignition key is a knob).
   const PARTS = new Set(SWITCHES.filter((s) => !s.knob).map((s) => s.pid));
@@ -84,10 +103,13 @@ window.G1000_SWITCHES = (function () {
 
     const slides = LEVERS.filter((l) => meshById[l.pid]).map((l) => {
       const mesh = meshById[l.pid], pos = mesh.geometry.attributes.position;
-      const range = mesh.userData.moving.find((m) => m.moves === 'lever');
+      const range = mesh.userData.moving.find((m) => m.moves === l.piece);
       const idx = [];
       if (range) for (let i = range.first; i < range.first + range.count; i++) idx.push(i);
-      return { ...l, mesh, pos, idx, from: idx.map((i) => pos.getZ(i)), shown: null };
+      let x = 0, y = 0;
+      idx.forEach((i) => { x += pos.getX(i); y += pos.getY(i); });
+      return { ...l, mesh, pos, idx, from: idx.map((i) => pos.getZ(i)), shown: null,
+               cx: x / idx.length, cy: y / idx.length };
     });
 
     const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.0021, 24),
@@ -110,7 +132,7 @@ window.G1000_SWITCHES = (function () {
     function update(state, lampOn) {
       const sys = state.sys;
       for (const l of slides) {
-        const dz = (Math.round(state[l.key] * 1000) / 1000) * l.travel;
+        const dz = (Math.round(l.get(state) * 1000) / 1000) * l.travel * l.dir;
         if (dz === l.shown) continue;
         l.shown = dz;
         l.idx.forEach((i, k) => l.pos.setZ(i, l.from[k] + dz));
@@ -181,17 +203,28 @@ window.G1000_SWITCHES = (function () {
       return label(s, sys.sw[s.key]);
     }
 
-    // The throttle or mixture: where its knob is (for dragging along it on
-    // screen), its travel and position.
-    function leverAxis(pid, state) {
-      const l = slides.find((s) => s.pid === pid);
+    // Which push-pull control a hit on a part is: the nearest knob.
+    function leverAt(pid, point) {
+      let best = null, bestD = Infinity;
+      for (const l of slides) {
+        if (l.pid !== pid) continue;
+        const d = Math.hypot(point.x - l.cx, point.y - l.cy);
+        if (d < bestD) { best = l; bestD = d; }
+      }
+      return best?.id ?? null;
+    }
+    // Where a control's knob is now, and where it would be at 0 and at 1
+    // (for dragging along it on screen).
+    function leverAxis(id, state) {
+      const l = slides.find((s) => s.id === id);
       if (!l) return null;
-      let x = 0, y = 0, zMin = Infinity;
-      l.idx.forEach((i) => { x += l.pos.getX(i); y += l.pos.getY(i); zMin = Math.min(zMin, l.pos.getZ(i)); });
-      return { knob: new THREE.Vector3(x / l.idx.length, y / l.idx.length, zMin), travel: l.travel, value: state[l.key] };
+      let zMin = Infinity;
+      l.idx.forEach((i) => { zMin = Math.min(zMin, l.pos.getZ(i)); });
+      const v = l.get(state), at = (w) => new THREE.Vector3(l.cx, l.cy, zMin + (w - v) * l.travel * l.dir);
+      return { zero: at(0), one: at(1), value: v };
     }
 
-    return { update, click, scroll, lamp, leverAxis };
+    return { update, click, scroll, lamp, leverAt, leverAxis };
   }
 
   // Whether a hit on a part is on one of its switches (the ELT's panel
@@ -199,5 +232,5 @@ window.G1000_SWITCHES = (function () {
   const isSwitch = (pid, point) => SWITCHES.some((s) => s.pid === pid
     && (s.key !== 'elt' || inBox([ELT_ROCKER[0].map((v) => v - 0.002), ELT_ROCKER[1].map((v) => v + 0.002)])(point.x, point.y, point.z)));
 
-  return { attach, PARTS, SWITCHES, isSwitch, LEVER_PARTS, leverOf, leverLabel };
+  return { attach, PARTS, SWITCHES, isSwitch, LEVER_PARTS, LEVERS, leverById, leverLabel, moveLever };
 })();

@@ -64,7 +64,9 @@ window.G1000_SYSTEMS = (function () {
   const SWITCHES = { bat: true, alt: true, avn1: true, avn2: true, stby: 'arm',
                      beacon: true, land: false, taxi: false, nav: true, strobe: true, pitot: false,
                      // Not wired to anything yet (procedure practice): ELT on = transmitting.
-                     fuelPump: false, cabinPwr: false, elt: false, mags: 'both' };
+                     fuelPump: false, cabinPwr: false, elt: false, mags: 'both',
+                     // Push-pull, 0 in (closed) to 1 out: nothing yet.
+                     cabinHeat: 0, cabinAir: 0 };
   const MAGS = ['off', 'r', 'l', 'both', 'start'];
   const MAG_DROP = { r: 70, l: 55 };
   // TEST springs back to OFF after this long (s), standing for a held press.

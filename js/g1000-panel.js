@@ -260,7 +260,8 @@ window.G1000_PANEL = (function () {
         if (Math.hypot(hit.point.x - k.x, hit.point.y - k.y) > 0.008) return zoneAt(hit);
       }
       if (G1000_SWITCHES.LEVER_PARTS.has(pid)) {
-        return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, lever: true };
+        const lever = SWX.leverAt(pid, hit.point);
+        if (lever) return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, lever };
       }
       if (SWITCH.has(pid) && G1000_SWITCHES.isSwitch(pid, hit.point)) return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, sw: true };
       if (pid === AUDIO_KNOB && hit.point.y < AUDIO_KNOB_Y) {
@@ -322,7 +323,7 @@ window.G1000_PANEL = (function () {
         redraw(true);
         return said;
       }
-      if (c.lever) return leverName(c.pid);
+      if (c.lever) return leverName(c.lever);
       if (!hasPower(c)) return name(c) + ' · no power';
       // The key doesn't push.
       if (c.pid === IGN) return name(c);
@@ -347,7 +348,7 @@ window.G1000_PANEL = (function () {
       if (c?.lever) {
         e.preventDefault();
         e.stopPropagation();
-        moveLever(c.pid, (e.deltaY < 0 ? 1 : -1) * 0.05);
+        moveLever(c.lever, (e.deltaY < 0 ? 1 : -1) * 0.05 * G1000_SWITCHES.leverById(c.lever).dir);
         return;
       }
       if (c?.sw) {
@@ -527,15 +528,13 @@ window.G1000_PANEL = (function () {
       drag.piece.visible = true;
       showOverlay(c, drag);
     }, { capture: true });
-    // ---- The throttle and mixture: dragged along their shafts as they
+    // ---- Push-pull controls (throttle, mixture, cabin heat and air):
+    // dragged along their shafts as they
     // look on screen (toward the panel pushes in), or scrolled (up: in). ----
-    const LEVER_KEY = { throttle: 'power', mixture: 'mixture' };
-    const leverName = (pid) => G1000_SWITCHES.leverLabel(G1000_SWITCHES.leverOf(pid), G.state[LEVER_KEY[pid]]);
-    function moveLever(pid, by) {
-      const key = LEVER_KEY[pid], before = G.state[key];
-      G.fly({ [key]: by });
-      if (G.state[key] !== before) redraw(true);
-      onTurn?.(leverName(pid));
+    const leverName = (id) => G1000_SWITCHES.leverLabel(id, G.state);
+    function moveLever(id, by) {
+      if (G1000_SWITCHES.moveLever(G, id, by)) redraw(true);
+      onTurn?.(leverName(id));
     }
     let slide = null;
     const toScreen = (v) => {
@@ -546,23 +545,22 @@ window.G1000_PANEL = (function () {
       if (!operating || e.button !== 0) return;
       const c = controlAt(e);
       if (!c?.lever) return;
-      const ax = SWX.leverAxis(c.pid, G.state);
-      // Fully out and fully in on screen, from where it is now.
-      const a = toScreen(ax.knob.clone().setZ(ax.knob.z - ax.value * ax.travel));
-      const b = toScreen(ax.knob.clone().setZ(ax.knob.z + (1 - ax.value) * ax.travel));
+      const ax = SWX.leverAxis(c.lever, G.state);
+      // Where 0 and 1 are on screen, from where it is now.
+      const a = toScreen(ax.zero), b = toScreen(ax.one);
       const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
       if (len2 < 25) return;            // seen end on: nothing to drag along
       controls.enabled = false;
-      slide = { pid: c.pid, id: e.pointerId, x: e.clientX, y: e.clientY, dx, dy, len2, start: ax.value };
+      slide = { lever: c.lever, id: e.pointerId, x: e.clientX, y: e.clientY, dx, dy, len2, start: ax.value };
       renderer.domElement.style.cursor = 'grabbing';
       renderer.domElement.setPointerCapture(e.pointerId);
-      onTurn?.(leverName(c.pid));
+      onTurn?.(leverName(c.lever));
     }, { capture: true });
     renderer.domElement.addEventListener('pointermove', (e) => {
       if (!slide || e.pointerId !== slide.id) return;
       const t = ((e.clientX - slide.x) * slide.dx + (e.clientY - slide.y) * slide.dy) / slide.len2;
       const want = Math.min(1, Math.max(0, slide.start + t));
-      moveLever(slide.pid, want - G.state[LEVER_KEY[slide.pid]]);
+      moveLever(slide.lever, want - G1000_SWITCHES.leverById(slide.lever).get(G.state));
       slide.moved = true;
     });
     const endSlide = (e) => {
