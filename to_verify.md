@@ -53,13 +53,77 @@ the GFC 700 AFMS:
   - Arms when off course by 7° or more.
   - Intercepts at up to 45°.
   - VOR full scale is 10°, at 2 dots.
+- **Flight plans and Direct-To** (js/g1000-fms.js):
+  - Entry: the small FMS knob picks the character under the cursor, the
+    large knob moves the cursor, and the identifier completes from the
+    database.
+  - Direct-To takes ENT to accept the identifier, then ENT on ACTIVATE?.
+    It defaults to the active waypoint.
+  - In the FPL, push FMS for the cursor. The small knob inserts a
+    waypoint before the selected row.
+  - CLR on a waypoint asks "Remove?". MENU on a waypoint asks to activate
+    the leg to it. The real unit goes through a page menu for this; the
+    mock asks directly.
+  - The first leg becomes active by itself once the plan has two
+    waypoints. Check what the real unit does.
+  - A Direct-To to a waypoint in the plan continues with the plan after
+    it.
+  - Legs sequence when the waypoint is passed. There's no turn
+    anticipation.
+- **MFD page groups** (js/g1000-pages.js):
+  - With no cursor out, the large FMS knob picks the group (MAP, WPT,
+    AUX, FPL, NRST) and the small knob the page.
+  - Each group returns to its last page.
+  - The FPL key toggles the Active Flight Plan page and back.
+  - Page names follow the NXi's MFD in MSFS 2020.
+  - Working: Navigation Map, Airport Information, VOR Information, Trip
+    Planning, Utility, Active Flight Plan, Nearest Airports, Nearest VOR.
+    The other pages are placeholders.
+  - Airport Information has no runways, frequencies or elevation: the
+    mock's database doesn't hold them.
+  - ENT on Nearest Airports opens that airport's information page.
+  - ENT on Nearest VOR loads the frequency into the tuned NAV's standby.
+  - Check both ENT behaviours against the real unit, which may go through
+    a frequency field.
+- **PFD Nearest softkey**: opens a Nearest Airports window. Push FMS for
+  the cursor; D→ offers the selection.
+- **Fuel**: 48 gal usable at start, burning at a made-up fuel flow (from
+  power and altitude, not the POH). Trip Planning assumes no wind.
+- **GPS CDI scale**: ENR 2.0 NM full scale; TERM 1.0 NM within 31 NM of
+  the plan's departure or destination airport. The 0.3 NM approach scale
+  isn't modelled.
+- **GPS NAV**: captures within full-scale deflection, else arms.
 - **Volume**: turning a volume knob shows a percentage in place of the
   standby frequency for 2 seconds.
-- **Stations**: PAE VOR 110.6 and SEA VORTAC 116.8, and the airport
-  positions on the MFD map, are approximate.
+- **Database** (data/wa-nav.js, built by build/wa_nav.py from FAA NASR,
+  cycle effective 29 Oct 2026):
+  - Covers Washington's 117 open public-use land airports, their
+    runways, VHF frequencies (CTAF, UNICOM, tower, ground, clearance,
+    ATIS, approach), and the 16 operational VORs.
+  - Positions are surveyed, so the mock is accurate as of that cycle. It
+    goes out of date every 28 days; rebuild with `make fetch nav`.
+  - Left out: private fields, heliports and seaplane bases, NDBs,
+    intersections, AWOS/ASOS frequencies (not in FRQ.csv), and airports
+    over the state line.
+  - TPA is AGL in NASR. The page shows field elevation + TPA as MSL.
+    Many towered fields publish none.
+- **Magnetic**: everything the pilot sees or sets is magnetic: heading,
+  bug, HDG mode, DTK, TRK, and the bearings on every page.
+  - Local variation is an inverse-distance mean of the four nearest
+    airports with NASR variation from 2010 or later. About 16.3°E at the
+    start; 14°E at Spokane.
+  - 74 of the 117 airports still carry 1985 figures, about 20°E. Those
+    are stale and not used.
+  - VOR radials and courses use the station's declared variation:
+    PAE 20°E (1990), SEA 19°E (2000), and so on.
+  - So a VOR course and a GPS DTK to the same point differ by a few
+    degrees, as in a real airplane. Check this against a VOR receiver
+    check or the Chart Supplement.
+  - Not modelled: the variation's yearly drift, and the compass's own
+    errors.
 - **Simplified**:
   - The EIS numbers and the airplane's kinematics are made up.
-  - There is no wind, and headings are true (no magnetic variation).
+  - There is no wind.
 
 ## The engine model
 

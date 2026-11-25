@@ -6,10 +6,13 @@
 // What it models: COM and NAV radios (tuning, transfer, volume), the
 // heading bug, course, baro, selected altitude and its alerter, the CDI
 // source, the transponder, the PFD's softkey menus, and the GFC 700's mode
-// logic (FD/AP, ROL PIT HDG ALT VS FLC NAV APR, ALTS capture, NOSE UP/DN).
-// What it doesn't: flight plans, VNAV, GPS approaches, LOC/GS, the MFD's
-// pages beyond the map, failures, wind, magnetic variation (headings are
-// true). The airplane is a few lines of kinematics, not a flight model.
+// logic (FD/AP, ROL PIT HDG ALT VS FLC NAV APR, ALTS capture, NOSE UP/DN),
+// through js/g1000-fms.js the flight plan, Direct-To and GPS legs, and
+// through js/g1000-pages.js the MFD's page groups and the PFD's Nearest
+// window. What it doesn't: VNAV, procedures and GPS approaches, LOC/GS,
+// the MFD's IFR and setup pages, failures, wind. Headings, bugs, courses
+// and bearings are magnetic (see magVarAt); the simulation underneath is
+// true. The airplane is a few lines of kinematics, not a flight model.
 // Behaviour follows the G1000 NXi and GFC 700 pilot's guides as remembered;
 // to_verify.md lists what to check against the real guides.
 window.G1000 = (function () {
@@ -19,19 +22,15 @@ window.G1000 = (function () {
   const diff = (a, b) => ((((a - b) % 360) + 540) % 360) - 180;
   const rad = (d) => (d * Math.PI) / 180, deg = (r) => (r * 180) / Math.PI;
 
-  // A few stations and airports around Paine Field (KPAE), the app's
-  // airport. Positions are approximate: for the mock, not for navigation.
-  const NAVAIDS = [
-    { id: 'PAE', name: 'PAINE', freq: 110.6, lat: 47.9198, lon: -122.2777 },
-    { id: 'SEA', name: 'SEATTLE', freq: 116.8, lat: 47.4353, lon: -122.3097 },
-  ];
-  const AIRPORTS = [
-    { id: 'KPAE', lat: 47.9063, lon: -122.2816, towered: true },
-    { id: 'KAWO', lat: 48.1608, lon: -122.1590, towered: false },
-    { id: 'S43', lat: 47.9082, lon: -122.1031, towered: false },
-    { id: 'KBFI', lat: 47.5300, lon: -122.3020, towered: true },
-    { id: 'KSEA', lat: 47.4490, lon: -122.3093, towered: true },
-    { id: 'KRNT', lat: 47.4931, lon: -122.2157, towered: true },
+  // The database: Washington State's public-use airports (with runways and
+  // frequencies) and VORs, from the FAA's NASR data (data/wa-nav.js, built
+  // by build/wa_nav.py). Not for navigation: the cycle goes out of date.
+  const NAVAIDS = WA_NAV.vors;
+  const AIRPORTS = WA_NAV.airports;
+  // The flight plan's database: every airport and station above.
+  const WAYPOINTS = [
+    ...AIRPORTS.map((a) => ({ ...a, type: 'airport' })),
+    ...NAVAIDS.map((n) => ({ ...n, type: 'vor' })),
   ];
 
   // Great-circle bearing (deg true) and distance (NM) from a to b.
@@ -61,14 +60,46 @@ window.G1000 = (function () {
   };
   // The softkeys that do something in the mock; the rest draw grey.
   const LIVE = {
-    pfd: [3, 5, 7, 8], 'pfd-opt': [9, 10], xpdr: [2, 3, 4, 6, 7, 8, 10],
+    pfd: [3, 5, 7, 8, 10], 'pfd-opt': [9, 10], xpdr: [2, 3, 4, 6, 7, 8, 10],
     'xpdr-code': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mfd: [0], engine: [0, 1, 2, 10],
   };
 
   // Map ranges (NM), as the RANGE knob steps them.
   const RANGES = [1, 1.5, 2.5, 4, 5, 7.5, 10, 15, 25, 40, 50, 75, 100];
 
+  // ---- Magnetic variation ----
+  // The simulation runs in true (positions, the airplane's heading); what
+  // the pilot sees and sets is magnetic: heading, bug, DTK, TRK, bearings.
+  // Local variation (degrees, east +) is an inverse-distance mean of the
+  // four nearest airports whose NASR variation is from 2010 or later:
+  // older figures are stale (Washington's has fallen about 4° since 1985).
+  // VORs use their own declared variation (js navSolution), as the real
+  // stations are aligned to it.
+  const VAR_POINTS = AIRPORTS.filter((a) => a.magVar != null && a.magVarYear >= 2010);
+  function magVarAt(lat, lon) {
+    const k = Math.cos(rad(lat));
+    const near = VAR_POINTS.map((p) => ({ v: p.magVar, d: Math.hypot(p.lat - lat, (p.lon - lon) * k) }))
+      .sort((a, b) => a.d - b.d).slice(0, 4);
+    if (near[0].d < 1e-6) return near[0].v;
+    const w = near.map((n) => 1 / n.d);
+    return near.reduce((sum, n, i) => sum + n.v * w[i], 0) / w.reduce((a, b) => a + b, 0);
+  }
+  // True to magnetic with the local variation (or `v`), and back.
+  const toMag = (t, v = state.magVar) => wrap360(t - v);
+  const toTrue = (m, v = state.magVar) => wrap360(m + v);
+
   const state = {};
+  // Flight planning (js/g1000-fms.js) keeps its part of the state in
+  // state.fms.
+  const fms = G1000_FMS.create({
+    state, bearingDist, waypoints: WAYPOINTS, note: (text) => note(text), magVarAt,
+  });
+  // The MFD's page groups and the PFD's Nearest window
+  // (js/g1000-pages.js), in state.mfd.
+  const pages = G1000_PAGES.create({
+    state, bearingDist, waypoints: WAYPOINTS, fms, note: (text) => note(text),
+    tas: () => tas(), fuelFlow: () => fuelFlow(), toMag: (t) => toMag(t),
+  });
   function reset() {
     Object.assign(state, {
       t: 0,
@@ -91,38 +122,52 @@ window.G1000 = (function () {
       // (within 200 ft), 'deviate' (off by more than 200 ft once reached).
       alt: { phase: 'far', flashUntil: 0 },
       menus: { pfd: ['pfd'], mfd: ['mfd'] },
-      mfdPage: 'map', eisPage: 'Engine', range: 6,
+      mfd: pages.fresh(), eisPage: 'Engine', range: 6,
+      // Usable fuel on board, gallons (both tanks).
+      fuel: 48,
       // A line of text for the last thing the mock can't do yet.
       note: null,
+      fms: fms.fresh(),
     });
     state.afcs.ref.alt = state.trueAlt;
+    // Northbound means 340° magnetic: the true heading carries the
+    // variation. (Bug and courses above are magnetic.)
+    state.magVar = magVarAt(state.lat, state.lon);
+    state.hdg = toTrue(340);
   }
   reset();
 
   const indicatedAlt = () => state.trueAlt + (state.baro - ACTUAL_BARO) * 1000;
   const tas = () => state.ias * (1 + 0.02 * state.trueAlt / 1000);
+  // Fuel flow (GPH): made up from power and altitude, not the POH's tables.
+  const fuelFlow = () => 2 + 9 * state.power * (1 - state.trueAlt / 30000);
   const note = (text) => { state.note = { text, until: state.t + 4 }; };
 
   // ---- Navigation: the active CDI source's deviation ----
   function tunedStation(i) {
     return NAVAIDS.find((n) => Math.abs(n.freq - state.nav[i].act) < 0.001) ?? null;
   }
-  // { source, station, course, toFrom, dev (needle, -1..1 of full scale,
-  // + = needle right), xtk (NM, + = right of course), dist } or null when
-  // the source has no signal.
+  // { source, station, course (magnetic, as shown), courseTrue (for the
+  // autopilot and the map), toFrom, dev (needle, -1..1 of full scale,
+  // + = needle right), xtk (NM, + = right of course), dist, bearingTo
+  // (magnetic), capturable (close enough for NAV to capture) } or null
+  // when the source has no signal (GPS: no active leg).
   function navSolution(src = state.cdi) {
-    if (src === 'GPS') return null;
+    if (src === 'GPS') return fms.navSolution();
     const i = src === 'VOR1' ? 0 : 1;
     const st = tunedStation(i);
     if (!st) return null;
     const { brg, dist } = bearingDist(st, state);
     if (dist > 60) return null;
+    // Radials and the selected course are magnetic by the station's own
+    // declared variation, which can differ from the local one by degrees.
+    const radial = toMag(brg, st.magVar);
     const crs = state.crs[i];
-    const from = Math.abs(diff(brg, crs)) <= 90;
-    const off = from ? diff(brg, crs) : -diff(brg, wrap360(crs + 180));
-    return { source: src, station: st, course: crs, toFrom: from ? 'FROM' : 'TO',
+    const from = Math.abs(diff(radial, crs)) <= 90;
+    const off = from ? diff(radial, crs) : -diff(radial, wrap360(crs + 180));
+    return { source: src, station: st, course: crs, courseTrue: toTrue(crs, st.magVar), toFrom: from ? 'FROM' : 'TO',
              dev: clamp(-off / 10, -1, 1), offDeg: off, xtk: dist * Math.sin(rad(off)), dist,
-             bearingTo: wrap360(brg + 180) };
+             bearingTo: wrap360(radial + 180), radial, capturable: Math.abs(off) < 7 };
   }
 
   // ---- The GFC 700 ----
@@ -179,9 +224,10 @@ window.G1000 = (function () {
     setMode(axis, mode);
   }
   function navKey(mode) {
+    if (mode === 'APR' && state.cdi === 'GPS') return note('GPS approaches: not in the mock yet');
     const nav = navSolution();
     if (!nav) {
-      note(state.cdi === 'GPS' ? 'No GPS flight plan in the mock: use CDI for VOR1/VOR2'
+      note(state.cdi === 'GPS' ? 'No active GPS leg: make one with FPL or D→'
         : 'No VOR signal on ' + state.cdi);
       return;
     }
@@ -193,7 +239,7 @@ window.G1000 = (function () {
     }
     // Captured straight away when near the course, else armed (white)
     // while HDG or ROL flies the intercept.
-    if (Math.abs(nav.offDeg) < 7) setMode('lat', mode); else arm('lat', mode);
+    if (nav.capturable) setMode('lat', mode); else arm('lat', mode);
   }
   const navModeName = (mode) => {
     const src = state.cdi === 'GPS' ? 'GPS' : 'VOR';
@@ -201,8 +247,22 @@ window.G1000 = (function () {
   };
 
   // ---- Keys, knobs and softkeys ----
+  // Keys for whatever has the display: the MFD's FPL key changes page;
+  // the PFD's Nearest window and the MFD's page cursors take ENT and CLR;
+  // the rest (D→, FPL, PROC, and ENT/CLR/MENU in an FMS window) go to
+  // js/g1000-fms.js, D→ offering what the page shows. True when handled.
+  function windowKey(key, display) {
+    const win = state.fms.win[display];
+    if (display === 'mfd' && key === 'fpl' && win?.type !== 'dto') { pages.fplKey(); return true; }
+    if (display === 'pfd' && win?.type === 'nrst' && (key === 'ent' || key === 'clr')) return pages.pfdInput(key);
+    if (display === 'mfd' && !win && pages.press(key)) return true;
+    const handled = fms.press(key, display, { dtoDefault: pages.selectedIdent(display) });
+    pages.sync();
+    return handled;
+  }
   function press(key, display = 'pfd') {
     const a = state.afcs;
+    if (windowKey(key, display)) return;
     switch (key) {
       case 'ap':
         if (a.ap) apDisconnect();
@@ -235,8 +295,8 @@ window.G1000 = (function () {
       case 'clr':
         if (state.menus[display].length > 1) state.menus[display].pop();
         return;
-      case 'direct_to': case 'fpl': case 'proc': case 'menu': case 'ent':
-        return note(key.replace('_', ' ').toUpperCase() + ': not in the mock yet');
+      case 'menu': case 'ent':
+        return note(key.toUpperCase() + ': nothing to do here in the mock (open FPL or D→)');
       default:
         if (key.startsWith('softkey:')) return softkey(display, Number(key.slice(8)));
     }
@@ -259,6 +319,7 @@ window.G1000 = (function () {
     const x = state.xpdr;
     switch (menu + ':' + label) {
       case 'pfd:PFD Opt': stack.push('pfd-opt'); return;
+      case 'pfd:Nearest': pages.pfdNearest(); return;
       case 'pfd:CDI': {
         const order = ['GPS', 'VOR1', 'VOR2'];
         state.cdi = order[(order.indexOf(state.cdi) + 1) % 3];
@@ -296,7 +357,7 @@ window.G1000 = (function () {
   // knob: com, nav, hdg, alt, crs_baro, fms, range, com_volume,
   // nav_volume. part: 'inner' or 'outer' (one-piece knobs ignore it).
   // steps: + clockwise.
-  function turn(knob, part, steps) {
+  function turn(knob, part, steps, display = 'pfd') {
     switch (knob) {
       case 'com': {
         const c = state.com[state.comTune];
@@ -334,19 +395,26 @@ window.G1000 = (function () {
         state.vol.show = { kind, i, until: state.t + 2 };
         return;
       }
-      case 'fms': return note('FMS knob: no pages to scroll in the mock yet');
+      case 'fms': {
+        // The PFD's Nearest window; on the MFD with no FMS cursor out, the
+        // pages; else the open FMS window.
+        const win = state.fms.win[display];
+        if (display === 'pfd' && win?.type === 'nrst') return pages.pfdInput('turn', steps);
+        if (display === 'mfd' && (!win || (win.type === 'fpl' && win.cursor == null))) return pages.turn(part, steps);
+        return fms.turn(part, steps, display);
+      }
     }
   }
   const wrapInt = (v, n) => ((v % n) + n) % n;
 
   // Pushing a knob.
-  function push(knob) {
+  function push(knob, display = 'pfd') {
     switch (knob) {
       // Push: tune the other radio (the cyan box moves).
       case 'com': state.comTune = 1 - state.comTune; return;
       case 'nav': state.navTune = 1 - state.navTune; return;
       // HDG SYNC: the bug to the current heading.
-      case 'hdg': state.hdgBug = Math.round(state.hdg); return;
+      case 'hdg': state.hdgBug = Math.round(toMag(state.hdg)) % 360; return;
       // CRS CTR: the course to center the needle with a TO flag.
       case 'crs_baro': {
         const nav = navSolution();
@@ -356,7 +424,12 @@ window.G1000 = (function () {
       case 'com_volume': return note('COM squelch: not in the mock');
       case 'nav_volume': return note('NAV ID: not in the mock');
       case 'range': return note('Map pan: not in the mock yet');
-      case 'fms': return note('FMS cursor: not in the mock yet');
+      case 'fms': {
+        const win = state.fms.win[display];
+        if (display === 'pfd' && win?.type === 'nrst') return pages.pfdInput('push');
+        if (display === 'mfd' && !win) return pages.push();
+        return fms.push(display);
+      }
     }
   }
 
@@ -375,15 +448,16 @@ window.G1000 = (function () {
     // Lateral: a bank to fly.
     let rollCmd = state.roll;
     if (a.lat === 'ROL') rollCmd = a.ref.roll;
-    if (a.lat === 'HDG') rollCmd = clamp(diff(state.hdgBug, state.hdg) * 1.2, -22, 22);
+    // The bug is magnetic; the airplane's heading is true.
+    if (a.lat === 'HDG') rollCmd = clamp(diff(toTrue(state.hdgBug), state.hdg) * 1.2, -22, 22);
     if ((a.lat === 'NAV' || a.lat === 'APR') && nav) {
       // Intercept angle grows with the distance off course, up to 45°.
-      const track = wrap360(nav.course - clamp(nav.xtk * 40, -45, 45));
+      const track = wrap360(nav.courseTrue - clamp(nav.xtk * 40, -45, 45));
       rollCmd = clamp(diff(track, state.hdg) * 1.2, -22, 22);
     } else if ((a.lat === 'NAV' || a.lat === 'APR') && !nav) {
       setMode('lat', LAT_DEFAULT);
     }
-    if (a.latArmed && nav && Math.abs(nav.offDeg) < 7) {
+    if (a.latArmed && nav && nav.capturable) {
       setMode('lat', a.latArmed);
       arm('lat', null);
     }
@@ -441,7 +515,11 @@ window.G1000 = (function () {
     const nm = (T / 3600) * dt;
     state.lat += (nm / 60) * Math.cos(rad(state.hdg));
     state.lon += (nm / 60) * Math.sin(rad(state.hdg)) / Math.cos(rad(state.lat));
+    state.magVar = magVarAt(state.lat, state.lon);
 
+    fms.step();
+    pages.step(dt);
+    state.fuel = Math.max(0, state.fuel - (fuelFlow() / 3600) * dt);
     alerter();
   }
 
@@ -478,7 +556,9 @@ window.G1000 = (function () {
   }
 
   return {
-    state, reset, NAVAIDS, AIRPORTS, SPEEDS, MENUS, LIVE, RANGES,
+    state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, WA_SOURCE: WA_NAV.source, magVarAt, toMag, toTrue,
+    // The airplane's magnetic heading, as the HSI shows it.
+    magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, fuelFlow,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, tas, navModeName,
     tick(dt) {
       // Big gaps (a background tab) are skipped, small steps keep it stable.

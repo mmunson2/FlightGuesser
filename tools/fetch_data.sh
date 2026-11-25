@@ -7,11 +7,15 @@
 #   kpae/*.pdf        the FAA airport diagram, for the cycle
 #                     build/airport.py names (DIAGRAM_PDF)
 #   ...Textures/*.png the G1000 and panel textures, for tools/labels.py
+#   nasr/*_CSV.zip    the FAA's NASR 28-day subscription (APT, FRQ, NAV),
+#                     for build/wa_nav.py (NASR_DATE)
 # A new FAA cycle: change DIAGRAM_PDF in build/airport.py and CYCLE here,
-# then `make fetch model`.
+# then `make fetch model`; for NASR, NASR_DATE here and in build/wa_nav.py,
+# then `make fetch nav`.
 set -eu
 DATA=${1:-$HOME/Projects/datasets}
 CYCLE=2611
+NASR_DATE=29_Oct_2026
 C172=https://raw.githubusercontent.com/c172p-team/c172p/master
 FG=https://gitlab.com/flightgear/fgdata/-/raw/next/Aircraft/Instruments-3d/FG1000/GDU104X
 
@@ -48,4 +52,7 @@ for f in GDU-1044B.1.xml GDU-1040.2.xml Model/GDU-104X.1.gltf Model/GDU-104X.1.b
   get "$FG/$f" "$DATA/c172p/fgdata/GDU104X/$f"
 done
 get "https://aeronav.faa.gov/d-tpp/$CYCLE/00142AD.PDF" "$DATA/kpae/00142AD_$CYCLE.pdf"
+for k in APT FRQ NAV; do
+  get "https://nfdc.faa.gov/webContent/28DaySub/extra/${NASR_DATE}_${k}_CSV.zip" "$DATA/nasr/${NASR_DATE}_${k}_CSV.zip"
+done
 echo "source data in $DATA is complete"

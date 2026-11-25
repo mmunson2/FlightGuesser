@@ -6,12 +6,13 @@
 DATA ?= $(HOME)/Projects/datasets
 C172P := $(DATA)/c172p
 KPAE := $(DATA)/kpae
+NASR := $(DATA)/nasr
 ENGINE := $(DATA)/engine
 STEP := $(ENGINE)/raw/H-O-4-AIR-ENGINE-MODEL-L/STP-H-O-4-AIR-ENGINE-MODEL-L.STEP
 PY := .venv/bin/python
 export FLIGHT_DATA := $(DATA)
 
-.PHONY: help setup fetch model check shot clean-venv
+.PHONY: help setup fetch model nav check shot clean-venv
 
 help:  ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-16s %s\n", $$1, $$2}'
@@ -28,6 +29,9 @@ fetch:  ## Download whatever source data is missing from $(DATA)
 
 model: setup $(ENGINE)/engine.npz  ## Rebuild data/scenedata.js and the KPAE diagram (data/kpae-diagram.png, .pdf)
 	$(PY) build/build_model.py "$(C172P)" "$(KPAE)" "$(ENGINE)" data/scenedata.js
+
+nav: setup  ## Rebuild data/wa-nav.js (Washington airports and VORs, FAA NASR) for the G1000
+	$(PY) build/wa_nav.py "$(NASR)" data/wa-nav.js
 
 # The engine's STEP file tessellated (slow, so cached next to it).
 $(ENGINE)/engine.npz: $(STEP) build/step_mesh.py
