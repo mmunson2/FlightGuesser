@@ -7,12 +7,14 @@
 // heading bug, course, baro, selected altitude and its alerter, the CDI
 // source, the transponder, the PFD's softkey menus, and the GFC 700's mode
 // logic (FD/AP, ROL PIT HDG ALT VS FLC NAV APR, ALTS capture, NOSE UP/DN),
-// through js/g1000-fms.js the flight plan, Direct-To and GPS legs, and
-// through js/g1000-pages.js the MFD's page groups and the PFD's Nearest
-// window, through js/g1000-menu.js the MENU key's Page Menus and Map
-// Setup, and through js/g1000-timer.js the Timer/References window.
-// What it doesn't: VNAV, procedures and GPS approaches, LOC/GS,
-// the MFD's IFR and setup pages, failures, wind. Headings, bugs, courses
+// the PFD's inset and HSI maps (Map/HSI, Layout), through js/g1000-fms.js
+// the flight plan, Direct-To, GPS legs and OBS mode, through
+// js/g1000-pages.js the MFD's page groups (with Nearest Frequencies and
+// Airspaces) and the PFD's Nearest window, through js/g1000-menu.js the
+// MENU key's Page Menus and Map Setup, and through js/g1000-timer.js the
+// Timer/References window. What it doesn't: VNAV, procedures and GPS
+// approaches, LOC/GS, airspace alerts, the MFD's IFR and setup pages,
+// failures, wind. Headings, bugs, courses
 // and bearings are magnetic (see magVarAt); the simulation underneath is
 // true. The airplane is a few lines of kinematics, not a flight model.
 // Behaviour follows the G1000 NXi and GFC 700 pilot's guides as remembered;
@@ -28,6 +30,9 @@ window.G1000 = (function () {
   // frequencies) and VORs, from the FAA's NASR data (data/wa-nav.js, built
   // by build/wa_nav.py). Not for navigation: the cycle goes out of date.
   const NAVAIDS = WA_NAV.vors;
+  // Class B, C and D shelves (ADDS), and the center, flight service and
+  // weather outlets (Nearest Frequencies).
+  const AIRSPACE = WA_NAV.airspace, COMMS = WA_NAV.comms;
   const AIRPORTS = WA_NAV.airports;
   // The flight plan's database: every airport and station above.
   const WAYPOINTS = [
@@ -54,6 +59,8 @@ window.G1000 = (function () {
   const ROOT_PFD = ['', 'Map/HSI', 'TFC Map', 'PFD Opt', 'OBS', 'CDI', 'ADF/DME', 'XPDR', 'Ident', 'Tmr/Ref', 'Nearest', 'Alerts'];
   const MENUS = {
     pfd: ROOT_PFD,
+    'map-hsi': ['', 'Layout', '', '', '', '', '', '', '', '', 'Back', 'Alerts'],
+    'map-layout': ['', 'Map Off', 'Inset Map', 'HSI Map', '', '', '', '', '', '', 'Back', 'Alerts'],
     'pfd-opt': ['SVT', '', 'Wind', 'DME', 'Bearing 1', '', 'Bearing 2', '', 'ALT Units', 'STD Baro', 'Back', 'Alerts'],
     xpdr: ['', '', 'Standby', 'On', 'Alt', '', 'VFR', 'Code', 'Ident', '', 'Back', 'Alerts'],
     'xpdr-code': ['0', '1', '2', '3', '4', '5', '6', '7', 'Ident', 'BKSP', 'Back', 'Alerts'],
@@ -62,7 +69,7 @@ window.G1000 = (function () {
   };
   // The softkeys that do something in the mock; the rest draw grey.
   const LIVE = {
-    pfd: [3, 5, 7, 8, 9, 10], 'pfd-opt': [9, 10], xpdr: [2, 3, 4, 6, 7, 8, 10],
+    pfd: [1, 3, 4, 5, 7, 8, 9, 10], 'pfd-opt': [9, 10], 'map-hsi': [1, 10], 'map-layout': [1, 2, 3, 10], xpdr: [2, 3, 4, 6, 7, 8, 10],
     'xpdr-code': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mfd: [0], engine: [0, 1, 2, 10],
   };
 
@@ -105,7 +112,7 @@ window.G1000 = (function () {
   const pages = G1000_PAGES.create({
     state, bearingDist, waypoints: WAYPOINTS, fms, note: (text) => note(text),
     tas: () => tas(), fuelFlow: () => fuelFlow(), toMag: (t) => toMag(t),
-    openMenu: () => menus.open('mfd'),
+    openMenu: () => menus.open('mfd'), comms: COMMS, airspace: AIRSPACE, indicatedAlt: () => indicatedAlt(),
   });
   // The MENU key's Page Menu and Map Setup windows (js/g1000-menu.js), in
   // state.pageMenu; the map's settings in state.mapSet.
@@ -135,6 +142,9 @@ window.G1000 = (function () {
       alt: { phase: 'far', flashUntil: 0 },
       menus: { pfd: ['pfd'], mfd: ['mfd'] },
       mfd: pages.fresh(), eisPage: 'Engine', range: 6,
+      // The PFD's map (Map/HSI, Layout): 'Map Off', 'Inset Map' or 'HSI Map',
+      // and its range (an index into RANGES).
+      pfdMap: { layout: 'Map Off', range: 4 },
       // Usable fuel on board, gallons (both tanks).
       fuel: 48,
       // A line of text for the last thing the mock can't do yet.
@@ -335,8 +345,18 @@ window.G1000 = (function () {
     const x = state.xpdr;
     switch (menu + ':' + label) {
       case 'pfd:PFD Opt': stack.push('pfd-opt'); return;
+      case 'pfd:Map/HSI': stack.push('map-hsi'); return;
+      case 'map-hsi:Layout': stack.push('map-layout'); return;
+      // The PFD's map: none, an inset at the lower left, or inside the HSI.
+      case 'map-layout:Map Off': case 'map-layout:Inset Map': case 'map-layout:HSI Map':
+        state.pfdMap.layout = label;
+        return;
       case 'pfd:Nearest': pages.pfdNearest(); return;
       case 'pfd:Tmr/Ref': timer.toggle(); return;
+      case 'pfd:OBS':
+        if (state.cdi !== 'GPS') return note('OBS: set the course with CRS (OBS mode is for GPS)');
+        if (!fms.toggleObs()) note('OBS needs an active GPS waypoint: make one with FPL or D→');
+        return;
       case 'pfd:CDI': {
         const order = ['GPS', 'VOR1', 'VOR2'];
         state.cdi = order[(order.indexOf(state.cdi) + 1) % 3];
@@ -357,7 +377,7 @@ window.G1000 = (function () {
       case 'xpdr:VFR': x.code = '1200'; return;
       case 'xpdr:Code': x.entry = ''; stack.push('xpdr-code'); return;
       case 'xpdr-code:BKSP': x.entry = x.entry.slice(0, -1); return;
-      case 'pfd-opt:Back': case 'xpdr:Back': case 'engine:Back':
+      case 'pfd-opt:Back': case 'xpdr:Back': case 'engine:Back': case 'map-hsi:Back': case 'map-layout:Back':
         stack.pop(); return;
       case 'xpdr-code:Back': x.entry = null; stack.pop(); return;
       case 'mfd:Engine': stack.push('engine'); return;
@@ -402,9 +422,17 @@ window.G1000 = (function () {
         } else if (state.cdi !== 'GPS') {
           const i = state.cdi === 'VOR1' ? 0 : 1;
           state.crs[i] = wrap360(state.crs[i] + steps);
+        } else if (state.fms.obs) {
+          // OBS: the course through the active waypoint.
+          state.fms.obs.crs = wrap360(state.fms.obs.crs + steps);
         }
         return;
-      case 'range': state.range = clamp(state.range - steps, 0, RANGES.length - 1); return;
+      // Each display's RANGE knob zooms its own map.
+      case 'range': {
+        const m = display === 'pfd' ? state.pfdMap : state;
+        m.range = clamp(m.range - steps, 0, RANGES.length - 1);
+        return;
+      }
       case 'com_volume': case 'nav_volume': {
         const kind = knob === 'com_volume' ? 'com' : 'nav';
         const i = kind === 'com' ? state.comTune : state.navTune;
@@ -437,7 +465,8 @@ window.G1000 = (function () {
       // CRS CTR: the course to center the needle with a TO flag.
       case 'crs_baro': {
         const nav = navSolution();
-        if (nav) state.crs[state.cdi === 'VOR1' ? 0 : 1] = Math.round(nav.bearingTo);
+        if (nav && state.cdi === 'GPS') { if (state.fms.obs) state.fms.obs.crs = Math.round(nav.bearingTo) % 360; }
+        else if (nav) state.crs[state.cdi === 'VOR1' ? 0 : 1] = Math.round(nav.bearingTo);
         return;
       }
       case 'com_volume': return note('COM squelch: not in the mock');
@@ -578,7 +607,7 @@ window.G1000 = (function () {
   }
 
   return {
-    state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, WA_SOURCE: WA_NAV.source, magVarAt, toMag, toTrue,
+    state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, AIRSPACE, COMMS, WA_SOURCE: WA_NAV.source, magVarAt, toMag, toTrue,
     // The airplane's magnetic heading, as the HSI shows it.
     magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, airportSize, fuelFlow,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, tas, navModeName,

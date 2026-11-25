@@ -46,15 +46,44 @@ window.G1000_FMS = (function () {
       // flight plan { type: 'fpl', cursor, entry: {ident, pos} | null,
       // prompt: {text, action} | null }.
       win: { pfd: null, mfd: null },
+      // OBS mode: null, or { crs } (magnetic), the selected course
+      // through the active waypoint.
+      obs: null,
     });
     const F = () => state.fms;
 
+    // The point `dist` NM from p along true bearing brg (great circle).
+    function project(p, brg, dist) {
+      const d = dist / 3440.065, b = rad(brg), p1 = rad(p.lat), l1 = rad(p.lon);
+      const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(b));
+      const l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+      return { lat: (p2 * 180) / Math.PI, lon: (l2 * 180) / Math.PI };
+    }
+
     // ---- The active leg and the GPS course ----
+    // In OBS mode the leg is the selected course through the active
+    // waypoint: from a point 100 NM before it to one 100 NM past (`beyond`,
+    // for the map). The course is magnetic by the variation at the waypoint.
     function leg() {
-      const f = F().fpl;
-      if (f.dto) return { from: f.dto.from, to: byId[f.dto.to], fromId: null, direct: true };
-      if (f.active == null || f.active < 1 || f.active >= f.wpts.length) return null;
-      return { from: byId[f.wpts[f.active - 1]], to: byId[f.wpts[f.active]], fromId: f.wpts[f.active - 1], direct: false };
+      const f = F().fpl, obs = F().obs;
+      let l = null;
+      if (f.dto) l = { from: f.dto.from, to: byId[f.dto.to], fromId: null, direct: true };
+      else if (f.active != null && f.active >= 1 && f.active < f.wpts.length) {
+        l = { from: byId[f.wpts[f.active - 1]], to: byId[f.wpts[f.active]], fromId: f.wpts[f.active - 1], direct: false };
+      }
+      if (!l || !obs) return l;
+      const crsTrue = obs.crs + magVarAt(l.to.lat, l.to.lon);
+      return { ...l, from: project(l.to, crsTrue + 180, 100), beyond: project(l.to, crsTrue, 100), obs: true };
+    }
+    // OBS: sequencing suspended, the course to and past the active
+    // waypoint picked with the CRS knob. Starts on the leg's own course.
+    function toggleObs() {
+      const f = F();
+      if (f.obs) { f.obs = null; return true; }
+      const l = leg();
+      if (!l) return false;
+      f.obs = { crs: Math.round(navSolution().course) % 360 };
+      return true;
     }
     // TERM within 31 NM of the plan's first or last airport (or a
     // Direct-To airport), else ENR.
@@ -83,8 +112,10 @@ window.G1000_FMS = (function () {
       const to = bearingDist(state, l.to);
       // Desired track and bearing shown magnetic, by the variation where
       // the airplane is.
+      // OBS: the course is the one selected (by the waypoint's variation).
+      const course = F().obs ? F().obs.crs : toMagAt(p.dtk, state);
       return {
-        source: 'GPS', station: l.to, course: toMagAt(p.dtk, state), courseTrue: p.dtk,
+        source: 'GPS', station: l.to, course, courseTrue: p.dtk, obs: !!F().obs,
         toFrom: p.remaining > 0 ? 'TO' : 'FROM',
         dev: clamp(-p.xtk / SCALE[scale], -1, 1), xtk: p.xtk, dist: to.dist, bearingTo: toMagAt(to.brg, state),
         capturable: Math.abs(p.xtk) < SCALE[scale], scale, remaining: p.remaining, leg: l,
@@ -94,7 +125,9 @@ window.G1000_FMS = (function () {
     // ---- Sequencing: on reaching the TO waypoint, the next leg ----
     function step() {
       const f = F().fpl, l = leg();
-      if (!l) return;
+      // No leg; or OBS, which holds the waypoint until it is cancelled.
+      if (!l) { F().obs = null; return; }
+      if (F().obs) return;
       const p = legPosition(l);
       if (p.remaining > ARRIVE_NM) return;
       if (f.dto) {
@@ -136,11 +169,13 @@ window.G1000_FMS = (function () {
       const f = F().fpl;
       const index = f.wpts.indexOf(id);
       f.dto = { from: { lat: state.lat, lon: state.lon }, to: id, index: index < 0 ? null : index };
+      F().obs = null;
     }
     function activateLeg(i) {
       const f = F().fpl;
       f.dto = null;
       f.active = i;
+      F().obs = null;
     }
     // A Direct-To to a plan waypoint keeps its place when the plan
     // changes; one to a waypoint outside it carries on.
@@ -178,6 +213,7 @@ window.G1000_FMS = (function () {
       const f = F().fpl;
       f.wpts = wpts.slice();
       f.dto = null;
+      F().obs = null;
       f.active = f.wpts.length >= 2 ? 1 : null;
     }
     const deleteAllStored = () => { F().catalog = []; };
@@ -317,7 +353,7 @@ window.G1000_FMS = (function () {
     }
 
     return { fresh, press, turn, push, step, navSolution, leg, rows, match, byId, SCALE, directTo, insert, remove,
-      activateLeg, cancelDirect, invertPlan, deletePlan, storePlan, activatePlan, deleteAllStored, editChar, moveCursor };
+      toggleObs, project, activateLeg, cancelDirect, invertPlan, deletePlan, storePlan, activatePlan, deleteAllStored, editChar, moveCursor };
   }
 
   return { create, CHARS };

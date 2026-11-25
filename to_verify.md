@@ -75,7 +75,7 @@ the GFC 700 AFMS:
   - Page names follow the NXi's MFD in MSFS 2020.
   - Working: Navigation Map, Airport Information, VOR Information, Trip
     Planning, Utility, Active Flight Plan, Flight Plan Catalog, Nearest
-    Airports, Nearest VOR.
+    Airports, Nearest VOR, Nearest Frequencies, Nearest Airspaces.
     The other pages are placeholders.
   - ENT on Nearest Airports opens that airport's information page.
   - ENT on Nearest VOR loads the frequency into the tuned NAV's standby.
@@ -119,9 +119,15 @@ the GFC 700 AFMS:
   - The large knob moves between the GROUP line and the settings. The
     small knob changes the value straight away. The real unit opens a
     list and takes ENT.
-  - Groups: Map (Orientation: Heading/Track/North Up; Nav Range Ring)
-    and Aviation (Active FPL, Large/Medium/Small APT, VOR, each the
-    largest map range at which it shows).
+  - Groups: Map (Orientation: Heading/Track/North Up; Nav Range Ring),
+    Aviation (Active FPL, Large/Medium/Small APT, VOR) and Airspace
+    (Class B/TMA, Class C/TCA, Class D). Each range setting is the
+    largest map range at which that symbol shows. Airspace defaults: B
+    and C 100 NM, D 25 NM.
+  - The settings apply to all three maps: the MFD map, the PFD inset and
+    the HSI map. The real PFD maps have their own settings.
+  - Airspace colours: B blue, C magenta, D blue dashed, as on the
+    sectional. Check against the G1000's own symbols.
   - Heading Up and Track Up look the same because there's no wind.
   - Airport size goes by the longest runway: large from 8,100 ft, medium
     from 5,000 ft. Check the thresholds and whether hard surface counts.
@@ -149,6 +155,44 @@ the GFC 700 AFMS:
     Check the names.
   - The Tmr/Ref and Nearest softkeys light up while their window is
     open.
+- **OBS softkey** (GPS only):
+  - Needs an active leg or Direct-To.
+  - Suspends sequencing on the active waypoint. The CRS knob then sets
+    a course to and through it, starting from the leg's own DTK.
+  - CRS push points the course straight at the waypoint.
+  - The HSI shows "OBS" under the scale. The map draws the OBS course
+    through the waypoint and 100 NM past it.
+  - Turning OBS off returns to the plan's leg and sequences if the
+    waypoint is already behind. The real unit may build the course
+    differently. Check the "SUSP" annunciation too, which isn't drawn.
+  - Direct-To, Activate Leg and loading a plan cancel OBS.
+  - With a VOR CDI, the softkey says to use CRS.
+- **Map/HSI softkey** → Layout → Map Off / Inset Map / HSI Map:
+  - The inset sits in the PFD's lower left, heading up.
+  - The HSI map is a heading-up map inside the rose, with the rose's
+    edge at the range.
+  - Both use the PFD's own RANGE knob, starting at 5 NM.
+  - The real Map/HSI menu has more (Detail, Traffic, weather overlays).
+- **Nearest Frequencies** (NRST group, page 6):
+  - ARTCC: the two nearest center outlets, each frequency a row, under
+    "SEATTLE CENTER".
+  - FSS: the two nearest RCOs ("SEATTLE RADIO").
+  - Weather: the three nearest ASOS/AWOS.
+  - Each row shows bearing and distance to the outlet. ENT loads the
+    selected frequency into the tuned COM's standby.
+  - The real page lists one frequency per outlet in a different layout.
+    Check it.
+- **Nearest Airspaces** (NRST group, page 7):
+  - Up to 12 Class B/C/D airspaces within 50 NM, one row per airspace
+    (shelves grouped).
+  - Status: INSIDE (within a shelf and between its floor and ceiling),
+    ABOVE/BELOW (over or under the shelf you're inside laterally),
+    AHEAD <10MIN (the straight-ahead track enters a shelf at the
+    present altitude within 10 minutes), or else the distance.
+  - ALT is the relevant shelf's floor and ceiling.
+  - The real statuses and wording differ (e.g. "Within 2 nm",
+    "Ahead < 10 min"), and the real unit also gives airspace alert
+    messages. Neither is modelled yet.
 - **PFD Nearest softkey**: opens a Nearest Airports window. Push FMS for
   the cursor; D→ offers the selection.
 - **Fuel**: 48 gal usable at start, burning at a made-up fuel flow (from
@@ -163,12 +207,22 @@ the GFC 700 AFMS:
   cycle effective 29 Oct 2026):
   - Covers Washington's 117 open public-use land airports, their
     runways, VHF frequencies (CTAF, UNICOM, tower, ground, clearance,
-    ATIS, approach), and the 16 operational VORs.
+    ATIS, ASOS/AWOS, approach), and the 16 operational VORs.
+  - Also the state's center outlets (RCAG, low-altitude frequencies
+    only), flight service outlets (RCO) and ASOS/AWOS stations, all from
+    FRQ.csv, for Nearest Frequencies.
   - Positions are surveyed, so the mock is accurate as of that cycle. It
     goes out of date every 28 days; rebuild with `make fetch nav`.
   - Left out: private fields, heliports and seaplane bases, NDBs,
-    intersections, AWOS/ASOS frequencies (not in FRQ.csv), and airports
-    over the state line.
+    intersections, and airports over the state line.
+- **Airspace** (FAA ADDS Class Airspace layer, downloaded 25 Nov 2026,
+  cut to Washington's box):
+  - Class B, C and D shelves in WA, OR and ID. Canadian airspace is
+    left out.
+  - Outlines are simplified to about 40 m.
+  - Floors and ceilings are MSL. A shelf whose floor is the surface shows
+    SFC. A few Canadian-style AGL floors are kept as numbers.
+  - "VANCOUVER CLASS C" is Vancouver's airspace over Point Roberts, WA.
   - TPA is AGL in NASR. The page shows field elevation + TPA as MSL.
     Many towered fields publish none.
 - **Magnetic**: everything the pilot sees or sets is magnetic: heading,

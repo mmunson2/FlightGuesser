@@ -621,6 +621,71 @@ G1000_CHECKS = r"""() => {
   G.press('clr', 'pfd');
   expect(!s.fms.win.pfd, 'CLR should close Tmr/Ref');
 
+  // OBS: starts on the leg's course; CRS picks another through KAWO; the
+  // CDI follows it; no sequencing past the waypoint until OBS is off.
+  G.reset();
+  G.fms.activatePlan(['KPAE', 'KAWO', 'KBVS']);
+  const dtk0 = G.navSolution().course;
+  G.press('softkey:4', 'pfd');
+  expect(s.fms.obs && s.fms.obs.crs === Math.round(dtk0) % 360, `OBS on: ${JSON.stringify(s.fms.obs)} vs DTK ${dtk0}`);
+  G.turn('crs_baro', 'inner', 40);
+  const kawo = G.fms.byId.KAWO, obsTrue = s.fms.obs.crs + G.magVarAt(kawo.lat, kawo.lon);
+  Object.assign(s, G.fms.project(kawo, obsTrue + 180, 5));
+  nav = G.navSolution();
+  expect(nav.obs && nav.course === s.fms.obs.crs && Math.abs(nav.dev) < 0.05 && nav.toFrom === 'TO',
+    `OBS on course 5 NM before: ${JSON.stringify({ c: nav.course, dev: nav.dev, tf: nav.toFrom })}`);
+  Object.assign(s, G.fms.project(kawo, obsTrue, 5));
+  run(2);
+  nav = G.navSolution();
+  expect(nav.toFrom === 'FROM' && leg().to.id === 'KAWO', `OBS past KAWO: ${nav.toFrom}, leg to ${leg().to.id}`);
+  G.push('crs_baro');
+  expect(Math.abs(angle(s.fms.obs.crs, G.navSolution().bearingTo)) < 1, 'CRS push in OBS should point the course at the waypoint');
+  G.press('softkey:4', 'pfd');
+  run(1);
+  expect(!s.fms.obs && leg().to.id === 'KBVS', `OBS off past KAWO should sequence: leg to ${leg()?.to.id}`);
+  s.cdi = 'VOR1';
+  G.press('softkey:4', 'pfd');
+  expect(!s.fms.obs, 'OBS mode with a VOR source');
+
+  // PFD maps: Map/HSI, Layout, Inset Map; the PFD's RANGE knob is its own.
+  G.reset();
+  G.press('softkey:1', 'pfd'); G.press('softkey:1', 'pfd');
+  expect(G.menu('pfd') === 'map-layout', `Map/HSI, Layout: ${G.menu('pfd')}`);
+  G.press('softkey:2', 'pfd');
+  expect(s.pfdMap.layout === 'Inset Map', `layout ${s.pfdMap.layout}`);
+  const mfdRange = s.range, pfdRange = s.pfdMap.range;
+  G.turn('range', '', 1, 'pfd');
+  expect(s.pfdMap.range === pfdRange - 1 && s.range === mfdRange, 'PFD RANGE should zoom the PFD map only');
+  G.press('softkey:3', 'pfd');
+  expect(s.pfdMap.layout === 'HSI Map', `layout ${s.pfdMap.layout}`);
+  expect(s.mapSet.clsB !== undefined && s.mapSet.clsD === 25, 'Map Setup airspace settings');
+
+  // Airspace: Paine's Class D (SFC-3,100), and inside it at 1,500 ft.
+  const paeD = G.AIRSPACE.filter((x) => x.name === 'EVERETT CLASS D');
+  expect(paeD.length && paeD[0].cls === 'D' && paeD[0].lo === 0 && paeD[0].hi === 3100,
+    `Everett Class D: ${JSON.stringify(paeD.map((x) => [x.lo, x.hi]))}`);
+  Object.assign(s, { lat: G.fms.byId.KPAE.lat, lon: G.fms.byId.KPAE.lon, trueAlt: 1500 });
+  let spaces = P.nearestAirspaces();
+  expect(spaces[0]?.name === 'EVERETT CLASS D' && spaces[0].status === 'INSIDE', `over KPAE at 1,500: ${spaces[0]?.name} ${spaces[0]?.status}`);
+  s.trueAlt = 4000;
+  spaces = P.nearestAirspaces();
+  expect(spaces.find((x) => x.name === 'EVERETT CLASS D')?.status === 'ABOVE', 'over KPAE at 4,000 should be above its Class D');
+  // Heading for Paine from 8 NM south at 2,000 ft: AHEAD within 10 minutes.
+  Object.assign(s, G.fms.project(G.fms.byId.KPAE, 180, 8), { trueAlt: 2000, hdg: 0 });
+  spaces = P.nearestAirspaces();
+  expect(spaces.find((x) => x.name === 'EVERETT CLASS D')?.status === 'AHEAD <10MIN', `toward KPAE: ${JSON.stringify(spaces.find((x) => x.name === 'EVERETT CLASS D'))}`);
+
+  // Nearest Frequencies: sections in order, nearest first; ENT tunes COM.
+  G.reset();
+  const fr = P.nearestFreqs();
+  expect(fr.length && fr[0].kind === 'ARTCC' && fr.some((r) => r.kind === 'FSS') && fr[fr.length - 1].kind === 'WX',
+    `Nearest Frequencies sections: ${fr.map((r) => r.kind)}`);
+  expect(fr.every((r) => r.freq >= 118 && r.freq < 137), 'a non-VHF frequency on Nearest Frequencies');
+  mt('outer', 4); mt('inner', 5);
+  expect(P.pageKey() === 'NRST:5', `Nearest Frequencies page: ${P.pageKey()}`);
+  G.push('fms', 'mfd'); mt('inner', 2); G.press('ent', 'mfd');
+  expect(s.com[0].stby === fr[2].freq, `NRST FREQ ENT: COM1 standby ${s.com[0].stby}, row ${fr[2].freq}`);
+
   // Transponder: XPDR, Code, four digits, back on the XPDR menu.
   G.reset();
   G.press('softkey:7', 'pfd'); G.press('softkey:7', 'pfd');

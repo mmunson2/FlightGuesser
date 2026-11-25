@@ -9,7 +9,7 @@
 //
 // The VFR pages work: Navigation Map, Airport and VOR Information, Trip
 // Planning, Utility, Active Flight Plan, Flight Plan Catalog, Nearest
-// Airports and Nearest VOR. MENU on a page is js/g1000-menu.js.
+// Airports, Nearest VOR, Nearest Frequencies and Nearest Airspaces. MENU on a page is js/g1000-menu.js.
 // The rest show their name and a "not in the mock" placeholder.
 window.G1000_PAGES = (function () {
   const GROUPS = [
@@ -20,12 +20,13 @@ window.G1000_PAGES = (function () {
     { id: 'NRST', pages: ['Nearest Airports', 'Nearest Intersections', 'Nearest NDB', 'Nearest VOR', 'Nearest User WPTs', 'Nearest Frequencies', 'Nearest Airspaces'] },
   ];
   // Page keys the mock draws: group id + ':' + page index.
-  const LIVE = new Set(['MAP:0', 'WPT:0', 'WPT:3', 'AUX:0', 'AUX:1', 'FPL:0', 'FPL:1', 'NRST:0', 'NRST:3']);
+  const LIVE = new Set(['MAP:0', 'WPT:0', 'WPT:3', 'AUX:0', 'AUX:1', 'FPL:0', 'FPL:1', 'NRST:0', 'NRST:3', 'NRST:5', 'NRST:6']);
   const FPL_PAGE = 'FPL:0';
 
   // toMag(true bearing): magnetic, by the local variation.
   // openMenu(): the Page Menu (ENT on a stored flight plan opens it).
-  function create({ state, note, bearingDist, waypoints, fms, tas, fuelFlow, toMag, openMenu }) {
+  // comms, airspace: the Nearest Frequencies and Airspaces data (data/wa-nav.js).
+  function create({ state, note, bearingDist, waypoints, fms, tas, fuelFlow, toMag, openMenu, comms, airspace, indicatedAlt }) {
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     const airports = waypoints.filter((w) => w.type === 'airport');
     const vors = waypoints.filter((w) => w.type === 'vor');
@@ -52,9 +53,79 @@ window.G1000_PAGES = (function () {
     }).sort((a, b) => a.dist - b.dist).slice(0, n);
     const nearestAirports = () => nearest(airports);
     const nearestVors = () => nearest(vors);
+    // ---- Nearest Frequencies: center, flight service and weather ----
+    // Rows, one per frequency: the nearest two center (RCAG) and flight
+    // service (RCO) outlets with each of their frequencies, then the
+    // nearest three weather stations. Each with bearing and distance.
+    const COMMS = comms ?? [];
+    function nearestFreqs() {
+      const near = (kind, n) => nearest(COMMS.filter((c) => c.kind === kind), n);
+      const rows = [];
+      for (const [kind, n] of [['ARTCC', 2], ['FSS', 2], ['WX', 3]]) {
+        for (const r of near(kind, n)) for (const freq of r.w.freqs) rows.push({ kind, freq, ...r });
+      }
+      return rows;
+    }
+
+    // ---- Nearest Airspaces ----
+    // Class B, C and D shelves grouped by airspace, each with how it
+    // stands: INSIDE (within a shelf, between its floor and ceiling),
+    // ABOVE or BELOW (over or under the shelf the airplane is within),
+    // AHEAD (the track enters a shelf at this altitude within 10 minutes),
+    // or just its distance; and the floor and ceiling of the shelf that
+    // matters (the one around or nearest the airplane). Flat geometry
+    // around the airplane, in NM: plenty for 50 NM.
+    const AIRSPACE = airspace ?? [];
+    function nearestAirspaces(maxDist = 50) {
+      const k = Math.cos((state.lat * Math.PI) / 180);
+      const xy = ([lat, lon]) => [(lon - state.lon) * 60 * k, (lat - state.lat) * 60];
+      const inside = (p, poly) => {
+        let c = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const [xi, yi] = poly[i], [xj, yj] = poly[j];
+          if ((yi > p[1]) !== (yj > p[1]) && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) c = !c;
+        }
+        return c;
+      };
+      const edgeDist = (poly) => {
+        let best = Infinity;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const [ax, ay] = poly[j], [bx, by] = poly[i], dx = bx - ax, dy = by - ay;
+          const t = clamp(((0 - ax) * dx + (0 - ay) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+          best = Math.min(best, Math.hypot(ax + t * dx, ay + t * dy));
+        }
+        return best;
+      };
+      const alt = indicatedAlt(), h = (state.hdg * Math.PI) / 180, reach = (tas() / 60) * 10;
+      const ahead = [];
+      for (let d = 0.5; d <= reach; d += 0.5) ahead.push([Math.sin(h) * d, Math.cos(h) * d]);
+      const groups = new Map();
+      for (const a of AIRSPACE) {
+        const poly = a.pts.map(xy);
+        // A quick cut: every Washington shelf is under 60 NM across.
+        if (Math.hypot(...poly[0]) > maxDist + 60) continue;
+        const within = inside([0, 0], poly), dist = within ? 0 : edgeDist(poly);
+        if (dist > maxDist) continue;
+        const band = alt >= a.lo && alt <= a.hi;
+        let rank, status;
+        if (within && band) { rank = 0; status = 'INSIDE'; }
+        else if (within) { rank = 1; status = alt > a.hi ? 'ABOVE' : 'BELOW'; }
+        else if (band && ahead.some((p) => inside(p, poly))) { rank = 2; status = 'AHEAD <10MIN'; }
+        else { rank = 3; status = null; }
+        const g = groups.get(a.name);
+        if (!g || rank < g.rank || (rank === g.rank && dist < g.dist)) {
+          groups.set(a.name, { name: a.name, cls: a.cls, rank, status, dist: Math.min(dist, g?.dist ?? Infinity), lo: a.lo, hi: a.hi, loAgl: a.loAgl });
+        } else g.dist = Math.min(g.dist, dist);
+      }
+      return [...groups.values()].sort((a, b) => a.rank - b.rank || a.dist - b.dist).slice(0, 12);
+    }
+
     // The rows a list page's cursor moves over.
-    const listLength = (key) => (key === 'FPL:1' ? state.fms.catalog.length
-      : key === 'NRST:0' ? nearestAirports().length : nearestVors().length);
+    const LISTS = {
+      'FPL:1': () => state.fms.catalog, 'NRST:0': nearestAirports, 'NRST:3': nearestVors,
+      'NRST:5': nearestFreqs, 'NRST:6': nearestAirspaces,
+    };
+    const listLength = (key) => LISTS[key]().length;
     // The Flight Plan Catalog as rows: number, first and last waypoint,
     // total distance.
     const byId = Object.fromEntries(waypoints.map((w) => [w.id, w]));
@@ -135,8 +206,8 @@ window.G1000_PAGES = (function () {
         const now = key === 'WPT:0' ? p.wpt.airport : key === 'WPT:3' ? p.wpt.vor : p.tripTo;
         p.cursor = 'ident';
         p.entry = { ident: now, pos: 0 };
-      } else if (key === 'NRST:0' || key === 'NRST:3') {
-        p.cursor = 0;
+      } else if (['NRST:0', 'NRST:3', 'NRST:5', 'NRST:6'].includes(key)) {
+        if (listLength(key)) p.cursor = 0; else note('Nothing near enough to list');
       } else if (key === 'FPL:1') {
         if (state.fms.catalog.length) p.cursor = 0; else note('No stored flight plans: store one from the FPL page menu');
       } else {
@@ -168,6 +239,11 @@ window.G1000_PAGES = (function () {
         // ENT on a nearest airport: its information page.
         p.wpt.airport = nearestAirports()[p.cursor].w.id;
         goPage(1, 0);
+      } else if (page === 'NRST:5') {
+        // ENT on a frequency: into the tuned COM's standby.
+        const r = nearestFreqs()[p.cursor];
+        state.com[state.comTune].stby = r.freq;
+        note(`${r.freq.toFixed(3)} (${r.w.name}) to COM${state.comTune + 1} standby`);
       } else if (page === 'NRST:3') {
         // ENT on a nearest VOR: its frequency into the NAV standby.
         const v = nearestVors()[p.cursor].w;
@@ -215,7 +291,7 @@ window.G1000_PAGES = (function () {
 
     return {
       GROUPS, LIVE, fresh, sync, goPage, fplKey, pageKey, pageName, selectedIdent, turn, push, press,
-      pfdNearest, pfdInput, step, trip, nearestAirports, nearestVors, catalogRows, matchers,
+      pfdNearest, pfdInput, step, trip, nearestAirports, nearestVors, nearestFreqs, nearestAirspaces, catalogRows, matchers,
       cursorOn: () => P().cursor != null,
       isFplPage: () => pageKey() === FPL_PAGE,
     };

@@ -14,7 +14,7 @@
 // Map Settings (from the Navigation Map's menu) opens Map Setup: the large
 // knob moves between the GROUP line and the settings, the small knob
 // changes the one under the cursor. Its settings are in state.mapSet and
-// js/g1000-display.js draws the map by them.
+// js/g1000-display.js draws all three maps (MFD, PFD inset, HSI) by them.
 window.G1000_MENU = (function () {
   // Map Setup's groups. A setting's values: what the small knob steps
   // through. Ranges are the map range up to which a symbol shows.
@@ -32,10 +32,15 @@ window.G1000_MENU = (function () {
         { key: 'aptS', label: 'Small APT', values: range },
         { key: 'vor', label: 'VOR', values: range },
       ] },
+      { name: 'Airspace', rows: [
+        { key: 'clsB', label: 'Class B/TMA', values: range },
+        { key: 'clsC', label: 'Class C/TCA', values: range },
+        { key: 'clsD', label: 'Class D', values: range },
+      ] },
     ];
   }
   const MAP_DEFAULTS = {
-    orient: 'Heading Up', ring: 'On', fpl: 100, aptL: 100, aptM: 100, aptS: 50, vor: 100,
+    orient: 'Heading Up', ring: 'On', fpl: 100, aptL: 100, aptM: 100, aptS: 50, vor: 100, clsB: 100, clsC: 100, clsD: 25,
   };
 
   function create({ state, fms, pages, timer, note, ranges }) {
