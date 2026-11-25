@@ -77,9 +77,12 @@
       groups.push([idx.length, ind.length, i]);
       ind.forEach((v) => idx.push(v + base));
       base += n;
+      // A `behind` piece lies on another surface (FlightGear's centre wing
+      // repeats the flaps): a depth offset keeps it from z-fighting.
       mats.push(new THREE.MeshStandardMaterial({
         vertexColors: true, map: piece.tex === undefined ? null : textures[piece.tex],
         roughness: 0.6, metalness: 0, side: THREE.DoubleSide,
+        ...(piece.behind ? { polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 } : {}),
       }));
     });
     const geom = new THREE.BufferGeometry();

@@ -93,12 +93,21 @@ CELLS = {"magnetos": 5.0, "ignition_harness": 5.0, "fuel_servo": 5.0, "cylinders
          "flow_divider": 1.0, "injector_lines": 2.0, "engine_fuel_lines": 3.0}
 
 # Placement: the crankshaft axis (STEP x, y) and the propeller flange
-# (STEP z) map to these scene points; SCALE shrinks the model to fit the
-# cowling (it is 0.71 m tall with its exhaust, the cowling 0.98 m).
+# (STEP z) map to these scene points. REF_SCALE is the frame the SPLITS
+# boxes and extras.py's engine-relative spots were measured in; FIT
+# stretches it (scene x, y, z, about the flange) to Lycoming's IO-360-L2A
+# dimensions (operator's manual 60297-12, Dimensions table, the "-B1B,
+# -B1D, -L2A" row: 24.84 high, 33.37 wide, 29.81 long, inches). At
+# REF_SCALE the CAD engine is 31.05 in wide (rocker covers) and 27.33 in
+# long (crankshaft flange to the magnetos). Its height isn't comparable
+# (the L2A's 24.84 in includes the servo under the sump, which the CAD
+# model lays out differently) and the FlightGear cowling's top leaves no
+# room (a 1.08 stretch puts the crankcase 2.4 cm through it), so y stays.
 CRANK_XY = (-31.0, -14.0)
 FLANGE_Z = 952.0
 SPINNER = (0.0, -0.1, 1.66)
-SCALE = 0.0008
+REF_SCALE = 0.0008
+FIT = np.array([33.37 / 31.05, 1.0, 29.81 / 27.33])
 
 
 def weld(v, f, cell):
@@ -115,10 +124,19 @@ def weld(v, f, cell):
     return verts[used], tris.reshape(-1, 3)
 
 
-def to_scene(v):
-    """STEP mm -> scene metres (y up, nose +z, left wing +x)."""
+def to_ref(v):
+    """STEP mm -> scene metres at REF_SCALE (y up, nose +z, left wing +x)."""
     x, y, z = v[:, 0] - CRANK_XY[0], v[:, 1] - CRANK_XY[1], v[:, 2] - FLANGE_Z
-    return np.column_stack([y, -x, z]) * SCALE + np.array(SPINNER)
+    return np.column_stack([y, -x, z]) * REF_SCALE + np.array(SPINNER)
+
+
+def ref_to_scene(p):
+    """A point (or points) in the REF_SCALE frame -> the scene, at FIT."""
+    return np.array(SPINNER) + (np.asarray(p, dtype=np.float64) - SPINNER) * FIT
+
+
+def to_scene(v):
+    return ref_to_scene(to_ref(v))
 
 
 def split(name, v, f, owner, pid):
@@ -126,7 +144,7 @@ def split(name, v, f, owner, pid):
     rules = SPLITS.get(name)
     if not rules:
         return {pid: f}
-    s = to_scene(v)
+    s = to_ref(v)                      # the SPLITS boxes are in this frame
     tri = s[f]
     to = np.full(len(f), -1)
     for k in np.unique(owner):

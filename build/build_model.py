@@ -91,6 +91,8 @@ def pack(parts):
                  "colors": b64(np.round(np.clip(q["rgb"], 0, 1) * 255).astype("u1"))}
             if big:
                 e["index32"] = True
+            if q.get("behind"):
+                e["behind"] = True             # a coplanar duplicate: drawn with a depth offset
             if q["tex"] is not None:
                 name = Path(q["tex"]).stem
                 if name not in textures:

@@ -49,6 +49,63 @@ drawings; sizes the MM doesn't give are estimates (to_verify.md).
   the tailcone fan; the GEA 71 engine/airframe unit forward of the panel
   under the MFD; the GMU 44 magnetometer inside the left wing, reached
   through access plate 520HB underneath. Unit sizes are estimates.
+- Fuel tanks (MM 28-20-00: "a wet wing fuel storage system ... two integral
+  fuel tanks (one in each wing)"; Fig. 202 detail A: each bay runs from WS
+  23.62 to WS 71.62 between the front and rear spars; 28-21-00 Fig. 201):
+  a block filling the wing between the skins there. The fuel level sender
+  (Fig. 203: on a rib, its float arm in the bay) is on the bay's inboard
+  rib; the rear spar's place is an estimate. The filler opening is cut
+  through the bay's top, as through the wing skin (aircraft.CUT_HOLES).
+- Static wicks (MM 23-60-00 Fig. 201: "on the trailing edges of the
+  ailerons, rudder and the elevators"): two at the outboard end of each
+  aileron and elevator and two at the top of the rudder, pointing aft.
+  Their length is an estimate.
+- Outside air temperature probe (MM 34-12-00: "mounted on the upper cabin
+  roof line at FS 46.46"; Fig. 201): a short stem on the roof. The MM
+  describes the non-G1000 probe; the G1000's feeds the GDC 74A.
+- Oil filler tube (POH 7: "located at the right rear of the engine case";
+  MM 12-14-02 Fig. 301; Lycoming PC Fig. 14 "Oil Level Gage"): from the
+  crankcase's right rear up to FlightGear's dipstick, sheathing it to just
+  under the cap. Added to the `oil_filler_cap` part.
+- Induction air (MM 71-60-00: "Ram air to the engine goes into the
+  induction air box through the induction filter in the forward part of
+  the lower engine cowl. From the induction air box, the air is pointed to
+  the inlet of the fuel/air control unit"; Fig. 201): the filter in
+  FlightGear's chin inlet (where its "radiator" plate was), the filter box
+  behind it with the spring-loaded alternate air door (Detail B) on top,
+  and the duct under the muffler to the induction air elbow, which turns
+  up into the inlet adaptor under the fuel servo, with its drain line.
+  Sizes are estimates; the door's side of the box is a guess.
+- Nose gear mounting (MM 32-20-00 Fig. 202: "upper nose gear fitting";
+  removal: "the bolt from the top of the strut", "the strut clamp with the
+  bottom strut fitting on the firewall"): FlightGear's strut ends ~17 cm
+  ahead of the firewall with nothing holding it, so its barrel is carried
+  up into an upper fitting, and a clamp below it, both braced back to
+  plates on the firewall. The shimmy damper runs from the steering collar
+  up to a bracket under the bottom fitting; the two spring-loaded
+  steering tubes run from the collar aft through the firewall to the
+  rudder bars. Fitting and tube sizes and the bar ends are estimates.
+- Belly fuel drains (POH 7, Fuel Drain Valves: "each wing tank sump, the
+  fuel reservoir tank sump, the fuel selector valve drain and the fuel
+  strainer sump"; POH 4: "Fuel Strainer Quick Drain Valve (located on
+  bottom of fuselage)"; MM 12-10-00 Fig. 1: "fuel selector and fuel
+  reservoir drains" on the belly just aft of the firewall): a line from
+  the reservoir's sump, the selector valve and the strainer bowl down
+  through the skin to a quick drain valve, each its own part.
+- Flight control cables (MM 27-10-00 Fig. 201 ailerons, 27-20-00 Fig. 201
+  rudder, 27-30-00 Fig. 201 elevator, 27-31-00 Fig. 201 trim): the
+  control column (a T behind the panel joining both yoke shafts, down to
+  the floor); the aileron direct cables from the column base along the
+  floor, up each front door post and out the wing's rear spar to the
+  bellcrank at the aileron, and the carry-thru cable joining the two
+  bellcranks across the cabin top; the elevator push-pull tube from the
+  column to the forward bellcrank under the floor, the up and down cables
+  aft along the belly and up the tailcone to the aft bellcrank at the
+  elevator; the rudder cables from the rudder bar aft to FlightGear's
+  stubs at the tail; the trim wheel's chain and cables aft to the
+  actuator in the right stabilizer and its push rod to the tab. Pulleys
+  sit where a run bends. The routes follow the figures; stations are
+  estimates (no pulley stations are given).
 - Engine accessories (MM 79-20-00 Fig. 201: oil cooler "secured to rear of
   engine baffles", on the left; MM 80-10-00: starter "at the front
   (propeller end) lower left side of the engine"; MM 37-10-00 Fig. 201:
@@ -57,6 +114,9 @@ drawings; sizes the MM doesn't give are estimates (to_verify.md).
 """
 
 import numpy as np
+
+import aircraft
+from engine import FIT, ref_to_scene as E
 
 IN = 0.0254
 # The firewall's front face in scene z: the cowling's aft edge.
@@ -71,13 +131,20 @@ COLORS = {
     "firewall": 0xb9bcbf, "engine_mount": 0x2e3033, "battery": 0x2a2b2e, "power_junction_box": 0x80868c,
     "standby_battery": 0x3a3c40, "exhaust_risers": 0x4f3d30, "muffler": 0x5e544a, "heat_shroud": 0xaab0b5,
     "brake_master_cylinders": 0xa2a6ab, "brake_lines": 0x9aa0a6, "fuel_strainer": 0xb0b4b8,
-    "fuel_sump_drains": 0xc4c8cc, "static_port": 0xc4c8cc,
+    "fuel_sump_drains": 0xc4c8cc, "fuel_reservoir_drain": 0xc4c8cc, "fuel_selector_drain": 0xc4c8cc,
+    "fuel_strainer_drain": 0xc4c8cc, "static_port": 0xc4c8cc,
     "fuel_reservoir": 0xb4b8bc, "fuel_selector_valve": 0x9c8a5c, "fuel_shutoff_valve": 0xa08c5a,
     "aux_fuel_pump": 0x3c3f44, "fuel_lines": 0x6fa0c8, "stall_warning": 0xd0d2d4,
     "integrated_avionics_units": 0x26282b, "transponder": 0x303236, "ahrs": 0x2c2e31,
     "air_data_computer": 0x34363a, "engine_airframe_unit": 0x2a2c2f, "magnetometer": 0x3a3d41,
     "avionics_shelf": 0xa6aaae, "oil_cooler": 0x2f3133, "starter": 0x3a3c3f, "vacuum_pump": 0x4a4d52,
-    "oil_filter": 0x1f4f9a,
+    "oil_filter": 0x1f4f9a, "control_column": 0x4a4d52, "aileron_cables": 0xb8bcc0,
+    "aileron_bellcranks": 0x8a8f96, "elevator_cables": 0xb8bcc0, "elevator_bellcranks": 0x8a8f96,
+    "rudder_cables": 0xb8bcc0, "elevator_trim_cables": 0xb8bcc0, "trim_tab_actuator": 0x5c5f63,
+    "pulley": 0x2f3133, "nose_gear_fittings": 0x6d7176, "shimmy_damper": 0x3a3c40,
+    "nose_steering_tubes": 0x9a9ea3, "nose_gear_strut": 0xc4c8cc, "induction_air_filter": 0xd9c58f, "induction_air_box": 0x55585d,
+    "induction_air_duct": 0x2c2d30, "alternate_air_door": 0x7d8187, "oil_filler_cap": 0x8c8f93, "fuel_tanks": 0x7fb2e0, "fuel_quantity_senders": 0x8a8f96,
+    "static_wicks": 0x2b2b2b, "oat_probe": 0xc8ccd0,
     # Pieces within a part.
     "tray": 0x8c8f93, "cover": 0x404247, "vent": 0xd8d8d0, "hose": 0x1e1f21,
 }
@@ -89,7 +156,7 @@ MOUNT_ENG_Z = 1.06
 MOUNT_R = 0.011
 # Main battery (x, y ranges; depth forward of the firewall), outboard of
 # the mount's left legs; the junction box above and inboard of it.
-BATTERY_X, BATTERY_Y, BATTERY_DEPTH = (0.21, 0.43), (-0.33, -0.14), 0.16
+BATTERY_X, BATTERY_Y, BATTERY_DEPTH = (0.255, 0.475), (-0.33, -0.14), 0.16    # clear of the harness
 JUNCTION_BOX = ((0.04, 0.20), (-0.04, 0.08), 0.07)
 # Standby battery: (x, y, z) ranges behind the panel's upper left.
 STANDBY_BATTERY = ((0.24, 0.40), (0.04, 0.11), (0.63, 0.72))
@@ -114,6 +181,16 @@ STRAINER_R = 0.035
 # from below; left typical): (WS, inches aft of the front spar).
 SUMP_DRAINS = [(32.8, 23.3), (55.7, 23.3), (63.4, 16.6), (63.4, 3.3), (37.6, 3.3)]
 FRONT_SPAR = 0.24                        # m aft of the leading edge (estimate)
+# Fuel bays (MM 28-20-00 Fig. 202): WS range; chord from the front spar to
+# the rear spar (inches aft of the front spar: estimate, past the aftmost
+# drain at 23.3); the skins' inset.
+BAY_WS, BAY_CHORD, BAY_INSET = (23.62, 71.62), 26.0, 0.015
+TANK_HOLE_MORE = 0.01                    # m: the bay's opening is wider than the skin's, hidden under it
+SENDER = (0.45, 0.012)
+# Static wicks: length, radius; spacing of each pair along the edge (m).
+WICK_L, WICK_R, WICK_GAP = 0.13, 0.0035, 0.12
+# OAT probe: FS, height of the stem above the roof, radius.
+OAT_PROBE = (46.46, 0.05, 0.008)                   # chord fraction of the bay, float arm radius
 # Static port: FS and height on the left side.
 STATIC_PORT = (14.0, -0.15)
 # Fuel under the floor. The cabin floor is at y -0.67, the belly about
@@ -142,13 +219,46 @@ AHRS = ((-0.05, 0.05), (-0.345, -0.26), 0.17)                # x, y, depth from 
 AIR_DATA = ((-0.05, 0.05), (-0.345, -0.27), 0.14)            # from its forward end
 FAN = (-0.17, -0.42, 0.045)                                  # x, y, radius, on the forward bulkhead
 # GEA 71 under the MFD (x -0.28 to -0.02 at the panel, z 0.35), lying flat.
-GEA = ((-0.23, -0.07), (-0.125, -0.06), (0.40, 0.64))       # behind the standby instruments
+GEA = ((-0.23, -0.07), (-0.055, 0.01), (0.40, 0.64))       # behind the standby instruments, above the column
 # GMU 44: wing station and chord fraction (access plate 520HB; estimate).
 GMU_WS, GMU_CHORD = 115.0, 0.38
+# Induction air: the filter face (x half-width, y range, z of its front
+# and depth) in the chin inlet; the filter box behind it (back face z);
+# the duct's height under the muffler and radius.
+FILTER = (0.10, (-0.55, -0.44), 1.605, 0.03)
+AIR_BOX_Z = 1.47
+DUCT_Y, DUCT_R = -0.555, 0.04
+ALT_DOOR = (0.07, 0.05)                  # width (x), length (z), on the box's top
+# Nose gear: FlightGear's strut axis (scene z = a * y + b, x = 0, fitted to
+# its slices), the y of the extended barrel's top, the fittings' y and
+# the steering collar's y; the steering tubes' ends at the rudder bars.
+STRUT_AXIS = (-0.296, 0.767)
+STRUT_TOP_Y, STRUT_R = -0.575, 0.026
+UPPER_FITTING_Y, LOWER_FITTING_Y, COLLAR_Y = -0.59, -0.662, -0.775
+RUDDER_BAR = (0.15, -0.655, 0.575)
+# Flight controls: the yoke shafts' forward ends (x, y, z) and the
+# column's T behind the panel; the cable radius; the depth under the
+# cabin floor; aileron bellcrank WS-ish x and the cables' chord spot (z
+# along the rear spar); the aft elevator bellcrank; the trim actuator.
+YOKE_ENDS = [(0.221, -0.097, 0.456), (-0.239, -0.097, 0.456)]
+COLUMN_Z, COLUMN_FOOT_Y = 0.58, -0.70
+CABLE_R, PULLEY_R = 0.0025, 0.022             # fits between the belly skin and the floor
+UNDER_FLOOR_Y = -0.785
+AILERON_BELLCRANK_X, REAR_SPAR_Z = 2.78, -0.752     # just aft of the fuel bay, ahead of the flap
+DOOR_POST = (0.47, 0.19)                  # |x|, z of the front door posts
+ELEVATOR_BELLCRANK = (0.0, -0.52, -4.86)
+TRIM_ACTUATOR = (-0.50, -0.415, (-4.70, -4.54))     # in the stabilizer, ahead of the elevator
+TAIL_ZS = [-0.5, -1.3, -2.1, -2.9, -3.7, -4.3]
+# Oil filler tube: its foot on the crankcase's right rear (REF_SCALE
+# frame) and its top just under FlightGear's dipstick cap.
+FILLER_FOOT, FILLER_TOP_Y, FILLER_R = (-0.115, -0.10, 1.095), 0.09, 0.013
+# Engine-relative spots (the mount's engine end, the exhaust ports and
+# muffler, the accessories) are in engine.py's REF_SCALE frame and go
+# through E() (engine.ref_to_scene), so they follow the engine's FIT.
 # Engine accessories (scene coordinates beside the CAD engine), each at
 # the clear spot nearest where the sources put it (tools/geometry.py
 # overlaps finds collisions).
-OIL_COOLER = ((0.17, 0.31), (0.05, 0.17), (1.065, 1.10))     # clear of the injector lines
+OIL_COOLER = ((0.17, 0.27), (0.065, 0.14), (1.065, 1.10))    # above the injector lines, under the cowling
 STARTER = (0.17, -0.19, (1.52, 1.66), 0.045)
 VACUUM_PUMP = (-0.055, -0.085, (0.93, 1.01), 0.042)
 OIL_FILTER = (-0.025, 0.02, (0.90, 1.01), 0.046)
@@ -248,7 +358,7 @@ def firewall(parts):
 
 def engine_mount():
     fw = [(x, y, FIREWALL_Z) for x, y in MOUNT_FW]
-    en = [(x, y, MOUNT_ENG_Z) for x, y in MOUNT_ENG]
+    en = [E((x, y, MOUNT_ENG_Z)) for x, y in MOUNT_ENG]
     tubes = [tube([fw[i], en[i]], MOUNT_R) for i in range(4)]
     tubes.append(tube([en[0], en[1], en[3], en[2], en[0]], MOUNT_R))   # the ring the engine bolts to
     return tubes
@@ -280,22 +390,21 @@ def exhaust():
     """-> (risers, muffler with tailpipe, heat shroud)."""
     risers = []
     for side, ports in PORTS.items():
-        inlet = np.array([side * MUFFLER_L, MUFFLER_Y, MUFFLER_Z])
+        inlet = E((side * MUFFLER_L, MUFFLER_Y, MUFFLER_Z))
         for k, port in enumerate(ports):
-            port = np.array(port)
+            port = E(port)
             end = inlet + (0, 0.018 * (1 if k else -1), 0.025 * (1 if k else -1))
             path = [port, port + (0, -0.07, 0), port + (side * -0.01, -0.15, 0),
                     end + (side * 0.06, 0.02, 0), end + (side * 0.01, 0, 0)]
             risers.append(tube(path, RISER_R, 12))
-    a, b = (-MUFFLER_L, MUFFLER_Y, MUFFLER_Z), (MUFFLER_L, MUFFLER_Y, MUFFLER_Z)
-    muffler = [cylinder(a, b, MUFFLER_R, 20),
-               tube([(STACK_TOP[0], MUFFLER_Y - MUFFLER_R + 0.02, STACK_TOP[2]),
+    _, my, mz = E((0, MUFFLER_Y, MUFFLER_Z))
+    ml, sl = MUFFLER_L * FIT[0], SHROUD_L * FIT[0]
+    muffler = [cylinder((-ml, my, mz), (ml, my, mz), MUFFLER_R, 20),
+               tube([(STACK_TOP[0], my - MUFFLER_R + 0.02, STACK_TOP[2]),
                      (STACK_TOP[0], STACK_TOP[1] - 0.01, STACK_TOP[2])], RISER_R, 12)]
-    sa, sb = (-SHROUD_L, MUFFLER_Y, MUFFLER_Z), (SHROUD_L, MUFFLER_Y, MUFFLER_Z)
-    shroud = [tube([sa, sb], SHROUD_R, 20),                   # an open sleeve round the muffler
+    shroud = [tube([(-sl, my, mz), (sl, my, mz)], SHROUD_R, 20),   # an open sleeve round the muffler
               # The outlet to the cabin heat duct, on the aft side.
-              tube([(0.05, MUFFLER_Y, MUFFLER_Z - SHROUD_R + 0.01), (0.05, MUFFLER_Y, MUFFLER_Z - SHROUD_R - 0.03)],
-                   0.025, 12)]
+              tube([(0.05, my, mz - SHROUD_R + 0.01), (0.05, my, mz - SHROUD_R - 0.03)], 0.025, 12)]
     return risers, muffler, shroud
 
 
@@ -305,8 +414,9 @@ def brakes(parts):
     cylinders, lines = [], []
     for side, px in PEDAL_X.items():
         cylinders.append(cylinder((px, CYL_Y[0], CYL_Z), (px, CYL_Y[1], CYL_Z), CYL_R))
-        cylinders.append(("hose", tube([(px, CYL_Y[0], CYL_Z), (px, FLOOR_Y + 0.02, CYL_Z - 0.03),
-                                        (px, FLOOR_Y, CYL_Z - 0.10)], 0.006, 8)))
+        under = low_y(parts, px, CYL_Z - 0.10, FLOOR_Y, 0.006)
+        cylinders.append(("hose", tube([(px, CYL_Y[0], CYL_Z), (px, under + 0.02, CYL_Z - 0.03),
+                                        (px, under, CYL_Z - 0.10)], 0.006, 8)))
         leg = legs[legs[:, 0] * side > 0]
         cal = calipers[calipers[:, 0] * side > 0]
         x = np.abs(leg[:, 0])
@@ -319,20 +429,31 @@ def brakes(parts):
         c = cal.mean(0)
         down.append((c[0], cal[:, 1].max(), c[2]))
         top = down[0]
-        path = [(px, FLOOR_Y, CYL_Z - 0.10), (px, FLOOR_Y, top[2]), (top[0] - side * 0.08, FLOOR_Y, top[2]), *down]
+        # Under the floor, kept above the belly skin where it curves up.
+        run = [(px, low_y(parts, px, z, FLOOR_Y, BRAKE_LINE_R), z)
+               for z in np.linspace(CYL_Z - 0.10, top[2], 8)]
+        x = top[0] - side * 0.08
+        path = [*run, (x, low_y(parts, x, top[2], FLOOR_Y, BRAKE_LINE_R), top[2]), *down]
         lines.append(tube(path, BRAKE_LINE_R, 6))
     return cylinders, lines
 
 
+def quick_drain(parts, x, y, z):
+    """A drain line from (x, y, z) straight down through the belly or cowl
+    skin to a quick drain valve -> pieces."""
+    skin = np.vstack([tris_of(parts, "fuselage"), tris_of(parts, "cowling")])
+    h = hits(skin, x, z)
+    bottom = h[h < y].max() - 0.012
+    return [tube([(x, y, z), (x, bottom, z)], 0.005, 8),
+            cylinder((x, bottom + 0.006, z), (x, bottom - 0.012, z), 0.011, 12)]
+
+
 def fuel_strainer(parts):
-    cowl = verts_of(parts, "cowling")
+    """-> (strainer, its drain)."""
     x, y, z = STRAINER
-    near = cowl[(np.abs(cowl[:, 0] - x) < 0.06) & (np.abs(cowl[:, 2] - z) < 0.06)]
-    bottom = near[:, 1].min() - 0.015
-    return [cylinder((x, y + 0.045, z), (x, y - 0.045, z), STRAINER_R),
-            ("tray", box((x - 0.05, y + 0.045, FIREWALL_Z), (x + 0.05, y + 0.06, z + 0.04))),
-            tube([(x, y - 0.045, z), (x, bottom, z)], 0.006, 8),
-            cylinder((x, bottom + 0.005, z), (x, bottom - 0.01, z), 0.011)]
+    return ([cylinder((x, y + 0.045, z), (x, y - 0.045, z), STRAINER_R),
+             ("tray", box((x - 0.05, y + 0.045, FIREWALL_Z), (x + 0.05, y + 0.06, z + 0.04)))],
+            quick_drain(parts, x, y - 0.045, z))
 
 
 def tris_of(parts, pid):
@@ -381,9 +502,10 @@ def fuel_system(parts):
     cx, cz = (x0 + x1) / 2, (z0 + z1) / 2
     stack = (x1 - 0.03, y1, z0 + 0.04)
     reservoir = [box((x0, y0, z0), (x1, y1, z1)),
-                 cylinder((stack[0], y1, stack[2]), (stack[0], y1 + 0.02, stack[2]), 0.018, 12),
-                 ("tray", cylinder((cx, y0, z1 - 0.03), (cx, y0 - 0.012, z1 - 0.03), 0.008, 8))]
+                 cylinder((stack[0], y1, stack[2]), (stack[0], y1 + 0.02, stack[2]), 0.018, 12)]
+    reservoir_drain = quick_drain(parts, cx, y0, z1 - 0.03)
     sx, sy, sz = SELECTOR_VALVE
+    selector_drain = quick_drain(parts, sx + 0.015, sy - 0.025, sz - 0.015)
     valve = [box((sx - 0.03, sy - 0.025, sz - 0.03), (sx + 0.03, sy + 0.025, sz + 0.03)),
              tube([(sx, sy + 0.025, sz), (sx, -0.64, sz)], 0.006, 8)]          # shaft to the handle
     (px0, px1), py, pz, pr = AUX_PUMP
@@ -412,7 +534,7 @@ def fuel_system(parts):
     lines.append(tube([(stack[0], y1 + 0.02, stack[2]), (stack[0], y1 + 0.03, stack[2] - 0.05),
                        (-POST_X, y1 + 0.03, POST_Z - 0.03), (-POST_X, 0.30, POST_Z - 0.03),
                        (-POST_X, vy_, vz_)], VENT_R, 6))                         # reservoir vent
-    return reservoir, valve, pump, shutoff, lines
+    return reservoir, valve, pump, shutoff, lines, reservoir_drain, selector_drain
 
 
 def wing_skin(parts, side):
@@ -423,6 +545,104 @@ def wing_skin(parts, side):
 
 def leading_edge(wing, x):
     return next(z for z in np.arange(0.6, -1.5, -0.002) if len(hits(wing, x, z)))
+
+
+def skin_block(wing, xs, zs, inset):
+    """A solid between a wing's skins over the grid xs * zs (scene x, z),
+    inset from both skins -> (verts, tris)."""
+    nx, nz = len(xs), len(zs)
+    top, bot = np.zeros((nx, nz)), np.zeros((nx, nz))
+    for i, x in enumerate(xs):
+        for j, z in enumerate(zs):
+            y = hits(wing, x, z)
+            top[i, j], bot[i, j] = y.max() - inset, y.min() + inset
+    X, Z = np.meshgrid(xs, zs, indexing="ij")
+    v = np.vstack([np.column_stack([X.ravel(), top.ravel(), Z.ravel()]),
+                   np.column_stack([X.ravel(), bot.ravel(), Z.ravel()])])
+    k = nx * nz
+
+    def at(i, j, b=0):
+        return b * k + i * nz + j
+    tris = []
+    for i in range(nx - 1):
+        for j in range(nz - 1):
+            a, b, c, d = at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)
+            tris += [(a, d, c), (a, c, b), (a + k, b + k, c + k), (a + k, c + k, d + k)]
+    ring = [(i, 0) for i in range(nx)] + [(nx - 1, j) for j in range(1, nz)] \
+        + [(i, nz - 1) for i in range(nx - 2, -1, -1)] + [(0, j) for j in range(nz - 2, 0, -1)]
+    for (i0, j0), (i1, j1) in zip(ring, ring[1:] + ring[:1]):
+        a, b = at(i0, j0), at(i1, j1)
+        tris += [(a, b, b + k), (a, b + k, a + k)]
+    return v, np.array(tris)
+
+
+def fuel_tanks(parts):
+    """-> (tanks, senders): each wing's fuel bay and its fuel level sender."""
+    tanks, senders = [], []
+    for side in (1, -1):
+        wing = wing_skin(parts, side)
+        w0, w1 = BAY_WS
+        front = leading_edge(wing, side * w0 * IN) - FRONT_SPAR
+        rear = front - BAY_CHORD * IN
+        xs = side * np.linspace(w0, w1, 9) * IN
+        zs = np.linspace(front, rear, 7)
+        v, f = skin_block(wing, xs, zs, BAY_INSET)
+        # The filler opening, cut through the bay's top as through the skin.
+        c = v[f]
+        for cx, cz, r, y_min in aircraft.CUT_HOLES:
+            if cx * side > 0:
+                c, _, _ = aircraft.cut_hole(c, None, np.zeros_like(c), (cx, cz), r + TANK_HOLE_MORE, y_min - 0.05)
+        tanks.append((c.reshape(-1, 3), np.arange(len(c) * 3).reshape(-1, 3)))
+        x, z = side * (w0 * IN + 0.01), front - SENDER[0] * (front - rear)
+        y = hits(wing, x, z)
+        mid = (y.min() + y.max()) / 2
+        senders.append(cylinder((x - side * 0.005, mid, z), (x + side * 0.035, mid, z), 0.03, 16))
+        senders.append(tube([(x + side * 0.035, mid, z), (x + side * 0.08, mid - 0.02, z),
+                             (x + side * 0.20, y.min() + 0.02, z)], SENDER[1] / 2, 6))
+        senders.append(cylinder((x + side * 0.20, y.min() + 0.02, z), (x + side * 0.27, y.min() + 0.02, z),
+                                SENDER[1], 10))
+    return tanks, senders
+
+
+def section(tris, axis, at):
+    """Points where the triangles' edges cross the plane coordinate[axis] = at."""
+    out = []
+    for a, b in ((0, 1), (1, 2), (2, 0)):
+        p, q = tris[:, a], tris[:, b]
+        da, db = p[:, axis] - at, q[:, axis] - at
+        m = (da * db < 0)
+        f = (da[m] / (da[m] - db[m]))[:, None]
+        out.append(p[m] + f * (q[m] - p[m]))
+    return np.vstack(out)
+
+
+def static_wicks(parts):
+    """Two wicks at the outboard (or top) trailing edge of each aileron,
+    elevator half and the rudder."""
+    out = []
+    surfaces = [("left_aileron", 0, 1), ("right_aileron", 0, -1), ("elevator", 0, 1), ("elevator", 0, -1),
+                ("rudder", 1, 1)]
+    for pid, axis, side in surfaces:
+        t = tris_of(parts, pid)
+        if axis == 0:
+            t = t[(t[:, :, 0] * side >= 0).all(1)]
+        sign = side if axis == 0 else 1
+        end = (t[:, :, axis] * sign).max() * sign
+        for k in (1, 2):
+            p = section(t, axis, end - sign * (0.04 + (k - 1) * WICK_GAP))
+            p = p[np.argmin(p[:, 2])]                    # the trailing edge there
+            base = p + (0, 0, 0.01)
+            tip = p + (side * 0.02 if axis == 0 else 0, 0, -WICK_L)
+            out.append(tube([base, tip], WICK_R, 6))
+    return out
+
+
+def oat_probe(parts):
+    station, h, r = OAT_PROBE
+    z = fs(station)
+    roof = hits(tris_of(parts, "fuselage"), 0.0, z).max()
+    return [cylinder((0.0, roof - 0.005, z), (0.0, roof + h, z), r, 12),
+            cylinder((0.0, roof - 0.002, z), (0.0, roof + 0.006, z), 0.016, 12)]
 
 
 def stall_warning(parts):
@@ -474,34 +694,230 @@ def avionics(parts):
 def engine_accessories():
     """-> (oil cooler, starter, vacuum pump, oil filter)."""
     (x0, x1), (y0, y1), (z0, z1) = OIL_COOLER
+    (x0, y0, z0), (x1, y1, z1) = E((x0, y0, z0)), E((x1, y1, z1))
+    hose_ends = [E((0.07, -0.10, 1.03)), E((0.08, -0.12, 1.02))]
     cooler = [box((x0, y0, z0), (x1, y1, z1)),
-              ("hose", tube([(x0 + 0.03, y0, (z0 + z1) / 2), (x0 + 0.02, y0 - 0.06, z0 - 0.02),
-                             (0.07, -0.10, 1.03)], 0.011, 10)),
-              ("hose", tube([(x0 + 0.08, y0, (z0 + z1) / 2), (x0 + 0.07, y0 - 0.08, z0 - 0.03),
-                             (0.08, -0.12, 1.02)], 0.011, 10))]
+              ("hose", tube([(x0 + 0.03, y0, (z0 + z1) / 2), (x0 + 0.02, y0 - 0.06, z0 - 0.02), hose_ends[0]],
+                            0.011, 10)),
+              ("hose", tube([(x0 + 0.08, y0, (z0 + z1) / 2), (x0 + 0.07, y0 - 0.08, z0 - 0.03), hose_ends[1]],
+                            0.011, 10))]
     x, y, (za, zb), r = STARTER
+    (x, y, za), zb = E((x, y, za)), E((x, y, zb))[2]
     starter = [cylinder((x, y, za), (x, y, zb), r, 20),
                cylinder((x, y + r, za + 0.03), (x, y + r + 0.03, za + 0.03), 0.018, 12)]     # solenoid
     x, y, (za, zb), r = VACUUM_PUMP
+    (x, y, za), zb = E((x, y, za)), E((x, y, zb))[2]
     vacuum = [cylinder((x, y, za), (x, y, zb), r, 20),
-              ("hose", tube([(x, y + r, za + 0.02), (x, y + r + 0.05, za - 0.03), (x, 0.02, FIREWALL_Z + 0.01)],
+              ("hose", tube([(x, y + r, za + 0.02), (x - 0.06, y + r + 0.02, za - 0.03), (x - 0.07, 0.02, FIREWALL_Z + 0.01)],
                             0.009, 8))]
     x, y, (za, zb), r = OIL_FILTER
+    (x, y, za), zb = E((x, y, za)), E((x, y, zb))[2]
     oil_filter = [cylinder((x, y, za), (x, y, zb - 0.02), r, 20),
                   ("tray", box((x - 0.03, y - 0.03, zb - 0.02), (x + 0.03, y + 0.03, zb)))]
     return cooler, starter, vacuum, oil_filter
+
+
+def oil_filler_tube(parts):
+    stick = verts_of(parts, "oil_filler_cap")
+    foot = stick[np.argmin(stick[:, 1])]
+    top = (foot[0] - 0.01, FILLER_TOP_Y, foot[2])
+    a = E(FILLER_FOOT)
+    return [tube([a, a + (-0.04, 0.0, -0.03), (foot[0], foot[1] - 0.01, foot[2]), top], FILLER_R, 10)]
+
+
+def induction(parts):
+    """-> (filter, filter box, duct with elbow, adaptor and drain line,
+    alternate air door)."""
+    w, (y0, y1), zf, d = FILTER
+    frame = 0.012
+    filt = [box((-w, y0, zf - d), (w, y1, zf)),
+            ("induction_air_box", box((-w - frame, y0 - frame, zf - d - 0.005), (-w, y1 + frame, zf + 0.004))),
+            ("induction_air_box", box((w, y0 - frame, zf - d - 0.005), (w + frame, y1 + frame, zf + 0.004)))]
+    zb = zf - d - 0.005
+    air_box = [box((-w - frame, y0 - frame, AIR_BOX_Z), (w + frame, y1 + frame, zb))]
+    servo = verts_of(parts, "fuel_servo")
+    throat = servo[servo[:, 1] < servo[:, 1].min() + 0.01]
+    ax, az = throat[:, 0].mean(), throat[:, 2].mean()
+    ay = servo[:, 1].min()
+    duct = [tube([(0.0, DUCT_Y, AIR_BOX_Z), (0.0, DUCT_Y, az + 0.08), (ax, DUCT_Y + 0.01, az + 0.02),
+                  (ax, ay - 0.06, az), (ax, ay - 0.012, az)], DUCT_R, 16),
+            cylinder((ax, ay - 0.012, az), (ax, ay, az), DUCT_R + 0.012, 16),       # inlet adaptor flange
+            tube([(ax + DUCT_R * 0.7, DUCT_Y - 0.02, az + 0.05), (ax + 0.05, DUCT_Y - 0.08, az + 0.03)],
+                 0.005, 6)]                                                          # drain line
+    dw, dl = ALT_DOOR
+    door = [box((-dw / 2, y1 + frame, AIR_BOX_Z + 0.01), (dw / 2, y1 + frame + 0.006, AIR_BOX_Z + 0.01 + dl))]
+    return filt, air_box, duct, door
+
+
+def nose_gear():
+    """-> (strut barrel extension, fittings, shimmy damper, steering tubes)."""
+    a, b = STRUT_AXIS
+
+    def axis(y, x=0.0):
+        return np.array([x, y, a * y + b])
+    top = axis(STRUT_TOP_Y)
+    barrel = [cylinder(axis(-0.665), top, STRUT_R, 16)]
+    fittings = []
+    for y, plate in ((UPPER_FITTING_Y, (-0.62, -0.53)), (LOWER_FITTING_Y, (-0.71, -0.645))):
+        c = axis(y)
+        fittings.append(cylinder(c + (0, -0.015, 0.0045), c + (0, 0.015, -0.0045), 0.044, 16))   # collar / clamp
+        fittings.append(box((-0.11, plate[0], FIREWALL_Z), (0.11, plate[1], FIREWALL_Z + 0.01)))   # plate
+        for side in (1, -1):
+            for dy in (-0.012, 0.012):
+                fittings.append(tube([c + (side * 0.04, dy, -0.01), (side * 0.085, (plate[0] + plate[1]) / 2 + dy,
+                                                                     FIREWALL_Z + 0.01)], 0.009, 8))
+    collar = axis(COLLAR_Y)
+    low = axis(LOWER_FITTING_Y)
+    dx = 0.078                                   # outboard of the torque links' collar
+    damper = [cylinder(collar + (dx, 0.0, 0.0), collar + (dx, 0.07, -0.021), 0.017, 12),
+              tube([collar + (dx, 0.07, -0.021), low + (dx, -0.012, 0.0)], 0.006, 8),
+              tube([low + (dx, -0.012, 0.0), low + (0.046, -0.012, 0.0)], 0.006, 8),          # bracket
+              tube([collar + (dx - 0.017, 0.0, 0.0), collar + (0.047, 0.0, 0.0)], 0.007, 8)]  # to the collar
+    bx, by, bz = RUDDER_BAR
+    tubes = []
+    for side in (1, -1):
+        start = collar + (side * 0.05, -0.012, 0.0)
+        fw = (side * 0.11, -0.735, FIREWALL_Z + 0.03)
+        tubes.append(tube([start, fw, (side * 0.12, -0.73, FIREWALL_Z - 0.03), (side * bx, by, bz)], 0.008, 8))
+        tubes.append(cylinder(fw, (side * 0.115, -0.733, FIREWALL_Z), 0.016, 10))   # fire sleeve at the firewall
+    return barrel, fittings, damper, tubes
+
+
+def pulley_at(prev, at, nxt):
+    """A pulley at a bend: a disc whose axis is normal to the bend."""
+    a, b = np.asarray(at) - prev, np.asarray(nxt) - at
+    n = np.cross(a, b)
+    if np.linalg.norm(n) < 1e-9:
+        return None
+    n = n / np.linalg.norm(n)
+    return ("pulley", cylinder(np.asarray(at) - n * 0.006, np.asarray(at) + n * 0.006, PULLEY_R, 14))
+
+
+def cable(points, pulleys=True):
+    pts = [np.asarray(p, dtype=np.float64) for p in points]
+    out = [tube(pts, CABLE_R, 6)]
+    if pulleys:
+        out += [q for q in (pulley_at(pts[i - 1], pts[i], pts[i + 1]) for i in range(1, len(pts) - 1)) if q]
+    return out
+
+
+def low_y(parts, x, z, want, margin=PULLEY_R):
+    """A height for a cable or line near the belly: `want`, kept `margin`
+    (a pulley's radius) above the skin and below the cabin floor."""
+    skin = hits(np.vstack([tris_of(parts, "fuselage"), tris_of(parts, "cowling")]), x, z)
+    skin = skin[skin < -0.55]
+    lo = skin.min() + margin + 0.006 if len(skin) else -np.inf
+    floor = hits(tris_of(parts, "cabin_floor"), x, z)
+    hi = floor.min() - margin - 0.004 if len(floor) else np.inf
+    return (lo + hi) / 2 if lo > hi else float(np.clip(want, lo, hi))
+
+
+def belly(parts, z, dy):
+    """A point dy above the fuselage's bottom on the centreline at z."""
+    h = hits(tris_of(parts, "fuselage"), 0.0, z)
+    return h.min() + dy
+
+
+def wing_mid_y(parts, x, z):
+    side = 1 if x > 0 else -1
+    y = hits(wing_skin(parts, side), x, z)
+    return (y.min() + y.max()) / 2
+
+
+def flight_controls(parts):
+    """-> {part id: pieces} for the column, cables, bellcranks and trim."""
+    out = {k: [] for k in ("control_column", "aileron_cables", "aileron_bellcranks", "elevator_cables",
+                           "elevator_bellcranks", "rudder_cables", "elevator_trim_cables", "trim_tab_actuator")}
+    # The column: each yoke shaft carried to the T, the T, the column down.
+    (lx, ly, _), (rx, _, _) = YOKE_ENDS
+    for x, y, z in YOKE_ENDS:
+        out["control_column"].append(tube([(x, y, z), (x, y, COLUMN_Z)], 0.012, 10))
+    out["control_column"].append(tube([(lx, ly, COLUMN_Z), (rx, ly, COLUMN_Z)], 0.018, 12))
+    foot = np.array([0.0, COLUMN_FOOT_Y, COLUMN_Z])
+    out["control_column"].append(tube([(0.0, ly, COLUMN_Z), foot], 0.02, 12))
+    # Ailerons: a direct cable each side and the carry-thru between the bellcranks.
+    px, pz = DOOR_POST
+    bell = {}
+    for side in (1, -1):
+        bx = side * AILERON_BELLCRANK_X
+        by = wing_mid_y(parts, bx, REAR_SPAR_Z)
+        bell[side] = np.array([bx, by, REAR_SPAR_Z])
+        root = wing_mid_y(parts, side * 0.555, REAR_SPAR_Z)
+        post_top = (side * px, 0.36, pz)
+        cz = COLUMN_Z - 0.05
+        out["aileron_cables"] += cable([foot + (side * 0.03, -0.02, 0.0),
+                                        (side * 0.06, low_y(parts, side * 0.06, cz, UNDER_FLOOR_Y), cz),
+                                        (side * (px - 0.02), low_y(parts, side * (px - 0.02), pz, UNDER_FLOOR_Y), pz), post_top,
+                                        (side * 0.53, wing_mid_y(parts, side * 0.53, -0.10), -0.10),   # aft of the vents
+                                        (side * 0.555, root, REAR_SPAR_Z), bell[side] - (side * 0.04, 0, 0)])
+        # Bellcrank (a plate on a pivot) and the push rod to the aileron.
+        out["aileron_bellcranks"] += [box(bell[side] - (0.05, 0.008, 0.06), bell[side] + (0.05, 0.008, 0.02)),
+                                      cylinder(bell[side] - (0, 0.02, 0), bell[side] + (0, 0.02, 0), 0.008, 10),
+                                      tube([bell[side] + (side * 0.04, 0, -0.05), (bx + side * 0.04, by, -0.87)],
+                                           0.006, 8)]
+    l, r = bell[1], bell[-1]
+    top = 0.44
+    out["aileron_cables"] += cable([l - (0.04, -0.01, 0.0), (0.555, wing_mid_y(parts, 0.555, REAR_SPAR_Z) + 0.01, REAR_SPAR_Z),
+                                    (0.4, top, REAR_SPAR_Z), (-0.4, top, REAR_SPAR_Z),
+                                    (-0.555, wing_mid_y(parts, -0.555, REAR_SPAR_Z) + 0.01, REAR_SPAR_Z),
+                                    r + (0.04, 0.01, 0.0)])
+    # Elevator: push-pull tube, forward bellcrank, up and down cables, aft bellcrank.
+    fb = np.array([0.0, UNDER_FLOOR_Y, COLUMN_Z - 0.28])
+    out["elevator_bellcranks"] += [tube([foot + (0, -0.02, 0), fb + (0, 0.0, 0.03)], 0.009, 8),
+                                   box(fb - (0.06, 0.006, 0.03), fb + (0.06, 0.006, 0.03)),
+                                   cylinder(fb - (0, 0.025, 0), fb + (0, 0.025, 0), 0.008, 10)]
+    ex, ey, ez = ELEVATOR_BELLCRANK
+    ab = np.array([ex, ey, ez])
+    out["elevator_bellcranks"] += [box(ab - (0.006, 0.06, 0.03), ab + (0.006, 0.05, 0.03)),
+                                   cylinder(ab - (0.03, 0, 0), ab + (0.03, 0, 0), 0.008, 10),
+                                   tube([ab + (0, 0.05, 0), (0.0, -0.43, ez - 0.07)], 0.007, 8)]
+    for k, (dx, dy) in enumerate(((0.03, 0.04), (-0.03, 0.065))):
+        run = [fb + (dx * 2, 0, 0)] + [(dx, low_y(parts, dx, z, belly(parts, z, dy)), z) for z in TAIL_ZS] + \
+              [ab + (0, 0.04 if k else -0.05, 0.02)]
+        out["elevator_cables"] += cable(run)
+    # Rudder: from each end of the rudder bar aft to FlightGear's stubs.
+    for side in (1, -1):
+        stub = (side * 0.09, -0.535, -4.68)
+        run = [(side * 0.30, -0.69, 0.55), (side * 0.30, low_y(parts, side * 0.30, 0.42, UNDER_FLOOR_Y), 0.42)]
+        for z in TAIL_ZS:
+            h = hits(tris_of(parts, "fuselage"), 0.0, z).min()
+            y = h + 0.11
+            half = abs(hits(tris_of(parts, "fuselage")[:, :, [1, 0, 2]], y, z)).max()
+            x = side * min(0.30, half - 0.04)
+            run.append((x, low_y(parts, x, z, y), z))
+        run.append(stub)
+        out["rudder_cables"] += cable(run)
+    # Trim: chain down the pedestal, cables aft, the actuator and its rod.
+    wx, wz = 0.042, 0.41
+    out["elevator_trim_cables"].append(tube([(wx, -0.42, wz), (wx, -0.70, wz)], 0.004, 6))   # chain
+    tx, ty, (tz0, tz1) = TRIM_ACTUATOR
+    for k, dx in enumerate((0.08, 0.12)):
+        run = [(wx, -0.70, wz), (dx, low_y(parts, dx, wz - 0.06, UNDER_FLOOR_Y), wz - 0.06)] + \
+              [(dx * 0.6, low_y(parts, dx * 0.6, z, belly(parts, z, 0.09 + 0.012 * k)), z) for z in TAIL_ZS] + \
+              [(-0.05, ty - 0.02 * k, tz1 + 0.02), (tx + 0.03, ty, tz1 - 0.02)]
+        out["elevator_trim_cables"] += cable(run)
+    out["trim_tab_actuator"] += [cylinder((tx, ty, tz1), (tx, ty, tz0), 0.014, 12),
+                                 tube([(tx, ty, tz0), (tx, -0.434, -5.27)], 0.004, 6)]
+    return out
 
 
 def load(parts):
     """-> parts to add to the aircraft and engine's."""
     risers, muffler, shroud = exhaust()
     cylinders, lines = brakes(parts)
-    reservoir, valve, pump, shutoff, fuel_lines = fuel_system(parts)
+    reservoir, valve, pump, shutoff, fuel_lines, reservoir_drain, selector_drain = fuel_system(parts)
+    strainer, strainer_drain = fuel_strainer(parts)
     fuel = [part("fuel_reservoir", "fuel", reservoir), part("fuel_selector_valve", "fuel", valve),
             part("aux_fuel_pump", "fuel", pump), part("fuel_shutoff_valve", "fuel", shutoff),
-            part("fuel_lines", "fuel", fuel_lines)]
+            part("fuel_lines", "fuel", fuel_lines), part("fuel_reservoir_drain", "fuel", reservoir_drain),
+            part("fuel_selector_drain", "fuel", selector_drain), part("fuel_strainer_drain", "fuel", strainer_drain)]
+    tanks, senders = fuel_tanks(parts)
+    fuel += [part("fuel_tanks", "fuel", tanks), part("fuel_quantity_senders", "fuel", senders)]
+    wicks = part("static_wicks", "airframe", static_wicks(parts))
+    oat = part("oat_probe", "pitot_static", oat_probe(parts))
     stall = part("stall_warning", "flight_controls", stall_warning(parts))
     units = [part(pid, "avionics", pieces) for pid, pieces in avionics(parts).items()]
+    controls = [part(pid, "flight_controls", pieces) for pid, pieces in flight_controls(parts).items()]
     cooler, starter, vacuum, oil_filter = engine_accessories()
     engine_parts = [part("oil_cooler", "engine", cooler, ask=True), part("starter", "engine", starter, ask=True),
                     part("vacuum_pump", "engine", vacuum, ask=True),
@@ -512,11 +928,17 @@ def load(parts):
             part("muffler", "engine", muffler, ask=True),
             part("heat_shroud", "engine", shroud, ask=True),
             part("battery", "engine", main_battery()),
+            *(part(pid, "landing_gear", pieces) for pid, pieces in
+              zip(("nose_gear_strut", "nose_gear_fittings", "shimmy_damper", "nose_steering_tubes"), nose_gear())),
+            *(part(pid, "engine", pieces, ask=True) for pid, pieces in
+              zip(("induction_air_filter", "induction_air_box", "induction_air_duct", "alternate_air_door"),
+                  induction(parts))),
+            part("oil_filler_cap", "powerplant", oil_filler_tube(parts)),
             part("power_junction_box", "engine", junction_box()),
-            part("fuel_strainer", "fuel", fuel_strainer(parts)),
+            part("fuel_strainer", "fuel", strainer),
             part("standby_battery", "electrical", standby_battery()),
             part("brake_master_cylinders", "landing_gear", cylinders),
             part("brake_lines", "landing_gear", lines),
             part("fuel_sump_drains", "fuel", sump_drains(parts)),
             part("static_port", "pitot_static", static_port(parts)),
-            *fuel, stall, *units, *engine_parts]
+            *fuel, stall, wicks, oat, *units, *controls, *engine_parts]

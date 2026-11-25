@@ -526,8 +526,8 @@ engine-driven fuel pump failure). Things to check against a real engine:
 ## Parts drawn from the maintenance manual
 
 The firewall, engine mount, exhaust (risers, muffler, heat shroud),
-batteries, brake master cylinders and lines, fuel system, sump drains,
-static port, stall warning, G1000 units and engine accessories follow the Cessna Model 172 Maintenance Manual's drawings
+batteries, brake master cylinders and lines, fuel system and tanks, sump
+drains, static port, static wicks, OAT probe, stall warning, G1000 units and engine accessories follow the Cessna Model 172 Maintenance Manual's drawings
 (`build/extras.py` cites each figure). The manual gives where things go,
 not most sizes, so check against your airplane:
 
@@ -563,6 +563,57 @@ not most sizes, so check against your airplane:
   engine's own parts, so the starter is farther out than a real one and the
   cooler sits a little high and aft. The filter and pump positions on the
   housing are my reading of Lycoming's parts catalog, not measured.
+- **Fuel tanks** (2026-11-25): each wing's fuel bay fills the wing between
+  the skins from WS 23.62 to 71.62 (the manual's numbers), from the front
+  spar to a rear spar 26 in aft of it (my estimate). One **fuel quantity
+  sender** per tank, drawn on the bay's inboard rib; the manual's sender
+  drawing is the non-G1000 one, so check the count and spot.
+- **Static wicks**: two at the outboard trailing edge of each aileron and
+  elevator and two at the top of the rudder, as the manual's drawing
+  shows. Their length (13 cm) and spacing are estimates.
+- **OAT probe**: on the cabin roof at FS 46.46, from the manual's non-G1000
+  OAT section (the G1000 probe feeds the air data computer; the manual
+  doesn't say where it is). Drawn on the centreline; check the spot.
+- **Wing struts, nose gear torque links, rudder cables** are FlightGear's
+  shapes, now separate parts (they were part of the fuselage, nose strut
+  and rudder). The rudder cables are only the stubs at the tail.
+- **Engine size and the dipstick** (2026-11-25): the CAD engine was ~11%
+  short of the IO-360-L2A (Lycoming: 29.81 in long, 33.37 wide; the older
+  notes had read the IO-360-B1C's row). It is now stretched to those, its
+  propeller flange still at the spinner, so its back end sits 6 cm
+  closer to the firewall. FlightGear's dipstick stays where FlightGear
+  put it, now level with the magnetos, with a filler tube drawn from the
+  crankcase's right rear. Check the dipstick against your airplane:
+  right side, near the back of the engine, under the oil door. To fit
+  the longer engine, the battery moved 4.5 cm outboard and the oil
+  cooler sits lower (it had poked 2 cm through the cowling).
+- **Induction air** (MM 71-60-00 Fig. 201): the filter in the chin inlet
+  under the spinner, the filter box behind it, and the duct under the
+  muffler to the elbow under the fuel servo. The alternate air door is
+  drawn on top of the filter box; the manual's drawing doesn't make its
+  side clear. Sizes are estimates.
+- **Nose gear mounting** (MM 32-20-00 Fig. 202): FlightGear's strut stopped
+  about 17 cm ahead of the firewall with nothing holding it. Its barrel
+  now runs up into an upper fitting, with a clamp below, both braced
+  back to plates on the firewall. That gap may mean FlightGear's strut
+  sits too far forward. The shimmy damper is drawn on the left of the
+  strut, and the steering tubes run from the collar through the firewall
+  to the rudder bars. Their sides, sizes and the bar ends are estimates.
+- **Belly fuel drains**: the fuel reservoir, selector valve and strainer
+  quick drains are separate parts now, each straight below its
+  component. The POH names all three. The manual shows the reservoir and
+  selector drains together just aft of the firewall, so check their exact
+  spots. New question `ap-belly-drains` asks for the reservoir and
+  selector drains; `ap-strainer-drain` now asks for the strainer's drain.
+- **Flight control cables** (MM chapter 27, each system's Fig. 201): the
+  routes follow the manual's drawings, but it gives no pulley stations,
+  so every bend is placed by eye. Aileron cables run down the column,
+  along the floor, up the front door posts and out just aft of the
+  fuel bays, with the carry-thru across the cabin top. Elevator and trim
+  cables run under the floor and up the tailcone, and the rudder cables
+  run to FlightGear's stubs at the tail. The trim actuator is in the
+  right stabilizer ahead of the tab. The GEA 71 moved up 7 cm to clear the
+  control column.
 - **Engine fuel parts from the CAD model**: the fuel manifold (spider) on
   top, the four injector lines, the servo under the engine and the lines
   between them were fused into the crankcase and servo solids; they are
