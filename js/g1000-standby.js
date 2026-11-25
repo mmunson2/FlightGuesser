@@ -154,5 +154,93 @@ window.G1000_STANDBY = (function () {
     hub(ctx);
   }
 
-  return { SIZE: S, draw: { standby_airspeed_indicator: airspeed, standby_attitude_indicator: attitude, standby_altimeter: altimeter } };
+  // ---- Magnetic compass: the card seen through its window ----
+  // A pendulous card floating in fluid: it lies square to the apparent
+  // gravity (gravity less the airplane's acceleration) and points along
+  // the part of the earth's field in that plane. The field dips steeply
+  // in Washington, so tilting the card swings it:
+  // - turning (the card banks with the airplane): it lags turning through
+  //   north and leads through south, true on east and west (UNOS);
+  // - speeding up on east or west it shows a turn north, slowing a turn
+  //   south (ANDS); no error on north or south;
+  // - the fluid damps it, but it overshoots and swings before settling.
+  // Read from behind the card, the headings run the "wrong" way: those to
+  // the right of the lubber line are lower. No deviation (the card under
+  // it lists the corrections).
+  const DIP = 69;                                // ° (Washington, about 47.8 N)
+  const G_MS2 = 9.81, KT = 0.5144;
+  function compassTarget(hdgTrue, magVar, rollDeg, accelMs2) {
+    const dip = rad(DIP), v = rad(magVar), psi = rad(hdgTrue);
+    const B = [Math.cos(dip) * Math.cos(v), Math.cos(dip) * Math.sin(v), Math.sin(dip)];   // north, east, down
+    const f = [Math.cos(psi), Math.sin(psi), 0], r = [-Math.sin(psi), Math.cos(psi), 0];
+    const lat = G_MS2 * Math.tan(rad(rollDeg));   // a coordinated turn's sideways acceleration
+    const d = [0, 1, 2].map((k) => (k === 2 ? G_MS2 : 0) - accelMs2 * f[k] - lat * r[k]);
+    const n = Math.hypot(...d);
+    d.forEach((_, k) => { d[k] /= n; });
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const flat = (a) => { const t = dot(a, d); return a.map((x, k) => x - t * d[k]); };
+    const N = flat(B), F = flat(f);
+    const cross = [N[1] * F[2] - N[2] * F[1], N[2] * F[0] - N[0] * F[2], N[0] * F[1] - N[1] * F[0]];
+    return (Math.atan2(dot(cross, d), dot(N, F)) * 180 / Math.PI + 360) % 360;
+  }
+
+  const CW = 512, CH = 248;                        // the window: 31 x 15 mm
+  const CARD_R = 0.021, WIN_HALF = 0.0155;         // m: the card's radius, half the window
+  const card = { hdg: null, rate: 0, t: null, ias: null, accel: 0 };
+  const wrap180 = (a) => ((a + 540) % 360) - 180;
+  function compass(ctx, s) {
+    const dt = card.t == null ? 0 : Math.max(0, Math.min(0.5, s.t - card.t));
+    card.t = s.t;
+    if (card.ias != null && dt > 0) {
+      const a = ((s.ias - card.ias) * KT) / dt;
+      card.accel += (a - card.accel) * Math.min(1, dt * 3);
+    }
+    card.ias = s.ias;
+    const target = compassTarget(s.hdg, s.magVar, s.roll, card.accel);
+    if (card.hdg == null) card.hdg = target;
+    // Damped swing toward the target, in small steps.
+    const W = 2.2, Z = 0.35;
+    for (let left = dt; left > 1e-6; left -= 0.02) {
+      const h = Math.min(0.02, left);
+      card.rate += (W * W * wrap180(target - card.hdg) - 2 * Z * W * card.rate) * h;
+      card.hdg = (card.hdg + card.rate * h + 360) % 360;
+    }
+
+    ctx.clearRect(0, 0, CW, CH);
+    ctx.fillStyle = '#0d0d0e';
+    ctx.fillRect(0, 0, CW, CH);
+    // The card curves away: a mark θ round from the lubber line is
+    // R sin θ across, squeezed by cos θ.
+    const px = CW / 2 / WIN_HALF, maxT = Math.asin(WIN_HALF / CARD_R) * 180 / Math.PI + 4;
+    const top = 26;
+    for (let m = 0; m < 360; m += 5) {
+      const th = -wrap180(m - card.hdg);          // higher headings to the left
+      if (Math.abs(th) > maxT) continue;
+      const x = CW / 2 + Math.sin(rad(th)) * CARD_R * px, sq = Math.cos(rad(th));
+      const long = m % 10 === 0;
+      ctx.fillStyle = C.white;
+      ctx.fillRect(x - 2.5 * sq, top, 5 * sq, long ? 58 : 34);
+      if (m % 30 === 0) {
+        const label = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' }[m] || String(m / 10);
+        ctx.save();
+        ctx.translate(x, top + 120);
+        ctx.scale(sq, 1);
+        text(ctx, label, 0, 0, m % 90 ? 74 : 88);
+        ctx.restore();
+      }
+    }
+    // The lubber line, on the glass.
+    ctx.fillStyle = C.orange;
+    ctx.fillRect(CW / 2 - 3, 0, 6, CH);
+    // The bowl darkens toward the edges.
+    const shade = ctx.createLinearGradient(0, 0, CW, 0);
+    shade.addColorStop(0, 'rgba(0,0,0,0.75)'); shade.addColorStop(0.18, 'rgba(0,0,0,0)');
+    shade.addColorStop(0.82, 'rgba(0,0,0,0)'); shade.addColorStop(1, 'rgba(0,0,0,0.75)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(0, 0, CW, CH);
+  }
+
+  return { SIZE: S, draw: { standby_airspeed_indicator: airspeed, standby_attitude_indicator: attitude, standby_altimeter: altimeter,
+                            magnetic_compass: compass },
+           compass: { target: compassTarget, card, WIDTH: CW, HEIGHT: CH } };
 })();

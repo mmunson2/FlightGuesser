@@ -95,17 +95,23 @@ window.G1000_PANEL = (function () {
       const parent = meshById[id], box = new THREE.Box3().setFromObject(parent);
       const w = box.max.x - box.min.x;
       const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = SB.SIZE;
+      const isCompass = id === 'magnetic_compass';
+      canvas.width = isCompass ? SB.compass.WIDTH : SB.SIZE;
+      canvas.height = isCompass ? SB.compass.HEIGHT : SB.SIZE;
       const texture = new THREE.CanvasTexture(canvas);
       texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
       if ('colorSpace' in texture) texture.colorSpace = THREE.SRGBColorSpace;
       else texture.encoding = THREE.sRGBEncoding;
       const r = id === 'standby_attitude_indicator' ? 0.0255 : 0.0305;
-      const plane = new THREE.Mesh(new THREE.CircleGeometry(r, 64),
+      // The compass: its window (the model's glass, 31 x 15 mm, its face
+      // 0.343 deep, inside the casing's 0.339 lip); the rest a dial disc.
+      const geometry = isCompass ? new THREE.PlaneGeometry(0.031, 0.015) : new THREE.CircleGeometry(r, 64);
+      const plane = new THREE.Mesh(geometry,
         new THREE.MeshBasicMaterial({ map: texture, toneMapped: false, transparent: true }));
       // Facing the pilot, like the screens.
       plane.rotation.y = Math.PI;
-      plane.position.set((box.min.x + box.max.x) / 2, box.max.y - w / 2, 0.3664);
+      if (isCompass) plane.position.set(-0.0005, 0.2395, 0.3428);
+      else plane.position.set((box.min.x + box.max.x) / 2, box.max.y - w / 2, 0.3664);
       plane.renderOrder = 1;
       scene.add(plane);
       return { id, parent, plane, ctx: canvas.getContext('2d'), texture };

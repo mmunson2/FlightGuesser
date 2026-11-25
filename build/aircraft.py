@@ -519,6 +519,9 @@ SOURCES = [
 # light cones and lit-state copies, inner copies of the glass, the compass
 # deviation card (placed off the panel), rudder trim (not on a C172S), and
 # the interior's own magneto switch (the magneto file's is used).
+# Skipped in one file only: the magnetic compass's glass (an opaque sheet
+# here; js/g1000-panel.js draws the live card in its window).
+SKIP_IN = {"mag-compass/mag-compass.ac": r"Glass"}
 SKIP = re.compile(r".*[Hh]ot[Ss]pot.*|sun_and_view_blocker|panel_blocker|Propeller\.Fast|PropellerCowlPlugs"
                   r"|landinglight|taxilight|BeaconOffX|courtesyon-[lr]|dome_lighton_.*|radiator"
                   r"|glas_.*|.*window_interior|glass_pan.*|magsw|testlamp|click-S"
@@ -650,7 +653,8 @@ def load(c172p):
                         (c[m], None if uv is None else uv[m], rgb[m]))
             split.append((name, c[rest], None if uv is None else uv[rest], rgb[rest], tex, behind))
         for name, c, uv, rgb, tex, behind in split:
-            if SKIP.fullmatch(name) and not (name == "magsw" and "magneto" in rel):
+            if (SKIP.fullmatch(name) and not (name == "magsw" and "magneto" in rel)
+                    or any(rel.endswith(f) and re.fullmatch(rx, name) for f, rx in SKIP_IN.items())):
                 continue
             pid = next((p for rx, p in table.items() if re.fullmatch(rx, name)), None)
             if pid is None:

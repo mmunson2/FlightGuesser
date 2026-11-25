@@ -45,6 +45,7 @@ for f in LICENSE README.md Models/c172-common.ac \
     Models/Interior/Panel/Instruments/asi/asi.png Models/Interior/Panel/Instruments/AI/AI.png \
     Models/Interior/Panel/Instruments/alt/alt.png Models/Interior/Panel/Instruments/hobbs/hobbs.png \
     Models/Interior/Panel/Instruments/mag-compass/mag-compass.png \
+    Models/Interior/Panel/Instruments/mag-compass/compass-correction-card.png \
     Models/Interior/Panel/Instruments/magneto-switch/magneto-switch.png \
     Models/Interior/Panel/Instruments/gear/breakers-switches.png \
     Models/Interior/Panel/Flaps/flaps.png Models/Interior/Yoke/yoke-fg1000.png Models/Interior/Yoke/yoke.png \

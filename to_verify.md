@@ -271,6 +271,16 @@ the GFC 700 AFMS:
     STD BARO on the PFD doesn't change it.
   - Its knob works in Operate mode (scroll or drag, 0.01 inHg a click).
     Only the knob responds, not the dial.
+  - The magnetic compass: the card in its window (ticks every 5°, N E S
+    W and 3, 6, 12... every 30°), read from behind, so headings to the
+    right of the lubber line are lower. The card is physics, not rules:
+    it lies square to the apparent gravity and points along the earth's
+    field (dip 69° for Washington, from memory) in that plane. That gives
+    about 34° of lag turning through north and lead through south at 15°
+    of bank (UNOS), and about 15° toward north accelerating at 2 kt/s on
+    east or west (ANDS). Its swing (2.2 rad/s, damping 0.35) is made up;
+    check it doesn't swing more than a real one. No deviation is modelled;
+    the deviation card under it is FlightGear's (its numbers are theirs).
 - **PFD Opt → ALT Units** (Meters, IN, HPA):
   - Meters adds metric boxes under the altitude readout and beside the
     selected altitude. The real overlay may sit elsewhere.
