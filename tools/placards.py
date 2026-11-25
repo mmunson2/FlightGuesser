@@ -8,11 +8,17 @@ old ones. Rerun after changing the text:
 
 The wording is what panelglass.png shows; its part number is illegible
 and left out. The registration matches the fuselage's (4X-CHV).
+
+Also writes flaps.png: FlightGear's flap indicator texture without the
+172P's AVOID SLIPS WITH FLAPS EXTENDED placard, which a 172S doesn't have
+(build/aircraft.py TEXTURE_OVERRIDES uses it).
 """
 
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
+
+from paths import C172P
 
 OUT = Path(__file__).resolve().parent.parent / "build" / "placards"
 FONT_DIRS = [Path("C:/Windows/Fonts"), Path("/Library/Fonts"), Path("/System/Library/Fonts/Supplemental"),
@@ -65,8 +71,24 @@ def winterization(w=1024, h=269):
     return im.resize((w, h), Image.LANCZOS)
 
 
+# The placard's box in flaps.png (256 x 256), and a plain stretch of the
+# frame (right of the slot) tiled over it.
+SLIPS_BOX = (30, 217, 158, 253)
+FRAME_PATCH = (125, 20, 175, 190)
+
+
+def flaps_172s():
+    im = Image.open(C172P / "repo/Models/Interior/Panel/Flaps/flaps.png").convert("RGBA")
+    x0, y0, x1, y1 = SLIPS_BOX
+    patch = im.crop(FRAME_PATCH)
+    for x in range(x0, x1, patch.width):
+        im.paste(patch.crop((0, 0, min(patch.width, x1 - x), y1 - y0)), (x, y0))
+    return im
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
-    for name, im in (("placard-registration", registration()), ("placard-winterization", winterization())):
+    for name, im in (("placard-registration", registration()), ("placard-winterization", winterization()),
+                     ("flaps", flaps_172s())):
         im.save(OUT / f"{name}.png", optimize=True)
         print(OUT / f"{name}.png", im.size)

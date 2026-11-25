@@ -542,11 +542,19 @@ SCREEN_RGB = (0.04, 0.05, 0.06)
 GLASS_RGB = (0.75, 0.85, 0.95)
 
 
+# Textures replaced by our own edits (tools/placards.py), by the .ac's
+# texture name: the flap indicator without the 172P's AVOID SLIPS WITH
+# FLAPS EXTENDED placard (FlightGear's model is a 172P fitted as a 172S).
+TEXTURE_OVERRIDES = {"flaps.png": Path(__file__).resolve().parent / "placards" / "flaps.png"}
+
+
 def _texture(c172p, ac_path, name, cache={}):
-    """An .ac texture name -> its file (next to the .ac, else anywhere in
-    the c172p data by file name), or None."""
+    """An .ac texture name -> its file (TEXTURE_OVERRIDES, next to the .ac,
+    else anywhere in the c172p data by file name), or None."""
     if not name:
         return None
+    if Path(name).name in TEXTURE_OVERRIDES:
+        return TEXTURE_OVERRIDES[Path(name).name]
     here = ac_path.parent / name
     if here.is_file():
         return here
