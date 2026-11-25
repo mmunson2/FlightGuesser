@@ -1066,31 +1066,6 @@ G1000_CHECKS = r"""() => {
   expect(G1000_CHECKLISTS.every((g) => g.lists.every((l) => l.name && l.items.length && l.items.every((it) => Array.isArray(it) && it.length >= 1 && it.length <= 2 && it.every((x) => typeof x === 'string' && x.trim())))),
     'checklist data: [challenge, response] or [note] strings');
 
-  // Aural alerts: what comes due when.
-  G.reset();
-  const AU = G1000_AUDIO, mem = AU.freshMemory();
-  AU.detect(mem, s);
-  G.press('ap'); run(1); G.press('ap'); run(0.5);
-  expect(AU.detect(mem, s).includes('apDisconnect'), 'aural: AP disconnect');
-  expect(!AU.detect(mem, s).includes('apDisconnect'), 'aural: AP disconnect once');
-  s.altSel = Math.round(s.trueAlt + 1100); run(0.5); AU.detect(mem, s);
-  s.trueAlt += 150; run(0.5);
-  expect(AU.detect(mem, s).includes('altitude'), 'aural: altitude alerter');
-  G.fail('oil', true);
-  expect(run(120, () => s.alerts.cas.some((c) => c.id === 'oil')), 'oil pressure warning');
-  expect(AU.detect(mem, s).includes('warning'), 'aural: warning');
-  run(0.5);
-  expect(!AU.detect(mem, s).includes('warning'), 'aural: warning repeats only every 2 s');
-  run(2.5);
-  expect(AU.detect(mem, s).includes('warning'), 'aural: warning repeats until acknowledged');
-  G.press('softkey:11', 'pfd'); run(3);
-  expect(!AU.detect(mem, s).includes('warning'), 'aural: acknowledged warning is quiet');
-  G.fail('oil', false);
-  G.fail('vacuum', true);
-  expect(run(60, () => s.alerts.cas.some((c) => c.id === 'vac')) && AU.detect(mem, s).includes('caution'), 'aural: caution');
-  Object.assign(s.ref.mins, { mode: 'BARO', ft: Math.round(s.trueAlt + 500) }); run(0.5);
-  expect(AU.detect(mem, s).includes('minimums'), 'aural: minimums');
-
   // Every new window and option draws.
   G.reset();
   G.setWind(225, 35);
@@ -1100,6 +1075,52 @@ G1000_CHECKS = r"""() => {
   s.pfdMap.layout = 'Inset Map'; s.pfdMapSet.orient = 'Track Up'; s.mapSet.orient = 'Track Up';
   drawAll('bearings, DME, parallel track, track up');
   G.fail('gps', true); drawAll('LOI');
+  }
+
+  // Audio panel: COM1 transmitting and received at power-up; COM2 MIC
+  // moves the transmitter (and the PFD's green), keeping COM1's receive;
+  // the transmitting COM's receive can't go off; toggles light; the
+  // volume knob.
+  {
+    G.reset();
+    const gm = G.gma, ga = s.gma, on = (...ks) => ks.every((k) => gm.lit(k)), off = (...ks) => ks.every((k) => !gm.lit(k));
+    expect(on('com1_mic', 'com1') && off('com2_mic', 'com2', 'spkr', 'nav1', 'pilot', 'coplt'), 'GMA power-up: COM1 MIC and COM1 only');
+    G.press('gma:com2_mic');
+    expect(on('com2_mic', 'com2', 'com1') && off('com1_mic') && gm.transmitting() === 2, 'COM2 MIC');
+    G.press('gma:com2');
+    expect(on('com2') && /transmitting/.test(s.note?.text), 'the transmitting COM stays received');
+    G.press('gma:com1');
+    expect(off('com1'), 'COM1 receive off');
+    for (const k of ['spkr', 'mkr_mute', 'hi_sens', 'nav1', 'nav2', 'dme', 'adf', 'aux', 'man_sq', 'pilot', 'coplt']) {
+      G.press('gma:' + k);
+      expect(gm.lit(k), `GMA ${k} on`);
+      G.press('gma:' + k);
+      expect(!gm.lit(k), `GMA ${k} off again`);
+    }
+    G.press('gma:pa');
+    expect(on('pa') && off('com1_mic', 'com2_mic') && gm.transmitting() === null, 'PA: no COM transmitting');
+    G.press('gma:com12');
+    expect(on('com12', 'com1_mic', 'com1', 'com2') && off('pa'), 'COM 1/2 split');
+    G.press('gma:com3_mic');
+    expect(gm.transmitting() === 1 && /COM3/.test(s.note?.text), 'COM3 not installed');
+    G.press('gma:play');
+    expect(on('play'), 'PLAY lit');
+    run(5);
+    expect(off('play'), 'PLAY goes out when done');
+    G.turn('gma_vol', 'outer', 2);
+    expect(ga.vol.sq === 40 && /MAN SQ/.test(s.note?.text), 'squelch needs MAN SQ');
+    G.press('gma:man_sq'); G.turn('gma_vol', 'outer', 2); G.turn('gma_vol', 'inner', -3);
+    G.push('gma_vol'); G.turn('gma_vol', 'inner', 1);
+    expect(ga.vol.sq === 50 && ga.vol.pilot === 55 && ga.vol.pass === 75, `GMA volumes ${JSON.stringify(ga.vol)}`);
+    // The 3D panel: a key per part, and an annunciator lit with its key.
+    const av = window.FLIGHT_DEBUG?.avionics, PK = G1000_PANEL.KEYS;
+    expect(G1000_GMA.KEYS.every((k) => PK[k + '_key'] === 'gma:' + k), 'every audio panel key wired');
+    if (av?.leds) {
+      expect(av.leds.length === G1000_GMA.KEYS.length, `audio annunciators: ${av.leds.length}`);
+      av.tick();
+      expect(av.leds.every((l) => l.led.visible === gm.lit(l.key)), 'annunciators follow the keys');
+    }
+    drawAll('audio panel');
   }
 
   G.reset();

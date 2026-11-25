@@ -46,7 +46,7 @@ the GFC 700 AFMS:
   - The box flashes 5 seconds at 1,000 ft out and again at 200 ft.
   - It turns yellow when off by more than 200 ft after reaching the
     altitude.
-  - Its aural alert is a made-up chime (see Aural alerts below).
+  - Its aural alert isn't modelled (the mock makes no sound).
 - **NAV capture**:
   - Arms when off course by 7° or more.
   - Intercepts at up to 45°.
@@ -150,8 +150,8 @@ the GFC 700 AFMS:
   - Minimums: OFF or BARO (no radar altimeter in a 172), in 10 ft
     steps. BARO puts a bug on the altitude tape and a BARO MIN box left
     of the baro setting. Both turn yellow below minimums, with a
-    "MINIMUMS" note and a spoken "Minimums" once on the way down. The
-    100 ft-above cue isn't modelled. TEMP COMP isn't in the mock.
+    "MINIMUMS" note once on the way down. The aural alert and the
+    100 ft-above cue aren't modelled. TEMP COMP isn't in the mock.
   - Page Menu: All References On, All References Off, Restore Defaults.
     Check the names.
   - The Tmr/Ref and Nearest softkeys light up while their window is
@@ -476,14 +476,28 @@ the GFC 700 AFMS:
     jumps to the group; Exit closes.
   - The real NXi's checklist editor and its own Cessna checklist content
     may differ.
-- **Aural alerts** (js/g1000-audio.js), heard in Operate mode with Sound
-  on. All of these are made-up Web Audio tones, not Garmin's sounds:
-  - AP disconnect: a falling two-tone, about 1.5 s;
-  - altitude alerter: three short beeps, at 1,000 ft out and on
-    deviation;
-  - warning: a chime every 2 s until acknowledged;
-  - caution: one tone;
-  - minimums: the browser's speech saying "Minimums".
+- **No sound**: the mock makes none, so there are no aural alerts.
+- **Audio panel** (GMA 1347D, js/g1000-gma.js): the keys work and a green
+  triangle lights over each key that is on. The mock makes no sound, so
+  this is the selection logic only. Behaviour from memory:
+  - Power-up: COM1 MIC and COM1 on, everything else off. Check what the
+    real unit restores.
+  - COM1/COM2 MIC: one transmits at a time. Its receive comes on with it,
+    and the other COM's receive stays as it was. The PFD's green COM
+    frequency follows the MIC selection; it used to follow the COM knob's
+    tuning.
+  - The transmitting COM's receive key does nothing (a note says why).
+  - COM 1/2 (split) sets COM1 MIC with both COMs received. PA lights
+    instead of the COM MIC keys.
+  - COM3 MIC, COM3 and TEL: not installed in the C172S, so they do
+    nothing. Check that's true of the airplane.
+  - PILOT and COPLT each toggle their own isolation (both lit = CREW).
+    The real unit's ICS modes may cycle differently.
+  - PLAY lights for 4 s. Pressing it again stops it.
+  - Volume knob: small knob is intercom volume (push to switch pilot or
+    passengers); large knob is squelch, which works only with MAN SQ on.
+    Check which half is which.
+  - The red DISPLAY BACKUP button isn't operable.
 
 ## The engine model
 

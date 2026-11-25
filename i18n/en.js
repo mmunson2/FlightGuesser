@@ -49,8 +49,6 @@ window.I18N = {
   'tools.wind': 'Wind…',
   'tools.windTip': 'Set the wind: direction it blows from (true) and speed',
   'tools.windCalm': 'Calm',
-  'tools.sound': 'Sound',
-  'tools.soundTip': 'Aural alerts: autopilot disconnect, altitude, warnings, cautions, minimums',
   'operate.hint': 'Operating the G1000: click keys, drag around knobs to turn them',
   'viewer.none': 'Click a part to name it',
   'viewer.inGroup': '{part} ({group})',

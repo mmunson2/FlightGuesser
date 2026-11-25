@@ -221,7 +221,6 @@
     resetBtn.hidden = !on;
     failSel.hidden = !on;
     windSel.hidden = !on;
-    soundBtn.hidden = !on;
     if (on) select(null);
     else picked.textContent = selection.length ? picked.textContent : t('viewer.none');
   }
@@ -262,13 +261,6 @@
     windOptions();
   });
   windOptions();
-  const soundBtn = document.getElementById('g1000-sound');
-  soundBtn.addEventListener('click', () => {
-    avionics.sound = !avionics.sound;
-    soundBtn.classList.toggle('on', avionics.sound);
-    soundBtn.setAttribute('aria-pressed', avionics.sound);
-  });
-  soundBtn.classList.add('on');
   resetBtn.addEventListener('click', () => { avionics.reset(); failOptions(); windOptions(); });
   avionics.onTurn((said) => { picked.textContent = said; });
   document.addEventListener('keydown', (e) => {

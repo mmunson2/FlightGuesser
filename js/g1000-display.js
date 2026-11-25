@@ -56,10 +56,12 @@ window.G1000_DISPLAY = (function () {
       if (s.vol.navId[i]) text(ctx, 'ID', 350, y, { size: 16 });
     }
     // COM, top right: active (inside) then standby (outside, by the knob).
+    // The active frequency is green on the COM the audio panel transmits on
+    // (COM MIC).
     for (let i = 0; i < 2; i++) {
       const y = 20 + i * 32, c = s.com[i];
-      const tuning = s.comTune === i;
-      text(ctx, c.act.toFixed(3), 660, y, { size: 24, color: tuning ? C.green : C.white });
+      const tuning = s.comTune === i, tx = G.gma.transmitting() === i + 1;
+      text(ctx, c.act.toFixed(3), 660, y, { size: 24, color: tx ? C.green : C.white });
       text(ctx, '↔', 778, y, { size: 22, color: tuning ? C.cyan : C.grey });
       const vol = s.vol.show && s.vol.show.kind === 'com' && s.vol.show.i === i && s.t < s.vol.show.until;
       if (tuning) box(ctx, 802, y - 14, 112, 28, { fill: 'transparent', stroke: C.cyan });

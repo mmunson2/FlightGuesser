@@ -18,10 +18,10 @@
 // the Alerts window, the wind (state.wind: ground speed and track, the
 // PFD's wind window), bearing pointers and DME, map pan and measure, user
 // waypoints, GPS status (and loss of integrity), lean assist and the fuel
-// totalizer, checklists (js/g1000-checklist.js) and, through
-// js/g1000-audio.js, the aural alerts. What it doesn't: VNAV, procedures
-// and GPS approaches, LOC/GS, ADF, hardware-fault messages, the MFD's IFR
-// pages. Headings, bugs, courses and bearings are magnetic (see
+// totalizer, checklists (js/g1000-checklist.js) and the audio panel's
+// selections (js/g1000-gma.js). What it doesn't:
+// VNAV, procedures and GPS approaches, LOC/GS, ADF, sound (no aural
+// alerts), hardware-fault messages, the MFD's IFR pages. Headings, bugs, courses and bearings are magnetic (see
 // magVarAt); the simulation underneath is true. The airplane is a few
 // lines of kinematics, not a flight model.
 // Behaviour follows the G1000 NXi and GFC 700 pilot's guides as remembered;
@@ -151,6 +151,8 @@ window.G1000 = (function () {
   // The PFD's Timer/References window (js/g1000-timer.js), in state.ref.
   const timer = G1000_TIMER.create({ state, note: (text) => note(text), indicatedAlt: () => indicatedAlt() });
   const menus = G1000_MENU.create({ state, fms, pages, timer, note: (text) => note(text), ranges: RANGES });
+  // The audio panel (js/g1000-gma.js), in state.gma.
+  const gma = G1000_GMA.create({ state, note: (text) => note(text) });
   // The MFD's Checklist page (js/g1000-checklist.js), in state.chk.
   const checklist = G1000_CHECKLIST.create({ state, lists: window.G1000_CHECKLISTS ?? [] });
   function reset() {
@@ -206,7 +208,7 @@ window.G1000 = (function () {
       note: null,
       fms: fms.fresh(),
       pageMenu: menus.fresh(), mapSet: menus.freshMap(), ref: timer.fresh(),
-      alerts: alerts.fresh(), alertSet: alerts.freshSet(), chk: checklist.fresh(),
+      alerts: alerts.fresh(), alertSet: alerts.freshSet(), chk: checklist.fresh(), gma: gma.fresh(),
     });
     state.afcs.ref.alt = state.trueAlt;
     // Northbound means 340° magnetic: the true heading carries the
@@ -446,6 +448,8 @@ window.G1000 = (function () {
   }
   function press(key, display = 'pfd') {
     const a = state.afcs;
+    // The audio panel's keys ('gma:com1_mic' and so on).
+    if (key.startsWith('gma:')) return gma.press(key.slice(4));
     if (windowKey(key, display)) return;
     switch (key) {
       case 'ap':
@@ -634,6 +638,8 @@ window.G1000 = (function () {
       // Each display's RANGE knob zooms its own map.
       // The standby altimeter's knob: its own Kollsman setting.
       case 'stby_baro': state.stbyBaro = clamp(+(state.stbyBaro + steps * 0.01).toFixed(2), 28.0, 31.0); return;
+      // The audio panel's volume knob: small knob volume, large squelch.
+      case 'gma_vol': return gma.turn(part, steps);
       case 'range': {
         const m = display === 'pfd' ? state.pfdMap : state;
         m.range = clamp(m.range - steps, 0, RANGES.length - 1);
@@ -682,6 +688,7 @@ window.G1000 = (function () {
       case 'com_volume': state.vol.sqOff[state.comTune] = !state.vol.sqOff[state.comTune]; return;
       case 'nav_volume': state.vol.navId[state.navTune] = !state.vol.navId[state.navTune]; return;
       case 'stby_baro': return;
+      case 'gma_vol': return gma.push();
       // RANGE push: the MFD map's pan pointer, from own ship; again, back.
       case 'range':
         if (display === 'pfd') return note('PFD map pan: not in the mock (pan the MFD map)');
@@ -842,7 +849,7 @@ window.G1000 = (function () {
     magHeading: () => toMag(state.hdg), HPA, SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, systems, airportSize, fuelFlow,
     FAILURES: G1000_SYSTEMS.FAILURES, fail: (id, on) => systems.fail(id, on), DB_EXPIRES,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, standbyAlt, tas, gs, track, navModeName,
-    windInfo, bearingTo, dmeInfo, mapUp, pan, panTarget, checklist, audio: null,
+    windInfo, bearingTo, dmeInfo, mapUp, pan, panTarget, checklist, gma,
     // Sets the wind: from (true), knots.
     setWind: (dir, spd) => { state.wind = { dir: wrap360(dir), spd: Math.max(0, spd) }; },
     tick(dt) {
