@@ -95,10 +95,20 @@ the GFC 700 AFMS:
 - **GPS NAV**: captures within full-scale deflection, else arms.
 - **Volume**: turning a volume knob shows a percentage in place of the
   standby frequency for 2 seconds.
-- **Stations and airports**: PAE VOR 110.6, SEA VORTAC 116.8, and the
-  airports in the flight plan database are approximate positions. The
-  airports are KPAE, KAWO, S43, KBFI, KSEA, KRNT, KBVS, KBLI, KPWT and
-  0S9.
+- **Database** (data/wa-nav.js, built by build/wa_nav.py from FAA NASR,
+  cycle effective 29 Oct 2026):
+  - Covers Washington's 117 open public-use land airports, their
+    runways, VHF frequencies (CTAF, UNICOM, tower, ground, clearance,
+    ATIS, approach), and the 16 operational VORs.
+  - Positions are surveyed, so the mock is accurate as of that cycle. It
+    goes out of date every 28 days; rebuild with `make fetch nav`.
+  - Left out: private fields, heliports and seaplane bases, NDBs,
+    intersections, AWOS/ASOS frequencies (not in FRQ.csv), and airports
+    over the state line.
+  - TPA is AGL in NASR. The page shows field elevation + TPA as MSL.
+    Many towered fields publish none.
+  - The mock still flies true headings and true VOR radials. NASR has
+    each station's magnetic variation for when that changes.
 - **Simplified**:
   - The EIS numbers and the airplane's kinematics are made up.
   - There is no wind, and headings are true (no magnetic variation).

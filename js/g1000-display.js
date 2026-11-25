@@ -210,17 +210,53 @@ window.G1000_DISPLAY = (function () {
   const hint = (ctx, str) => text(ctx, str, PAGE.x + PAGE.w / 2, PAGE.y + PAGE.h - 70,
     { size: 15, align: 'center', color: C.grey });
 
+  // Runway edge lights as the Chart Supplement writes them.
+  const LIGHTS = { HIGH: 'HIRL', MED: 'MIRL', LOW: 'LIRL', NSTD: 'NSTD LGTS' };
+
+  // Airport Information (data/wa-nav.js, FAA NASR): details on the left,
+  // frequencies on the right, runways along the bottom.
   function airportInfo(ctx, s, G) {
     pageBackground(ctx);
     const a = G.fms.byId[s.mfd.wpt.airport];
-    const x = PAGE.x + 30, y = PAGE.y + 70;
+    const x = PAGE.x + 30, y = PAGE.y + 64;
     identLine(ctx, s, G, 'WPT:0', a.id, x, y);
+    if (a.lid !== a.id) text(ctx, `(${a.lid})`, x + 110, y + 2, { size: 18, color: C.grey });
     const { brg, dist } = G.bearingDist(s, a);
-    rowsOf(ctx, [
-      ['NAME', a.name], ['TYPE', a.towered ? 'Towered' : 'Non-towered'],
+    const pairs = [
+      ['NAME', a.name], ['CITY', a.city], ['ELEV', `${a.elev}FT`],
+      // NASR gives the pattern altitude above the field.
+      ['TPA', a.tpa != null ? `${a.elev + a.tpa}FT MSL (${a.tpa} AGL)` : 'not published'],
+      ['TYPE', a.towered ? 'Towered' : 'Non-towered'], ['FUEL', a.fuel || 'none'],
       ['POSITION', latLon(a.lat, a.lon)], ['FROM P.POS', `${pad3(brg)}°  ${dist.toFixed(1)}NM`],
-    ], x, y + 60);
-    hint(ctx, 'Runways, frequencies and elevation are not in the mock database. Push FMS to pick another airport.');
+    ];
+    pairs.forEach(([k, v], i) => {
+      text(ctx, k, x, y + 50 + i * 33, { size: 16, color: C.grey });
+      text(ctx, v, x + 125, y + 50 + i * 33, { size: 19 });
+    });
+
+    // Frequencies: kind, MHz, and which runway a tower frequency serves.
+    const fx = PAGE.x + 520;
+    text(ctx, 'FREQUENCIES', fx, y, { size: 16, color: C.cyan });
+    a.freqs.slice(0, 9).forEach((f, i) => {
+      const fy = y + 32 + i * 30;
+      text(ctx, f.kind, fx, fy, { size: 15, color: C.grey });
+      text(ctx, f.freq.toFixed(3), fx + 118, fy, { size: 19, color: C.green });
+      if (f.note) text(ctx, f.note.replace(/^RWY /, ''), fx + 205, fy, { size: 14, color: C.grey });
+    });
+    if (!a.freqs.length) text(ctx, 'none listed', fx, y + 32, { size: 16, color: C.grey });
+
+    // Runways, longest first: length × width, surface, lights, and the
+    // ends with right-hand traffic.
+    const ry = y + 50 + pairs.length * 33 + 10;
+    text(ctx, 'RUNWAYS', x, ry, { size: 16, color: C.cyan });
+    a.runways.slice(0, 4).forEach((r, i) => {
+      const yy = ry + 30 + i * 30;
+      const rp = r.ends.filter((e) => e.rightTraffic).map((e) => e.id);
+      text(ctx, r.id, x, yy, { size: 20 });
+      text(ctx, `${r.len} × ${r.wid}FT  ${r.surface}  ${LIGHTS[r.lights] ?? ''}`, x + 125, yy, { size: 18 });
+      if (rp.length) text(ctx, `RP ${rp.join(', ')}`, x + 520, yy, { size: 17, color: C.yellow });
+    });
+    hint(ctx, `${G.WA_SOURCE}: Washington public-use airports. Not for navigation.`);
   }
 
   function vorInfo(ctx, s, G) {
@@ -274,7 +310,7 @@ window.G1000_DISPLAY = (function () {
     const x = PAGE.x + 30, top = PAGE.y + 60, rowH = 40, cur = s.mfd.cursor;
     text(ctx, 'BRG', x + 220, top - 4, { size: 15, align: 'right', color: C.grey });
     text(ctx, 'DIS', x + 340, top - 4, { size: 15, align: 'right', color: C.grey });
-    text(ctx, vor ? 'FREQ' : 'NAME', x + 380, top - 4, { size: 15, color: C.grey });
+    text(ctx, vor ? 'FREQ' : 'LONGEST RWY', x + 380, top - 4, { size: 15, color: C.grey });
     list.slice(0, 15).forEach((r, i) => {
       const ry = top + 34 + i * rowH;
       if (ry > PAGE.y + PAGE.h - 90) return;
@@ -283,7 +319,15 @@ window.G1000_DISPLAY = (function () {
       text(ctx, r.w.id, x, ry, { size: 22, color: sel ? C.black : C.white });
       text(ctx, pad3(r.brg) + '°', x + 220, ry, { size: 21, align: 'right' });
       text(ctx, r.dist.toFixed(1) + 'NM', x + 340, ry, { size: 21, align: 'right' });
-      text(ctx, vor ? r.w.freq.toFixed(2) : r.w.name, x + 380, ry, { size: vor ? 21 : 17, color: vor ? C.green : C.white });
+      if (vor) {
+        text(ctx, r.w.freq.toFixed(2), x + 380, ry, { size: 21, color: C.green });
+        text(ctx, r.w.name, x + 480, ry, { size: 16, color: C.grey });
+      } else {
+        // Longest runway and its surface, then the name.
+        const rw = r.w.runways[0];
+        text(ctx, rw ? `${rw.len}FT ${rw.surface}` : '', x + 380, ry, { size: 17 });
+        text(ctx, r.w.name.slice(0, 24), x + 560, ry, { size: 15, color: C.grey });
+      }
     });
     hint(ctx, cur == null ? 'Push FMS for the cursor'
       : vor ? 'ENT: frequency to NAV standby · D→: direct to it' : 'ENT: airport information · D→: direct to it');
@@ -324,6 +368,8 @@ window.G1000_DISPLAY = (function () {
     }[key] ?? placeholder;
     draw(ctx, s, G);
     const g = G.pages.GROUPS[s.mfd.group];
+    // The title on a dark strip, over anything the map drew there.
+    box(ctx, PAGE.x + PAGE.w / 2 - 230, PAGE.y + 2, 460, 32, { fill: C.black, stroke: null });
     text(ctx, `${g.id} - ${G.pages.pageName().toUpperCase()}`, PAGE.x + PAGE.w / 2, PAGE.y + 18,
       { size: 18, align: 'center', color: C.cyan });
   }
@@ -855,12 +901,17 @@ window.G1000_DISPLAY = (function () {
       ctx.beginPath(); ctx.moveTo(sx - Math.sin(a) * 2000, sy + Math.cos(a) * 2000);
       ctx.lineTo(sx + Math.sin(a) * 2000, sy - Math.cos(a) * 2000); ctx.stroke();
     }
+    // Airports: towered cyan, non-towered magenta. With the whole state in
+    // the database, identifiers show only at 15 NM range or less
+    // (declutter), and smaller rings beyond 25 NM.
+    const labels = range <= 15, ring = range > 25 ? 6 : 9;
     for (const ap of G.AIRPORTS) {
       const [px, py] = toXY(ap);
+      if (px < x0 - 40 || px > x0 + w + 40 || py < y0 - 40 || py > y0 + h + 40) continue;
       ctx.strokeStyle = ap.towered ? C.cyan : C.magenta;
       ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(px, py, 9, 0, Math.PI * 2); ctx.stroke();
-      text(ctx, ap.id, px + 14, py - 12, { size: 18 });
+      ctx.beginPath(); ctx.arc(px, py, ring, 0, Math.PI * 2); ctx.stroke();
+      if (labels) text(ctx, ap.id, px + 14, py - 12, { size: 18 });
     }
     for (const n of G.NAVAIDS) {
       const [px, py] = toXY(n);
@@ -882,7 +933,7 @@ window.G1000_DISPLAY = (function () {
     ctx.restore();
     // Heading-up compass arc label and page title.
     text(ctx, 'HDG UP', x0 + 10, y0 + 18, { size: 16, color: C.grey });
-    text(ctx, 'Mock map: approximate positions, not for navigation', x0 + 10, y0 + 40, { size: 14, color: C.grey });
+    text(ctx, 'Mock map: not for navigation', x0 + 10, y0 + h - 60, { size: 13, color: C.grey });
   }
 
   function navDataBar(ctx, s, G) {

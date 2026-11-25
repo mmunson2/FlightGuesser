@@ -393,6 +393,19 @@ G1000_CHECKS = r"""() => {
   expect(run(1500, () => !f().dto && f().active === 2), `no sequencing past KAWO: ${JSON.stringify(f())}`);
   expect(leg()?.fromId === 'KAWO' && leg().to.id === 'KBVS', `after KAWO the leg is ${leg()?.fromId} → ${leg()?.to.id}`);
 
+  // The Washington database (data/wa-nav.js, FAA NASR): well formed, and
+  // Paine as the Chart Supplement has it.
+  const pae = G.fms.byId.KPAE;
+  expect(pae && pae.elev === 607 && pae.towered && pae.runways[0].id === '16R/34L' && pae.runways[0].len === 9010,
+    `KPAE: ${JSON.stringify(pae && { elev: pae.elev, rwy: pae.runways[0] })}`);
+  expect(pae?.freqs.some((f) => f.kind === 'TOWER' && f.freq === 132.95)
+    && pae.freqs.some((f) => f.kind === 'ATIS' && f.freq === 128.65), 'KPAE tower or ATIS frequency missing');
+  expect(G.AIRPORTS.length > 100 && G.AIRPORTS.every((x) => x.runways.length && x.lat > 45 && x.lat < 49.1
+    && x.lon > -125 && x.lon < -116.9), 'an airport without runways, or outside Washington');
+  expect(G.AIRPORTS.every((x) => x.freqs.every((f) => f.freq >= 118 && f.freq < 137)), 'a non-VHF COM frequency');
+  expect(G.NAVAIDS.length > 10 && G.NAVAIDS.every((v) => v.freq >= 108 && v.freq < 118), 'a VOR outside 108-118 MHz');
+  expect(new Set(G.WAYPOINTS.map((w) => w.id)).size === G.WAYPOINTS.length, 'duplicate waypoint identifiers');
+
   // MFD pages: the large FMS knob steps groups, the small one pages.
   G.reset();
   const P = G.pages, mt = (part, n) => G.turn('fms', part, n, 'mfd');

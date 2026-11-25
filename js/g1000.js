@@ -22,24 +22,11 @@ window.G1000 = (function () {
   const diff = (a, b) => ((((a - b) % 360) + 540) % 360) - 180;
   const rad = (d) => (d * Math.PI) / 180, deg = (r) => (r * 180) / Math.PI;
 
-  // A few stations and airports around Paine Field (KPAE), the app's
-  // airport. Positions are approximate: for the mock, not for navigation.
-  const NAVAIDS = [
-    { id: 'PAE', name: 'PAINE', freq: 110.6, lat: 47.9198, lon: -122.2777 },
-    { id: 'SEA', name: 'SEATTLE', freq: 116.8, lat: 47.4353, lon: -122.3097 },
-  ];
-  const AIRPORTS = [
-    { id: 'KPAE', name: 'PAINE FLD', lat: 47.9063, lon: -122.2816, towered: true },
-    { id: 'KAWO', name: 'ARLINGTON MUNI', lat: 48.1608, lon: -122.1590, towered: false },
-    { id: 'S43', name: 'HARVEY FLD', lat: 47.9082, lon: -122.1031, towered: false },
-    { id: 'KBFI', name: 'BOEING FLD/KING CO', lat: 47.5300, lon: -122.3020, towered: true },
-    { id: 'KSEA', name: 'SEATTLE-TACOMA', lat: 47.4490, lon: -122.3093, towered: true },
-    { id: 'KRNT', name: 'RENTON MUNI', lat: 47.4931, lon: -122.2157, towered: true },
-    { id: 'KBVS', name: 'SKAGIT RGNL', lat: 48.4709, lon: -122.4208, towered: false },
-    { id: 'KBLI', name: 'BELLINGHAM INTL', lat: 48.7927, lon: -122.5375, towered: true },
-    { id: 'KPWT', name: 'BREMERTON NATL', lat: 47.4902, lon: -122.7648, towered: false },
-    { id: '0S9', name: 'JEFFERSON CO INTL', lat: 48.0538, lon: -122.8106, towered: false },
-  ];
+  // The database: Washington State's public-use airports (with runways and
+  // frequencies) and VORs, from the FAA's NASR data (data/wa-nav.js, built
+  // by build/wa_nav.py). Not for navigation: the cycle goes out of date.
+  const NAVAIDS = WA_NAV.vors;
+  const AIRPORTS = WA_NAV.airports;
   // The flight plan's database: every airport and station above.
   const WAYPOINTS = [
     ...AIRPORTS.map((a) => ({ ...a, type: 'airport' })),
@@ -538,7 +525,7 @@ window.G1000 = (function () {
   }
 
   return {
-    state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, SPEEDS, MENUS, LIVE, RANGES, fms, pages, fuelFlow,
+    state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, WA_SOURCE: WA_NAV.source, SPEEDS, MENUS, LIVE, RANGES, fms, pages, fuelFlow,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, tas, navModeName,
     tick(dt) {
       // Big gaps (a background tab) are skipped, small steps keep it stable.
