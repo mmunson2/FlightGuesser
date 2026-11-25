@@ -675,6 +675,37 @@ G1000_CHECKS = r"""() => {
   spaces = P.nearestAirspaces();
   expect(spaces.find((x) => x.name === 'EVERETT CLASS D')?.status === 'AHEAD <10MIN', `toward KPAE: ${JSON.stringify(spaces.find((x) => x.name === 'EVERETT CLASS D'))}`);
 
+  // Airspace alerts: inside Paine's Class D gives INSIDE ARSPC and a
+  // flashing ADVISORY; the softkey acknowledges and opens the window.
+  G.reset();
+  const al = s.alerts, msg = (id) => al.messages.find((m) => m.id === id);
+  const at = (p, extra) => { Object.assign(s, p, extra); run(1.5); };
+  at({ lat: G.fms.byId.KPAE.lat, lon: G.fms.byId.KPAE.lon }, { trueAlt: 1500 });
+  expect(msg('inside')?.about === 'EVERETT CLASS D' && al.unseen, `inside KPAE D: ${JSON.stringify(al)}`);
+  G.press('softkey:11', 'pfd');
+  expect(!al.unseen && s.fms.win.pfd?.type === 'alerts', 'ALERTS softkey should acknowledge and open the window');
+  G.press('softkey:11', 'pfd');
+  expect(!s.fms.win.pfd, 'ALERTS softkey again should close the window');
+  // The 200 ft buffer: 3,250 ft is inside a 3,100 ft ceiling; with no
+  // buffer it is above, and the message goes.
+  at({}, { trueAlt: 3250 });
+  expect(msg('inside'), 'within the altitude buffer above the Class D should still be inside');
+  mt('outer', 2); mt('inner', 3 - s.mfd.last[2]);
+  expect(P.pageKey() === 'AUX:3', `System Setup: ${P.pageKey()}`);
+  G.push('fms', 'mfd'); mt('inner', -4);
+  expect(s.alertSet.buffer === 0, `buffer ${s.alertSet.buffer}`);
+  run(1.5);
+  expect(!msg('inside'), 'with no buffer, 3,250 ft is above the Class D');
+  // Class D alerts off: nothing for Paine even inside it.
+  mt('outer', 3); mt('inner', 1);
+  expect(!s.alertSet.D, 'Class D alerts off');
+  at({}, { trueAlt: 1500 });
+  expect(!msg('inside'), 'Class D alerts off should silence INSIDE ARSPC');
+  mt('inner', 1);
+  // Heading for Paine from 8 NM south at 2,000 ft: ARSPC AHEAD.
+  at(G.fms.project(G.fms.byId.KPAE, 180, 8), { trueAlt: 2000, hdg: 0, roll: 0, manual: { pitch: 2, roll: 0 } });
+  expect(msg('ahead')?.about === 'EVERETT CLASS D' && !msg('inside'), `toward KPAE: ${JSON.stringify(al.messages)}`);
+
   // Nearest Frequencies: sections in order, nearest first; ENT tunes COM.
   G.reset();
   const fr = P.nearestFreqs();

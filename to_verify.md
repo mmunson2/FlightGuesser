@@ -75,7 +75,8 @@ the GFC 700 AFMS:
   - Page names follow the NXi's MFD in MSFS 2020.
   - Working: Navigation Map, Airport Information, VOR Information, Trip
     Planning, Utility, Active Flight Plan, Flight Plan Catalog, Nearest
-    Airports, Nearest VOR, Nearest Frequencies, Nearest Airspaces.
+    Airports, Nearest VOR, Nearest Frequencies, Nearest Airspaces, and
+    System Setup's airspace alert settings.
     The other pages are placeholders.
   - ENT on Nearest Airports opens that airport's information page.
   - ENT on Nearest VOR loads the frequency into the tuned NAV's standby.
@@ -190,9 +191,36 @@ the GFC 700 AFMS:
     AHEAD <10MIN (the straight-ahead track enters a shelf at the
     present altitude within 10 minutes), or else the distance.
   - ALT is the relevant shelf's floor and ceiling.
-  - The real statuses and wording differ (e.g. "Within 2 nm",
-    "Ahead < 10 min"), and the real unit also gives airspace alert
-    messages. Neither is modelled yet.
+  - Also WITHIN 2NM and NEAR, AHEAD. The real page's wording may
+    differ (e.g. "Ahead < 10 min").
+  - Statuses use the altitude buffer from System Setup (below).
+- **Airspace alerts** (js/g1000-alerts.js):
+  - Checked once a second for the classes turned on in System Setup.
+  - Messages, worded from memory of Garmin's list:
+    - INSIDE ARSPC: "Inside airspace."
+    - ARSPC AHEAD: "Airspace ahead -- less than 10 minutes."
+    - ARSPC NEAR: "Airspace near and ahead."
+    - ARSPC NEAR: "Airspace near -- less than 2 nm."
+  - A message stays while its condition holds, one of each kind, for the
+    nearest airspace with it. The mock adds the airspace's name under
+    the message; the real one doesn't name it.
+  - A new message turns the ALERTS softkey into a flashing ADVISORY
+    (white and black). Pressing it acknowledges the message and opens
+    the Alerts window in the PFD's lower right. Pressing ALERTS again
+    or CLR closes the window.
+  - Check: the advisory colours, whether the real unit also sounds a
+    tone, and the exact "ahead" and "near" rules (here, the track
+    straight ahead for 10 minutes at the present speed, and 2 NM
+    laterally at an altitude inside the buffered band).
+  - The airplane starts at 3,500 ft north of Seattle, so an advisory may
+    flash right away.
+  - Other G1000 messages and the CAS alerts (LOW VOLTS, OIL PRES and so
+    on) aren't modelled.
+- **AUX - System Setup** (AUX page 4): only the Airspace Alerts box.
+  Altitude buffer 0–1,000 ft in 50 ft steps (default 200), and Class
+  B/TMA, C/TCA and D alerts on or off (all on). Push FMS for the cursor,
+  large knob for the item, small knob to change it. Check the real
+  defaults and step size. The rest of the page isn't modelled.
 - **PFD Nearest softkey**: opens a Nearest Airports window. Push FMS for
   the cursor; D→ offers the selection.
 - **Fuel**: 48 gal usable at start, burning at a made-up fuel flow (from

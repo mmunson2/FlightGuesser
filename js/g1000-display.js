@@ -160,6 +160,7 @@ window.G1000_DISPLAY = (function () {
     if (win.type === 'dto') dtoWindow(ctx, s, G, win, x, y, w, Math.min(h, 228));
     else if (win.type === 'nrst') pfdNearest(ctx, s, G, win, x, y, w, h);
     else if (win.type === 'tmr') timerWindow(ctx, s, G, win, x, 500, w, 276);
+    else if (win.type === 'alerts') alertsWindow(ctx, s, G, win, x, 548, w, 228);
     else fplWindow(ctx, s, G, win, x, y, w, h);
   }
 
@@ -405,6 +406,25 @@ window.G1000_DISPLAY = (function () {
     hint(ctx, 'MENU: reset the statistics. The generic timer and minimums are not in the mock.');
   }
 
+  // AUX - System Setup: here only the airspace alert settings.
+  function systemSetup(ctx, s, G) {
+    pageBackground(ctx);
+    const x = PAGE.x + 30, set = s.alertSet, cur = s.mfd.cursor;
+    text(ctx, 'AIRSPACE ALERTS', x, PAGE.y + 64, { size: 17, color: C.cyan });
+    const rows = [['ALTITUDE BUFFER', `${set.buffer}FT`], ['CLASS B/TMA', set.B ? 'ON' : 'OFF'],
+      ['CLASS C/TCA', set.C ? 'ON' : 'OFF'], ['CLASS D', set.D ? 'ON' : 'OFF']];
+    rows.forEach(([k, v], i) => {
+      const ry = PAGE.y + 110 + i * 40, sel = cur === i;
+      text(ctx, k, x, ry, { size: 18, color: C.grey });
+      ctx.font = font(21);
+      const tw = ctx.measureText(v).width;
+      if (sel) box(ctx, x + 330 - tw - 6, ry - 15, tw + 12, 30, { fill: C.cyan, stroke: null });
+      text(ctx, v, x + 330, ry, { size: 21, align: 'right', color: sel ? C.black : C.cyan });
+    });
+    hint(ctx, cur == null ? 'Push FMS for the cursor. Other setup items are not in the mock.'
+      : 'Large knob: item · small knob: change · CLR or push FMS: done');
+  }
+
   // The Flight Plan Catalog: stored plans on the left, the waypoints of
   // the one under the cursor (or the first) on the right.
   function catalog(ctx, s, G) {
@@ -512,7 +532,7 @@ window.G1000_DISPLAY = (function () {
       box(ctx, x, ry - 12, 24, 24, { fill: C.black, stroke: color[a.cls] });
       text(ctx, a.cls, x + 12, ry + 1, { size: 16, align: 'center', color: color[a.cls] });
       text(ctx, a.name.replace(/ CLASS [BCD]\d*$/, '').slice(0, 34), x + 36, ry, { size: 18 });
-      const stColor = a.rank === 0 ? C.yellow : a.rank === 2 ? C.yellow : C.white;
+      const stColor = a.rank === 0 || a.rank === 2 || a.rank === 3 ? C.yellow : C.white;
       text(ctx, a.status ?? `${a.dist.toFixed(1)}NM`, x + 470, ry, { size: 18, color: stColor });
       text(ctx, `${altText(a.lo, a.loAgl)}-${a.hi}FT`, x + 790, ry, { size: 17, align: 'right' });
     });
@@ -550,7 +570,7 @@ window.G1000_DISPLAY = (function () {
     const key = G.pages.pageKey();
     const draw = {
       'MAP:0': navMap, 'FPL:0': navMap, 'WPT:0': airportInfo, 'WPT:3': vorInfo, 'AUX:0': tripPlanning,
-      'AUX:1': utility, 'FPL:1': catalog, 'NRST:0': (c, st, g) => nearestList(c, st, g, false), 'NRST:3': (c, st, g) => nearestList(c, st, g, true),
+      'AUX:1': utility, 'AUX:3': systemSetup, 'FPL:1': catalog, 'NRST:0': (c, st, g) => nearestList(c, st, g, false), 'NRST:3': (c, st, g) => nearestList(c, st, g, true),
       'NRST:5': nearestFreqPage, 'NRST:6': nearestAirspacePage,
     }[key] ?? placeholder;
     draw(ctx, s, G);
@@ -578,10 +598,40 @@ window.G1000_DISPLAY = (function () {
         || (menu === 'pfd' && !!s.fms.win.pfd && ({ 'Tmr/Ref': 'tmr', Nearest: 'nrst' })[label] === s.fms.win.pfd.type)
         || (menu === 'pfd' && label === 'OBS' && !!s.fms.obs)
         || (menu === 'map-layout' && label === s.pfdMap.layout);
+      if (label === 'Alerts' && display === 'pfd') return alertsKey(ctx, s, i * w, y, w);
       if (on) box(ctx, i * w + 3, y + 3, w - 6, 28, { fill: C.cyan, stroke: null });
       text(ctx, label, i * w + w / 2, y + 17, { size: label.length > 7 ? 15 : 18, align: 'center',
         color: on ? C.black : live.includes(i) ? C.white : '#5b6068' });
     });
+  }
+  // The PFD's ALERTS softkey: ADVISORY, flashing white and black, while a
+  // message is unacknowledged; lit while the Alerts window is open.
+  function alertsKey(ctx, s, x, y, w) {
+    if (s.alerts.unseen) {
+      const lit = Math.floor(s.t * 2) % 2 === 0;
+      box(ctx, x + 3, y + 3, w - 6, 28, { fill: lit ? C.white : C.black, stroke: null });
+      text(ctx, 'ADVISORY', x + w / 2, y + 17, { size: 14, align: 'center', color: lit ? C.black : C.white });
+      return;
+    }
+    const open = s.fms.win.pfd?.type === 'alerts';
+    if (open) box(ctx, x + 3, y + 3, w - 6, 28, { fill: C.cyan, stroke: null });
+    text(ctx, 'Alerts', x + w / 2, y + 17, { size: 18, align: 'center', color: open ? C.black : C.white });
+  }
+
+  // The PFD's Alerts window: the messages, newest first.
+  function alertsWindow(ctx, s, G, win, x, y, w, h) {
+    box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
+    text(ctx, 'ALERTS', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    const msgs = s.alerts.messages;
+    if (!msgs.length) text(ctx, 'No messages', x + w / 2, y + 70, { size: 18, align: 'center', color: C.grey });
+    const rowH = 58, n = Math.floor((h - 60) / rowH);
+    msgs.slice(win.first, win.first + n).forEach((m, k) => {
+      const ry = y + 52 + k * rowH;
+      text(ctx, m.title, x + 12, ry, { size: 17, color: C.white });
+      text(ctx, m.text, x + 12, ry + 20, { size: 14, color: C.white, bold: false });
+      text(ctx, m.about.replace(/ CLASS ([BCD])\d*$/, ' ($1)').slice(0, 40), x + 12, ry + 38, { size: 13, color: C.grey });
+    });
+    if (win.first + n < msgs.length) text(ctx, '▼', x + w - 16, y + h - 14, { size: 14, color: C.grey });
   }
 
   function noteBar(ctx, s) {

@@ -9,7 +9,8 @@
 //
 // The VFR pages work: Navigation Map, Airport and VOR Information, Trip
 // Planning, Utility, Active Flight Plan, Flight Plan Catalog, Nearest
-// Airports, Nearest VOR, Nearest Frequencies and Nearest Airspaces. MENU on a page is js/g1000-menu.js.
+// Airports, Nearest VOR, Nearest Frequencies and Nearest Airspaces, and
+// System Setup's airspace alert settings. MENU on a page is js/g1000-menu.js.
 // The rest show their name and a "not in the mock" placeholder.
 window.G1000_PAGES = (function () {
   const GROUPS = [
@@ -20,7 +21,7 @@ window.G1000_PAGES = (function () {
     { id: 'NRST', pages: ['Nearest Airports', 'Nearest Intersections', 'Nearest NDB', 'Nearest VOR', 'Nearest User WPTs', 'Nearest Frequencies', 'Nearest Airspaces'] },
   ];
   // Page keys the mock draws: group id + ':' + page index.
-  const LIVE = new Set(['MAP:0', 'WPT:0', 'WPT:3', 'AUX:0', 'AUX:1', 'FPL:0', 'FPL:1', 'NRST:0', 'NRST:3', 'NRST:5', 'NRST:6']);
+  const LIVE = new Set(['MAP:0', 'WPT:0', 'WPT:3', 'AUX:0', 'AUX:1', 'AUX:3', 'FPL:0', 'FPL:1', 'NRST:0', 'NRST:3', 'NRST:5', 'NRST:6']);
   const FPL_PAGE = 'FPL:0';
 
   // toMag(true bearing): magnetic, by the local variation.
@@ -96,6 +97,9 @@ window.G1000_PAGES = (function () {
         }
         return best;
       };
+      // The altitude buffer (AUX - System Setup) widens each shelf's floor
+      // and ceiling, as the real unit's alerts do.
+      const buf = state.alertSet?.buffer ?? 0;
       const alt = indicatedAlt(), h = (state.hdg * Math.PI) / 180, reach = (tas() / 60) * 10;
       const ahead = [];
       for (let d = 0.5; d <= reach; d += 0.5) ahead.push([Math.sin(h) * d, Math.cos(h) * d]);
@@ -106,16 +110,19 @@ window.G1000_PAGES = (function () {
         if (Math.hypot(...poly[0]) > maxDist + 60) continue;
         const within = inside([0, 0], poly), dist = within ? 0 : edgeDist(poly);
         if (dist > maxDist) continue;
-        const band = alt >= a.lo && alt <= a.hi;
+        const band = alt >= a.lo - buf && alt <= a.hi + buf;
+        // near: within 2 NM of a shelf at this altitude.
+        const near = !within && band && dist < 2;
         let rank, status;
         if (within && band) { rank = 0; status = 'INSIDE'; }
         else if (within) { rank = 1; status = alt > a.hi ? 'ABOVE' : 'BELOW'; }
-        else if (band && ahead.some((p) => inside(p, poly))) { rank = 2; status = 'AHEAD <10MIN'; }
-        else { rank = 3; status = null; }
+        else if (band && ahead.some((p) => inside(p, poly))) { rank = 2; status = near ? 'NEAR, AHEAD' : 'AHEAD <10MIN'; }
+        else if (near) { rank = 3; status = 'WITHIN 2NM'; }
+        else { rank = 4; status = null; }
         const g = groups.get(a.name);
         if (!g || rank < g.rank || (rank === g.rank && dist < g.dist)) {
-          groups.set(a.name, { name: a.name, cls: a.cls, rank, status, dist: Math.min(dist, g?.dist ?? Infinity), lo: a.lo, hi: a.hi, loAgl: a.loAgl });
-        } else g.dist = Math.min(g.dist, dist);
+          groups.set(a.name, { name: a.name, cls: a.cls, rank, status, near: near || !!g?.near, dist: Math.min(dist, g?.dist ?? Infinity), lo: a.lo, hi: a.hi, loAgl: a.loAgl });
+        } else { g.dist = Math.min(g.dist, dist); g.near = g.near || near; }
       }
       return [...groups.values()].sort((a, b) => a.rank - b.rank || a.dist - b.dist).slice(0, 12);
     }
@@ -184,6 +191,16 @@ window.G1000_PAGES = (function () {
       return null;
     }
 
+    // ---- AUX - System Setup: the airspace alert settings ----
+    // Rows: the altitude buffer, then each class's alerts on or off. With
+    // the cursor out, the large knob picks the row, the small knob changes it.
+    const SETUP_ROWS = ['buffer', 'B', 'C', 'D'];
+    function setupChange(row, steps) {
+      const set = state.alertSet, k = SETUP_ROWS[row];
+      if (k === 'buffer') set.buffer = clamp(set.buffer + steps * 50, 0, 1000);
+      else set[k] = !set[k];
+    }
+
     // ---- MFD input (when no FMS window has it) ----
     function turn(part, steps) {
       const p = P(), key = pageKey();
@@ -197,6 +214,11 @@ window.G1000_PAGES = (function () {
         if (part === 'inner') fms.editChar(p.entry, steps); else fms.moveCursor(p.entry, steps);
         return;
       }
+      if (key === 'AUX:3') {
+        if (part === 'outer') p.cursor = clamp(p.cursor + steps, 0, SETUP_ROWS.length - 1);
+        else setupChange(p.cursor, steps);
+        return;
+      }
       p.cursor = clamp(p.cursor + steps, 0, Math.max(0, listLength(key) - 1));
     }
     function push() {
@@ -208,6 +230,8 @@ window.G1000_PAGES = (function () {
         p.entry = { ident: now, pos: 0 };
       } else if (['NRST:0', 'NRST:3', 'NRST:5', 'NRST:6'].includes(key)) {
         if (listLength(key)) p.cursor = 0; else note('Nothing near enough to list');
+      } else if (key === 'AUX:3') {
+        p.cursor = 0;
       } else if (key === 'FPL:1') {
         if (state.fms.catalog.length) p.cursor = 0; else note('No stored flight plans: store one from the FPL page menu');
       } else {

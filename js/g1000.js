@@ -12,8 +12,9 @@
 // js/g1000-pages.js the MFD's page groups (with Nearest Frequencies and
 // Airspaces) and the PFD's Nearest window, through js/g1000-menu.js the
 // MENU key's Page Menus and Map Setup, and through js/g1000-timer.js the
-// Timer/References window. What it doesn't: VNAV, procedures and GPS
-// approaches, LOC/GS, airspace alerts, the MFD's IFR and setup pages,
+// Timer/References window, and through js/g1000-alerts.js the airspace
+// alerts and the Alerts window. What it doesn't: VNAV, procedures and GPS
+// approaches, LOC/GS, alerts other than airspace, the MFD's IFR and setup pages,
 // failures, wind. Headings, bugs, courses
 // and bearings are magnetic (see magVarAt); the simulation underneath is
 // true. The airplane is a few lines of kinematics, not a flight model.
@@ -116,6 +117,9 @@ window.G1000 = (function () {
   });
   // The MENU key's Page Menu and Map Setup windows (js/g1000-menu.js), in
   // state.pageMenu; the map's settings in state.mapSet.
+  // Messages, the airspace alerts and the Alerts window
+  // (js/g1000-alerts.js), in state.alerts; their settings in state.alertSet.
+  const alerts = G1000_ALERTS.create({ state, pages });
   // The PFD's Timer/References window (js/g1000-timer.js), in state.ref.
   const timer = G1000_TIMER.create({ state, note: (text) => note(text), indicatedAlt: () => indicatedAlt() });
   const menus = G1000_MENU.create({ state, fms, pages, timer, note: (text) => note(text), ranges: RANGES });
@@ -151,6 +155,7 @@ window.G1000 = (function () {
       note: null,
       fms: fms.fresh(),
       pageMenu: menus.fresh(), mapSet: menus.freshMap(), ref: timer.fresh(),
+      alerts: alerts.fresh(), alertSet: alerts.freshSet(),
     });
     state.afcs.ref.alt = state.trueAlt;
     // Northbound means 340° magnetic: the true heading carries the
@@ -281,6 +286,7 @@ window.G1000 = (function () {
     if (display === 'mfd' && key === 'fpl' && win?.type !== 'dto') { pages.fplKey(); return true; }
     if (display === 'pfd' && win?.type === 'nrst' && (key === 'ent' || key === 'clr')) return pages.pfdInput(key);
     if (display === 'pfd' && win?.type === 'tmr' && (key === 'ent' || key === 'clr')) return timer.input(key);
+    if (display === 'pfd' && win?.type === 'alerts' && (key === 'ent' || key === 'clr')) return alerts.input(key);
     if (display === 'mfd' && !win && pages.press(key)) return true;
     const handled = fms.press(key, display, { dtoDefault: pages.selectedIdent(display) });
     pages.sync();
@@ -341,6 +347,8 @@ window.G1000 = (function () {
     const menu = stack[stack.length - 1];
     const label = MENUS[menu][i];
     if (!label) return;
+    // ALERTS, the last softkey on every PFD menu.
+    if (label === 'Alerts' && display === 'pfd') return alerts.softkey();
     if (!LIVE[menu].includes(i)) return note(label + ': not in the mock yet');
     const x = state.xpdr;
     switch (menu + ':' + label) {
@@ -447,6 +455,7 @@ window.G1000 = (function () {
         const win = state.fms.win[display];
         if (display === 'pfd' && win?.type === 'nrst') return pages.pfdInput('turn', steps);
         if (display === 'pfd' && win?.type === 'tmr') return timer.input('turn', part, steps);
+        if (display === 'pfd' && win?.type === 'alerts') return alerts.input('turn', steps);
         if (display === 'mfd' && (!win || (win.type === 'fpl' && win.cursor == null))) return pages.turn(part, steps);
         return fms.turn(part, steps, display);
       }
@@ -477,6 +486,7 @@ window.G1000 = (function () {
         const win = state.fms.win[display];
         if (display === 'pfd' && win?.type === 'nrst') return pages.pfdInput('push');
         if (display === 'pfd' && win?.type === 'tmr') return timer.input('push');
+        if (display === 'pfd' && win?.type === 'alerts') return alerts.input('push');
         if (display === 'mfd' && !win) return pages.push();
         return fms.push(display);
       }
@@ -570,6 +580,7 @@ window.G1000 = (function () {
     fms.step();
     pages.step(dt);
     timer.step(dt);
+    alerts.step(dt);
     state.fuel = Math.max(0, state.fuel - (fuelFlow() / 3600) * dt);
     alerter();
   }
@@ -609,7 +620,7 @@ window.G1000 = (function () {
   return {
     state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, AIRSPACE, COMMS, WA_SOURCE: WA_NAV.source, magVarAt, toMag, toTrue,
     // The airplane's magnetic heading, as the HSI shows it.
-    magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, airportSize, fuelFlow,
+    magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, airportSize, fuelFlow,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, tas, navModeName,
     tick(dt) {
       // Big gaps (a background tab) are skipped, small steps keep it stable.
