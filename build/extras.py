@@ -113,6 +113,8 @@ drawings; sizes the MM doesn't give are estimates (to_verify.md).
   spin-on oil filter pointing aft from the accessory housing).
 """
 
+from pathlib import Path
+
 import numpy as np
 
 import aircraft
@@ -340,6 +342,59 @@ def part(pid, system, pieces, ask=False):
     return {"id": pid, "system": system, "kind": "target", "glass": False, "ask": ask,
             "pieces": [{"tex": None, "verts": np.vstack(verts), "tris": np.vstack(tris), "uv": None,
                         "rgb": np.vstack(rgb)}]}
+
+
+# Placards drawn sharp (tools/placards.py) over panelglass.png's own,
+# which have a few pixels per letter: (image, the old one's pixel box
+# x0, y0, x1, y1 in the 2048 x 512 texture, widened a pixel or two so
+# its blurred edge is covered).
+PLACARD_DIR = Path(__file__).resolve().parent / "placards"
+PLACARDS = [("placard-registration.png", (124.5, 55.5, 179.5, 77.5)),
+            ("placard-winterization.png", (83.5, 110.5, 222.5, 148.5))]
+PLACARD_LIFT = 0.0004                  # m off the panel face, towards the cabin
+
+
+def placards(parts):
+    """The placards as a piece of instrument_panel: quads on the panel face,
+    found by mapping their texture boxes through the face's uvs."""
+    panel = next(p for p in parts if p["id"] == "instrument_panel")
+    face = next(q for q in panel["pieces"] if q["tex"] is not None and Path(q["tex"]).stem == "panelglass")
+    uv, tris, verts = face["uv"], face["tris"], face["verts"]
+    tw, th = 2048, 512
+
+    def at(px, py):
+        """Texture pixel -> (point on the face, its normal towards the cabin)."""
+        u, v = px / tw, 1 - py / th            # AC3D's v runs up the image
+        for t in tris:
+            a, b, c = uv[t]
+            m = np.array([b - a, c - a]).T
+            if abs(np.linalg.det(m)) < 1e-12:
+                continue
+            s, r = np.linalg.solve(m, np.array([u, v]) - a)
+            if s >= -1e-6 and r >= -1e-6 and s + r <= 1 + 1e-6:
+                p0, p1, p2 = verts[t]
+                n = np.cross(p1 - p0, p2 - p0)
+                n /= np.linalg.norm(n)
+                return p0 + s * (p1 - p0) + r * (p2 - p0), (n if n[2] < 0 else -n)   # the cabin is -z
+        raise SystemExit(f"placard pixel {px}, {py} is off the panel face")
+
+    pieces = []
+    nu, nv = 12, 4                     # a grid following the face, which curves up into the glareshield
+    for name, (x0, y0, x1, y1) in PLACARDS:
+        verts_, uvs = [], []
+        for j in range(nv + 1):
+            for i in range(nu + 1):
+                fu, fv = i / nu, j / nv                       # image u right, v up
+                p, n = at(x0 + fu * (x1 - x0), y1 - fv * (y1 - y0))
+                verts_.append(p + PLACARD_LIFT * n)
+                uvs.append((fu, fv))
+        quads = [(j * (nu + 1) + i, j * (nu + 1) + i + 1, (j + 1) * (nu + 1) + i + 1, (j + 1) * (nu + 1) + i)
+                 for j in range(nv) for i in range(nu)]
+        tris_ = [t for a, b, c, d in quads for t in ((a, b, c), (a, c, d))]
+        pieces.append({"tex": str(PLACARD_DIR / name), "verts": np.array(verts_), "tris": np.array(tris_),
+                       "uv": np.array(uvs), "rgb": np.ones((len(verts_), 3))})
+    return {"id": "instrument_panel", "system": panel["system"], "kind": panel["kind"],
+            "glass": False, "ask": panel["ask"], "pieces": pieces}
 
 
 def verts_of(parts, pid):
@@ -941,4 +996,4 @@ def load(parts):
             part("brake_lines", "landing_gear", lines),
             part("fuel_sump_drains", "fuel", sump_drains(parts)),
             part("static_port", "pitot_static", static_port(parts)),
-            *fuel, stall, wicks, oat, *units, *controls, *engine_parts]
+            *fuel, stall, wicks, oat, *units, *controls, *engine_parts, placards(parts)]
