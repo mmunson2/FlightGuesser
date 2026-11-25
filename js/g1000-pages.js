@@ -8,7 +8,8 @@
 // direct to the selected airport or station.
 //
 // The VFR pages work: Navigation Map, Airport and VOR Information, Trip
-// Planning, Utility, Active Flight Plan, Nearest Airports and Nearest VOR.
+// Planning, Utility, Active Flight Plan, Flight Plan Catalog, Nearest
+// Airports and Nearest VOR. MENU on a page is js/g1000-menu.js.
 // The rest show their name and a "not in the mock" placeholder.
 window.G1000_PAGES = (function () {
   const GROUPS = [
@@ -19,11 +20,12 @@ window.G1000_PAGES = (function () {
     { id: 'NRST', pages: ['Nearest Airports', 'Nearest Intersections', 'Nearest NDB', 'Nearest VOR', 'Nearest User WPTs', 'Nearest Frequencies', 'Nearest Airspaces'] },
   ];
   // Page keys the mock draws: group id + ':' + page index.
-  const LIVE = new Set(['MAP:0', 'WPT:0', 'WPT:3', 'AUX:0', 'AUX:1', 'FPL:0', 'NRST:0', 'NRST:3']);
+  const LIVE = new Set(['MAP:0', 'WPT:0', 'WPT:3', 'AUX:0', 'AUX:1', 'FPL:0', 'FPL:1', 'NRST:0', 'NRST:3']);
   const FPL_PAGE = 'FPL:0';
 
   // toMag(true bearing): magnetic, by the local variation.
-  function create({ state, note, bearingDist, waypoints, fms, tas, fuelFlow, toMag }) {
+  // openMenu(): the Page Menu (ENT on a stored flight plan opens it).
+  function create({ state, note, bearingDist, waypoints, fms, tas, fuelFlow, toMag, openMenu }) {
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     const airports = waypoints.filter((w) => w.type === 'airport');
     const vors = waypoints.filter((w) => w.type === 'vor');
@@ -35,8 +37,9 @@ window.G1000_PAGES = (function () {
       // holds it), or a row number in a list.
       cursor: null, entry: null,
       wpt: { airport: 'KPAE', vor: 'PAE' }, tripTo: 'KAWO',
-      // Utility: odometer and ground speed statistics since reset.
-      stats: { odo: 0, maxGs: 0, t0: 0 },
+      // Utility: flight timer (from t0), odometer, and the trip's distance,
+      // time (from tripT0) and top ground speed; the Page Menu resets them.
+      stats: { t0: 0, odo: 0, trip: 0, tripT0: 0, maxGs: 0 },
     });
 
     const pageKey = () => GROUPS[P().group].id + ':' + P().last[P().group];
@@ -49,6 +52,19 @@ window.G1000_PAGES = (function () {
     }).sort((a, b) => a.dist - b.dist).slice(0, n);
     const nearestAirports = () => nearest(airports);
     const nearestVors = () => nearest(vors);
+    // The rows a list page's cursor moves over.
+    const listLength = (key) => (key === 'FPL:1' ? state.fms.catalog.length
+      : key === 'NRST:0' ? nearestAirports().length : nearestVors().length);
+    // The Flight Plan Catalog as rows: number, first and last waypoint,
+    // total distance.
+    const byId = Object.fromEntries(waypoints.map((w) => [w.id, w]));
+    function catalogRows() {
+      return state.fms.catalog.map((plan, i) => {
+        let dist = 0;
+        for (let k = 1; k < plan.wpts.length; k++) dist += bearingDist(byId[plan.wpts[k - 1]], byId[plan.wpts[k]]).dist;
+        return { num: String(i + 1).padStart(2, '0'), from: plan.wpts[0] ?? '', to: plan.wpts[plan.wpts.length - 1] ?? '', dist, wpts: plan.wpts };
+      });
+    }
     // The first identifier of the right kind starting with what was typed.
     const matchIn = (list) => (typed) => (typed
       ? list.slice().sort((a, b) => a.id.localeCompare(b.id)).find((w) => w.id.startsWith(typed)) ?? null : null);
@@ -110,8 +126,7 @@ window.G1000_PAGES = (function () {
         if (part === 'inner') fms.editChar(p.entry, steps); else fms.moveCursor(p.entry, steps);
         return;
       }
-      const rows = key === 'NRST:0' ? nearestAirports() : nearestVors();
-      p.cursor = clamp(p.cursor + steps, 0, rows.length - 1);
+      p.cursor = clamp(p.cursor + steps, 0, Math.max(0, listLength(key) - 1));
     }
     function push() {
       const p = P(), key = pageKey();
@@ -122,6 +137,8 @@ window.G1000_PAGES = (function () {
         p.entry = { ident: now, pos: 0 };
       } else if (key === 'NRST:0' || key === 'NRST:3') {
         p.cursor = 0;
+      } else if (key === 'FPL:1') {
+        if (state.fms.catalog.length) p.cursor = 0; else note('No stored flight plans: store one from the FPL page menu');
       } else {
         note(`${pageName()}: no cursor on this page in the mock`);
       }
@@ -144,7 +161,10 @@ window.G1000_PAGES = (function () {
         p.cursor = p.entry = null;
         return true;
       }
-      if (page === 'NRST:0') {
+      if (page === 'FPL:1') {
+        // ENT on a stored plan: the Page Menu, to activate or delete it.
+        openMenu();
+      } else if (page === 'NRST:0') {
         // ENT on a nearest airport: its information page.
         p.wpt.airport = nearestAirports()[p.cursor].w.id;
         goPage(1, 0);
@@ -180,6 +200,7 @@ window.G1000_PAGES = (function () {
     function step(dt) {
       const st = P().stats, gs = tas();
       st.odo += (gs / 3600) * dt;
+      st.trip += (gs / 3600) * dt;
       st.maxGs = Math.max(st.maxGs, gs);
     }
 
@@ -194,7 +215,7 @@ window.G1000_PAGES = (function () {
 
     return {
       GROUPS, LIVE, fresh, sync, goPage, fplKey, pageKey, pageName, selectedIdent, turn, push, press,
-      pfdNearest, pfdInput, step, trip, nearestAirports, nearestVors, matchers,
+      pfdNearest, pfdInput, step, trip, nearestAirports, nearestVors, catalogRows, matchers,
       cursorOn: () => P().cursor != null,
       isFplPage: () => pageKey() === FPL_PAGE,
     };

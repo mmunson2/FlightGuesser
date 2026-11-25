@@ -162,6 +162,66 @@ window.G1000_DISPLAY = (function () {
     else fplWindow(ctx, s, G, win, x, y, w, h);
   }
 
+  // ---- The MENU key's windows (js/g1000-menu.js) ----
+  // PFD: the lower right, over any FMS window; MFD: the map's right half.
+  function pageMenuWindow(ctx, s, G, display) {
+    const m = s.pageMenu[display];
+    if (!m) return;
+    // As tall as the options need, up to the space there is; the PFD's
+    // sits on the softkey bar's boxes, the MFD's hangs from the top.
+    const rowH = 27, head = 78, foot = m.confirm ? 96 : 44;
+    // (The PFD's stops below the baro box.)
+    const pfd = display === 'pfd', maxH = pfd ? 280 : 560;
+    const h = m.type === 'map' ? 420 : Math.min(maxH, head - rowH / 2 + Math.max(2, m.items.length) * rowH + foot);
+    const [x, y, w] = pfd ? [640, 776 - h, 378] : [590, 106, 428];
+    box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.97)', stroke: C.white });
+    if (m.type === 'map') return mapSetup(ctx, s, G, m, x, y, w, h);
+    text(ctx, 'PAGE MENU', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    text(ctx, 'OPTIONS', x + 14, y + 50, { size: 15, color: C.grey });
+    if (!m.items.length) {
+      text(ctx, 'No options with this page', x + w / 2, y + head + 4, { size: 19, align: 'center' });
+    }
+    const top = y + head;
+    const n = Math.floor((h - head - foot + rowH / 2) / rowH);
+    // Keep the cursor in view.
+    const first = Math.max(0, Math.min(m.cursor - n + 1, m.items.length - n));
+    m.items.slice(first, first + n).forEach((it, k) => {
+      const i = first + k, ry = top + k * rowH, sel = i === m.cursor;
+      if (sel) box(ctx, x + 8, ry - 13, w - 16, 26, { fill: it.run ? C.cyan : C.grey, stroke: null });
+      text(ctx, it.label, x + 18, ry, { size: 19, color: sel ? C.black : it.run ? C.white : '#5b6068' });
+    });
+    if (first > 0) text(ctx, '▲', x + w - 18, top - 4, { size: 14, align: 'center', color: C.grey });
+    if (first + n < m.items.length) text(ctx, '▼', x + w - 18, top + (n - 1) * rowH + 4, { size: 14, align: 'center', color: C.grey });
+    if (m.confirm) {
+      box(ctx, x + 10, y + h - 82, w - 20, 72, { fill: C.black, stroke: C.cyan });
+      text(ctx, m.confirm.text, x + w / 2, y + h - 62, { size: 18, align: 'center' });
+      box(ctx, x + w / 2 - 50, y + h - 46, 100, 28, { fill: C.cyan, stroke: null });
+      text(ctx, 'OK', x + w / 2, y + h - 31, { size: 18, align: 'center', color: C.black });
+      text(ctx, 'CLR: cancel', x + w - 20, y + h - 31, { size: 14, align: 'right', color: C.grey });
+    } else {
+      text(ctx, 'Press the FMS CRSR knob to return to base page', x + w / 2, y + h - 20,
+        { size: 14, align: 'center', color: C.grey });
+    }
+  }
+  // Map Setup: the GROUP line, then the group's settings.
+  function mapSetup(ctx, s, G, m, x, y, w, h) {
+    text(ctx, 'MAP SETUP', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    const fmt = (v) => (typeof v === 'number' ? `${v}NM` : v);
+    const line = (label, value, ry, sel) => {
+      text(ctx, label, x + 18, ry, { size: 18, color: C.grey });
+      ctx.font = font(19);
+      const tw = ctx.measureText(value).width;
+      if (sel) box(ctx, x + w - 20 - tw - 8, ry - 13, tw + 16, 26, { fill: C.cyan, stroke: null });
+      text(ctx, value, x + w - 20, ry, { size: 19, align: 'right', color: sel ? C.black : C.cyan });
+    };
+    line('GROUP', G.menus.GROUPS[m.group].name, y + 60, m.cursor === -1);
+    ctx.strokeStyle = C.grey; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + 10, y + 80); ctx.lineTo(x + w - 10, y + 80); ctx.stroke();
+    G.menus.mapRows(m).forEach((r, i) => line(r.label, fmt(r.value), y + 104 + i * 32, m.cursor === i));
+    text(ctx, 'Large knob: setting · small knob: change it', x + w / 2, y + h - 40, { size: 14, align: 'center', color: C.grey });
+    text(ctx, 'Push FMS or CLR to return to the map', x + w / 2, y + h - 20, { size: 14, align: 'center', color: C.grey });
+  }
+
   // The PFD's Nearest Airports window: identifier, bearing, distance.
   function pfdNearest(ctx, s, G, win, x, y, w, h) {
     box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
@@ -297,13 +357,39 @@ window.G1000_DISPLAY = (function () {
 
   function utility(ctx, s, G) {
     pageBackground(ctx);
-    const st = s.mfd.stats, hours = Math.max(s.t - st.t0, 1) / 3600;
+    const st = s.mfd.stats, hours = Math.max(s.t - st.tripT0, 1) / 3600;
     const hms = (sec) => [sec / 3600, (sec / 60) % 60, sec % 60].map((v) => String(Math.floor(v)).padStart(2, '0')).join(':');
     rowsOf(ctx, [
       ['FLIGHT TIMER', hms(s.t - st.t0)], ['ODOMETER', st.odo.toFixed(1) + 'NM'],
-      ['AVG GS', Math.round(st.odo / hours) + 'KT'], ['MAX GS', Math.round(st.maxGs) + 'KT'],
+      ['TRIP ODOMETER', st.trip.toFixed(1) + 'NM'], ['TRIP AVG GS', Math.round(st.trip / hours) + 'KT'],
+      ['TRIP MAX GS', Math.round(st.maxGs) + 'KT'],
     ], PAGE.x + 30, PAGE.y + 70);
-    hint(ctx, 'Since Reset flight. The generic timer and minimums are not in the mock.');
+    hint(ctx, 'MENU: reset the statistics. The generic timer and minimums are not in the mock.');
+  }
+
+  // The Flight Plan Catalog: stored plans on the left, the waypoints of
+  // the one under the cursor (or the first) on the right.
+  function catalog(ctx, s, G) {
+    pageBackground(ctx);
+    const rows = G.pages.catalogRows(), cur = s.mfd.cursor;
+    const x = PAGE.x + 30, top = PAGE.y + 60, rowH = 36;
+    text(ctx, 'FLIGHT PLAN', x, top - 4, { size: 15, color: C.grey });
+    text(ctx, 'DIS', x + 400, top - 4, { size: 15, align: 'right', color: C.grey });
+    if (!rows.length) text(ctx, 'No stored flight plans', x, top + 34, { size: 20, color: C.grey });
+    rows.slice(0, 13).forEach((r, i) => {
+      const ry = top + 34 + i * rowH, sel = cur === i;
+      if (sel) box(ctx, x - 6, ry - 15, 300, 30, { fill: C.cyan, stroke: null });
+      text(ctx, `${r.num}  ${r.from} / ${r.to}`, x, ry, { size: 21, color: sel ? C.black : C.white });
+      text(ctx, r.dist.toFixed(0) + 'NM', x + 400, ry, { size: 20, align: 'right' });
+    });
+    const shown = rows[cur ?? 0];
+    if (shown) {
+      const wx = PAGE.x + 500;
+      text(ctx, `PLAN ${shown.num}`, wx, top - 4, { size: 15, color: C.cyan });
+      shown.wpts.slice(0, 13).forEach((id, i) => text(ctx, id, wx, top + 34 + i * rowH, { size: 20 }));
+    }
+    hint(ctx, cur == null ? 'Push FMS for the cursor · MENU: page options'
+      : 'ENT or MENU: activate, invert or delete the plan');
   }
 
   // Nearest Airports / VOR: a list with the cursor.
@@ -367,7 +453,7 @@ window.G1000_DISPLAY = (function () {
     const key = G.pages.pageKey();
     const draw = {
       'MAP:0': navMap, 'FPL:0': navMap, 'WPT:0': airportInfo, 'WPT:3': vorInfo, 'AUX:0': tripPlanning,
-      'AUX:1': utility, 'NRST:0': (c, st, g) => nearestList(c, st, g, false), 'NRST:3': (c, st, g) => nearestList(c, st, g, true),
+      'AUX:1': utility, 'FPL:1': catalog, 'NRST:0': (c, st, g) => nearestList(c, st, g, false), 'NRST:3': (c, st, g) => nearestList(c, st, g, true),
     }[key] ?? placeholder;
     draw(ctx, s, G);
     const g = G.pages.GROUPS[s.mfd.group];
@@ -786,6 +872,7 @@ window.G1000_DISPLAY = (function () {
     navStatus(ctx, s, G);
     fma(ctx, s, G);
     fmsWindow(ctx, s, G, 'pfd');
+    pageMenuWindow(ctx, s, G, 'pfd');
     softkeys(ctx, s, G, 'pfd');
     noteBar(ctx, s);
     last.pfd = { t: s.t, ias: s.ias, trend: last.pfd?.trend };
@@ -862,33 +949,41 @@ window.G1000_DISPLAY = (function () {
   function navMap(ctx, s, G) {
     const x0 = 200, y0 = 106, w = W - 200, h = H - 34 - 106;
     box(ctx, x0, y0, w, h, { fill: '#0a1a10', stroke: null });
-    const range = G.RANGES[s.range];
-    // Heading up: own ship two thirds down, the range ring above it.
-    const ox = x0 + w / 2, oy = y0 + h * 0.66, ringR = h * 0.5;
+    const range = G.RANGES[s.range], set = s.mapSet;
+    // A map setting that is a range: the symbol shows at that map range or
+    // less ('Off': never).
+    const shows = (v) => v !== 'Off' && range <= v;
+    // Heading or track up (the same here: no wind): own ship two thirds
+    // down, the range ring above it. North up: own ship in the middle.
+    const northUp = set.orient === 'North Up';
+    const up = northUp ? 0 : s.hdg;
+    const ox = x0 + w / 2, oy = y0 + h * (northUp ? 0.5 : 0.66), ringR = h * (northUp ? 0.42 : 0.5);
     const ppn = ringR / range;
     ctx.save();
     ctx.beginPath(); ctx.rect(x0, y0, w, h); ctx.clip();
     const toXY = (p) => {
       const { brg, dist } = G.bearingDist(s, p);
-      const a = rad(brg - s.hdg);
+      const a = rad(brg - up);
       return [ox + Math.sin(a) * dist * ppn, oy - Math.cos(a) * dist * ppn];
     };
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 8]);
-    ctx.beginPath(); ctx.arc(ox, oy, ringR, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
+    if (set.ring === 'On') {
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath(); ctx.arc(ox, oy, ringR, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     text(ctx, `${range}NM`, ox + ringR * 0.72, oy - ringR * 0.72, { size: 18, color: C.grey });
     // The flight plan: legs white, the active leg (or Direct-To) magenta.
-    const f = s.fms.fpl, l = G.fms.leg();
+    const f = s.fms.fpl, l = G.fms.leg(), showFpl = shows(set.fpl);
     ctx.lineWidth = 3;
     ctx.strokeStyle = C.white;
-    for (let i = 1; i < f.wpts.length; i++) {
+    for (let i = 1; showFpl && i < f.wpts.length; i++) {
       if (!f.dto && i === f.active) continue;
       const [ax, ay] = toXY(G.fms.byId[f.wpts[i - 1]]), [bx, by] = toXY(G.fms.byId[f.wpts[i]]);
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
     }
-    if (l) {
+    if (l && showFpl) {
       const [ax, ay] = toXY(l.from), [bx, by] = toXY(l.to);
       ctx.strokeStyle = C.magenta;
       ctx.lineWidth = 5;
@@ -898,17 +993,20 @@ window.G1000_DISPLAY = (function () {
     const nav = G.navSolution();
     if (nav && nav.source !== 'GPS') {
       const [sx, sy] = toXY(nav.station);
-      const a = rad(nav.courseTrue - s.hdg);
+      const a = rad(nav.courseTrue - up);
       ctx.strokeStyle = C.green;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(sx - Math.sin(a) * 2000, sy + Math.cos(a) * 2000);
       ctx.lineTo(sx + Math.sin(a) * 2000, sy - Math.cos(a) * 2000); ctx.stroke();
     }
-    // Airports: towered cyan, non-towered magenta. With the whole state in
-    // the database, identifiers show only at 15 NM range or less
-    // (declutter), and smaller rings beyond 25 NM.
+    // Airports: towered cyan, non-towered magenta, each size shown up to
+    // its Map Setup range. With the whole state in the database,
+    // identifiers show only at 15 NM range or less (declutter), and
+    // smaller rings beyond 25 NM.
     const labels = range <= 15, ring = range > 25 ? 6 : 9;
+    const sized = { L: shows(set.aptL), M: shows(set.aptM), S: shows(set.aptS) };
     for (const ap of G.AIRPORTS) {
+      if (!sized[G.airportSize(ap)]) continue;
       const [px, py] = toXY(ap);
       if (px < x0 - 40 || px > x0 + w + 40 || py < y0 - 40 || py > y0 + h + 40) continue;
       ctx.strokeStyle = ap.towered ? C.cyan : C.magenta;
@@ -916,7 +1014,7 @@ window.G1000_DISPLAY = (function () {
       ctx.beginPath(); ctx.arc(px, py, ring, 0, Math.PI * 2); ctx.stroke();
       if (labels) text(ctx, ap.id, px + 14, py - 12, { size: 18 });
     }
-    for (const n of G.NAVAIDS) {
+    for (const n of shows(set.vor) ? G.NAVAIDS : []) {
       const [px, py] = toXY(n);
       ctx.strokeStyle = C.cyan;
       ctx.lineWidth = 2;
@@ -928,14 +1026,18 @@ window.G1000_DISPLAY = (function () {
       ctx.closePath(); ctx.stroke();
       text(ctx, `${n.id} ${n.freq.toFixed(1)}`, px + 15, py + 16, { size: 16, color: C.cyan });
     }
-    // Own ship.
+    // Own ship, pointing along the heading (straight up unless north up).
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.rotate(rad(s.hdg - up));
     ctx.fillStyle = C.white;
     ctx.beginPath();
-    ctx.moveTo(ox, oy - 18); ctx.lineTo(ox + 14, oy + 12); ctx.lineTo(ox, oy + 5); ctx.lineTo(ox - 14, oy + 12);
+    ctx.moveTo(0, -18); ctx.lineTo(14, 12); ctx.lineTo(0, 5); ctx.lineTo(-14, 12);
     ctx.closePath(); ctx.fill();
     ctx.restore();
-    // Heading-up compass arc label and page title.
-    text(ctx, 'HDG UP', x0 + 10, y0 + 18, { size: 16, color: C.grey });
+    ctx.restore();
+    // The orientation, top left.
+    text(ctx, { 'Heading Up': 'HDG UP', 'Track Up': 'TRK UP', 'North Up': 'NORTH UP' }[set.orient], x0 + 10, y0 + 18, { size: 16, color: C.grey });
     text(ctx, 'Mock map: not for navigation', x0 + 10, y0 + h - 60, { size: 13, color: C.grey });
   }
 
@@ -967,6 +1069,7 @@ window.G1000_DISPLAY = (function () {
     navDataBar(ctx, s, G);
     radios(ctx, s, G);
     fmsWindow(ctx, s, G, 'mfd');
+    pageMenuWindow(ctx, s, G, 'mfd');
     pageGroups(ctx, s, G);
     softkeys(ctx, s, G, 'mfd');
     noteBar(ctx, s);

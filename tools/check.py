@@ -384,10 +384,15 @@ G1000_CHECKS = r"""() => {
   expect(s.fms.win.pfd.prompt?.text === 'Remove KPWT?', `CLR prompt: ${s.fms.win.pfd.prompt?.text}`);
   G.press('ent', 'pfd');
   expect(f().wpts.join() === 'KPAE,KAWO,KBVS' && leg().to.id === 'KAWO', `FPL remove: ${JSON.stringify(f())}`);
-  // MENU on KBVS: activate the leg to it.
+  // MENU on KBVS: the Page Menu starts on Activate Leg, which asks first.
   G.turn('fms', 'outer', 1, 'pfd');
-  G.press('menu', 'pfd'); G.press('ent', 'pfd');
-  expect(f().active === 2 && leg().fromId === 'KAWO', `MENU activate leg: ${JSON.stringify(f())}`);
+  G.press('menu', 'pfd');
+  const pm = () => s.pageMenu.pfd;
+  expect(pm()?.items[pm().cursor].label === 'Activate Leg', `Page Menu opened on ${pm()?.items[pm().cursor]?.label}`);
+  G.press('ent', 'pfd');
+  expect(pm()?.confirm?.text === 'Activate leg to KBVS?', `Activate Leg asks: ${pm()?.confirm?.text}`);
+  G.press('ent', 'pfd');
+  expect(!pm() && f().active === 2 && leg().fromId === 'KAWO', `MENU activate leg: ${JSON.stringify(f())}`);
 
   // Sequencing: D→ KAWO (in the plan), then on to KBVS by itself.
   G.fms.directTo('KAWO');
@@ -504,6 +509,80 @@ G1000_CHECKS = r"""() => {
   expect(Math.abs(fuel0 - s.fuel - ff / 6) < 0.3, `600 s at ${ff.toFixed(1)} GPH burned ${(fuel0 - s.fuel).toFixed(2)} gal`);
   const tp = P.trip();
   expect(Math.abs(tp.required - tp.ff * tp.hours) < 1e-9 && tp.after === tp.onboard - tp.required, 'Trip Planning fuel');
+
+  // Page Menu: pick an option by its label with the large FMS knob.
+  const menuTo = (label, d) => {
+    const m = s.pageMenu[d], i = m.items.findIndex((it) => it.label === label);
+    G.turn('fms', 'outer', i - m.cursor, d);
+    expect(m.items[m.cursor]?.label === label, `Page Menu: no ${label} (${m.items.map((it) => it.label)})`);
+  };
+  // Active FPL: invert, store, delete; Flight Plan Catalog: activate.
+  G.reset();
+  G.fms.activatePlan(['KPAE', 'KAWO', 'KBVS']);
+  G.press('fpl', 'mfd');
+  G.press('menu', 'mfd');
+  expect(s.pageMenu.mfd?.items[s.pageMenu.mfd.cursor].label === 'Invert Flight Plan',
+    `FPL menu with no cursor should start on Invert: ${s.pageMenu.mfd?.items[s.pageMenu.mfd.cursor]?.label}`);
+  G.press('ent', 'mfd'); G.press('ent', 'mfd');
+  expect(f().wpts.join() === 'KBVS,KAWO,KPAE' && f().active === 1, `Invert: ${JSON.stringify(f())}`);
+  // A grey option says why and leaves the menu open.
+  G.press('menu', 'mfd'); menuTo('Parallel Track', 'mfd'); G.press('ent', 'mfd');
+  expect(s.pageMenu.mfd && /not in the mock/.test(s.note?.text), `grey option: ${s.note?.text}`);
+  const stored = s.fms.catalog.length;
+  menuTo('Store Flight Plan', 'mfd'); G.press('ent', 'mfd');
+  expect(s.fms.catalog.length === stored + 1 && s.fms.catalog[stored].wpts.join() === 'KBVS,KAWO,KPAE' && !s.pageMenu.mfd,
+    `Store: ${JSON.stringify(s.fms.catalog)}`);
+  // Delete asks; CLR backs out to the menu, a second CLR closes it.
+  G.press('menu', 'mfd'); menuTo('Delete Flight Plan', 'mfd'); G.press('ent', 'mfd'); G.press('clr', 'mfd');
+  expect(f().wpts.length === 3 && s.pageMenu.mfd && !s.pageMenu.mfd.confirm, 'CLR on the Delete question');
+  G.press('ent', 'mfd'); G.press('ent', 'mfd');
+  expect(f().wpts.length === 0 && f().active === null && !s.pageMenu.mfd, `Delete: ${JSON.stringify(f())}`);
+  // The catalog (FPL's second page): cursor on the stored plan, ENT gives
+  // its menu, Invert & Activate flies it reversed.
+  G.press('fpl', 'mfd');
+  mt('outer', 3 - s.mfd.group); mt('inner', 1 - s.mfd.last[3]);
+  expect(P.pageKey() === 'FPL:1', `Flight Plan Catalog: ${P.pageKey()}`);
+  G.push('fms', 'mfd'); mt('inner', stored);
+  G.press('ent', 'mfd');
+  expect(s.pageMenu.mfd?.items[0].label === 'Activate Flight Plan', 'ENT on a stored plan should open its menu');
+  menuTo('Invert & Activate FPL', 'mfd'); G.press('ent', 'mfd'); G.press('ent', 'mfd');
+  expect(f().wpts.join() === 'KPAE,KAWO,KBVS' && leg()?.to.id === 'KAWO', `Invert & Activate: ${JSON.stringify(f())}`);
+  expect(s.fms.catalog.every((p) => p.wpts.every((id) => G.fms.byId[id])), 'a stored plan with an unknown waypoint');
+
+  // D→ window's menu cancels the Direct-To, back to the plan's leg.
+  G.fms.directTo('KBVS');
+  G.press('direct_to', 'pfd'); G.press('menu', 'pfd');
+  expect(s.pageMenu.pfd?.items[0].label === 'Cancel Direct-To NAV', 'D→ menu');
+  G.press('ent', 'pfd');
+  expect(!f().dto && leg()?.to.id === 'KBVS' && leg().fromId === 'KAWO', `Cancel D→: ${JSON.stringify(f())}`);
+  G.press('direct_to', 'pfd');
+  // A page with no options says so; MENU again closes it.
+  G.press('menu', 'pfd');
+  expect(s.pageMenu.pfd?.items.length === 0, 'the PFD with no window should have no options');
+  G.press('menu', 'pfd');
+  expect(!s.pageMenu.pfd, 'MENU should close the Page Menu');
+
+  // Utility: Reset Trip Statistics keeps the odometer and flight timer.
+  G.reset();
+  mt('outer', 2); mt('inner', 1);
+  run(60);
+  G.press('menu', 'mfd'); menuTo('Reset Trip Statistics', 'mfd'); G.press('ent', 'mfd'); G.press('ent', 'mfd');
+  const st = s.mfd.stats;
+  expect(st.trip === 0 && st.maxGs === 0 && st.odo > 1 && st.t0 === 0, `trip reset: ${JSON.stringify(st)}`);
+
+  // Map Settings: Map Setup, North Up, small airports off at every range.
+  mt('outer', -2);
+  G.press('menu', 'mfd');
+  expect(s.pageMenu.mfd?.items[0].label === 'Map Settings', 'Navigation Map menu');
+  G.press('ent', 'mfd');
+  expect(s.pageMenu.mfd?.type === 'map', 'Map Settings should open Map Setup');
+  mt('outer', 1); mt('inner', 2);
+  expect(s.mapSet.orient === 'North Up', `orientation ${s.mapSet.orient}`);
+  mt('outer', -1); mt('inner', 1); mt('outer', 4); mt('inner', -99);
+  expect(s.mapSet.aptS === 'Off', `Small APT ${s.mapSet.aptS}`);
+  G.push('fms', 'mfd');
+  expect(!s.pageMenu.mfd && P.pageKey() === 'MAP:0', 'push FMS should close Map Setup');
+  expect(G.airportSize(G.fms.byId.KPAE) === 'L', 'Paine (9,010 ft) should be a large airport');
 
   // Transponder: XPDR, Code, four digits, back on the XPDR menu.
   G.reset();

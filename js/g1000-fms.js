@@ -9,8 +9,9 @@
 // completes from the database as you type. ENT accepts; CLR backs out.
 // In the flight plan, push FMS for the cursor, turn the large knob to move
 // it between rows, and the small knob to insert a waypoint before the
-// selected row. CLR on a waypoint offers to remove it; MENU offers to
-// activate the leg to it.
+// selected row. CLR on a waypoint offers to remove it. MENU (the Page
+// Menu, js/g1000-menu.js) activates the leg to it, inverts, deletes or
+// stores the plan, and the Flight Plan Catalog's menu loads a stored one.
 window.G1000_FMS = (function () {
   const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   // CDI full scale (NM): enroute, and terminal within 31 NM of the
@@ -37,6 +38,9 @@ window.G1000_FMS = (function () {
       // Direct-To in force: { from: {lat, lon}, to: id, index: its place
       // in the plan or null }.
       fpl: { wpts: [], active: null, dto: null },
+      // The Flight Plan Catalog: stored plans, { wpts } each. Two local
+      // examples to start with; the real unit keeps what was stored.
+      catalog: [{ wpts: ['KPAE', 'KAWO', 'KBVS'] }, { wpts: ['KBFI', 'KPAE', 'KBLI'] }],
       // The open window on each display: null, a Direct-To window
       // { type: 'dto', ident, pos, stage: 'ident' | 'activate' }, or the
       // flight plan { type: 'fpl', cursor, entry: {ident, pos} | null,
@@ -138,6 +142,45 @@ window.G1000_FMS = (function () {
       f.dto = null;
       f.active = i;
     }
+    // A Direct-To to a plan waypoint keeps its place when the plan
+    // changes; one to a waypoint outside it carries on.
+    const replanDto = (f, index) => { if (f.dto) f.dto.index = index; };
+    // Cancel Direct-To NAV: back to the plan's leg to the same waypoint,
+    // or its first leg, or no leg at all.
+    function cancelDirect() {
+      const f = F().fpl, i = f.dto?.index;
+      f.dto = null;
+      f.active = f.wpts.length < 2 ? null : i != null && i >= 1 ? i : 1;
+    }
+    // The whole plan reversed, flown from its first leg.
+    function invertPlan() {
+      const f = F().fpl, n = f.wpts.length;
+      f.wpts.reverse();
+      replanDto(f, f.dto?.index != null ? n - 1 - f.dto.index : null);
+      if (!f.dto) f.active = n >= 2 ? 1 : null;
+    }
+    function deletePlan() {
+      const f = F().fpl;
+      f.wpts = [];
+      f.active = null;
+      replanDto(f, null);
+    }
+    // A copy into the catalog's first free place; its index, or null when
+    // full (99 plans).
+    function storePlan() {
+      const cat = F().catalog;
+      if (cat.length >= 99) { note('Flight plan catalog full'); return null; }
+      cat.push({ wpts: F().fpl.wpts.slice() });
+      return cat.length - 1;
+    }
+    // A stored plan becomes the active one, from its first leg.
+    function activatePlan(wpts) {
+      const f = F().fpl;
+      f.wpts = wpts.slice();
+      f.dto = null;
+      f.active = f.wpts.length >= 2 ? 1 : null;
+    }
+    const deleteAllStored = () => { F().catalog = []; };
 
     // ---- Character entry, shared by both windows ----
     function editChar(e, steps) {
@@ -170,13 +213,6 @@ window.G1000_FMS = (function () {
           return true;
         case 'ent': return win ? ent(win, display) : false;
         case 'clr': return win ? clr(win, display) : false;
-        case 'menu':
-          if (win?.type !== 'fpl' || win.cursor == null) return false;
-          if (win.cursor >= 1 && win.cursor < F().fpl.wpts.length) {
-            const i = win.cursor;
-            win.prompt = { text: `Activate leg to ${F().fpl.wpts[i]}?`, action: () => activateLeg(i) };
-          } else note('Pick a waypoint after the first to activate the leg to it');
-          return true;
         case 'proc':
           note('PROC: procedures are not in the mock yet');
           return true;
@@ -281,7 +317,7 @@ window.G1000_FMS = (function () {
     }
 
     return { fresh, press, turn, push, step, navSolution, leg, rows, match, byId, SCALE, directTo, insert, remove,
-      activateLeg, editChar, moveCursor };
+      activateLeg, cancelDirect, invertPlan, deletePlan, storePlan, activatePlan, deleteAllStored, editChar, moveCursor };
   }
 
   return { create, CHARS };

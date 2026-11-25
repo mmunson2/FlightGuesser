@@ -9,7 +9,8 @@
 // logic (FD/AP, ROL PIT HDG ALT VS FLC NAV APR, ALTS capture, NOSE UP/DN),
 // through js/g1000-fms.js the flight plan, Direct-To and GPS legs, and
 // through js/g1000-pages.js the MFD's page groups and the PFD's Nearest
-// window. What it doesn't: VNAV, procedures and GPS approaches, LOC/GS,
+// window, and through js/g1000-menu.js the MENU key's Page Menus and Map
+// Setup. What it doesn't: VNAV, procedures and GPS approaches, LOC/GS,
 // the MFD's IFR and setup pages, failures, wind. Headings, bugs, courses
 // and bearings are magnetic (see magVarAt); the simulation underneath is
 // true. The airplane is a few lines of kinematics, not a flight model.
@@ -64,6 +65,10 @@ window.G1000 = (function () {
     'xpdr-code': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mfd: [0], engine: [0, 1, 2, 10],
   };
 
+  // Map symbol sizes (Map Setup shows each up to its own range): by the
+  // longest runway, large from 8,100 ft, medium from 5,000 ft.
+  const airportSize = (ap) => { const len = ap.runways[0]?.len ?? 0; return len >= 8100 ? 'L' : len >= 5000 ? 'M' : 'S'; };
+
   // Map ranges (NM), as the RANGE knob steps them.
   const RANGES = [1, 1.5, 2.5, 4, 5, 7.5, 10, 15, 25, 40, 50, 75, 100];
 
@@ -99,7 +104,11 @@ window.G1000 = (function () {
   const pages = G1000_PAGES.create({
     state, bearingDist, waypoints: WAYPOINTS, fms, note: (text) => note(text),
     tas: () => tas(), fuelFlow: () => fuelFlow(), toMag: (t) => toMag(t),
+    openMenu: () => menus.open('mfd'),
   });
+  // The MENU key's Page Menu and Map Setup windows (js/g1000-menu.js), in
+  // state.pageMenu; the map's settings in state.mapSet.
+  const menus = G1000_MENU.create({ state, fms, pages, note: (text) => note(text), ranges: RANGES });
   function reset() {
     Object.assign(state, {
       t: 0,
@@ -128,6 +137,7 @@ window.G1000 = (function () {
       // A line of text for the last thing the mock can't do yet.
       note: null,
       fms: fms.fresh(),
+      pageMenu: menus.fresh(), mapSet: menus.freshMap(),
     });
     state.afcs.ref.alt = state.trueAlt;
     // Northbound means 340° magnetic: the true heading carries the
@@ -247,11 +257,13 @@ window.G1000 = (function () {
   };
 
   // ---- Keys, knobs and softkeys ----
-  // Keys for whatever has the display: the MFD's FPL key changes page;
+  // Keys for whatever has the display: an open Page Menu or Map Setup
+  // first (MENU opens the Page Menu); the MFD's FPL key changes page;
   // the PFD's Nearest window and the MFD's page cursors take ENT and CLR;
   // the rest (D→, FPL, PROC, and ENT/CLR/MENU in an FMS window) go to
   // js/g1000-fms.js, D→ offering what the page shows. True when handled.
   function windowKey(key, display) {
+    if (['ent', 'clr', 'menu', 'fpl', 'direct_to', 'proc'].includes(key) && menus.press(key, display)) return true;
     const win = state.fms.win[display];
     if (display === 'mfd' && key === 'fpl' && win?.type !== 'dto') { pages.fplKey(); return true; }
     if (display === 'pfd' && win?.type === 'nrst' && (key === 'ent' || key === 'clr')) return pages.pfdInput(key);
@@ -295,8 +307,8 @@ window.G1000 = (function () {
       case 'clr':
         if (state.menus[display].length > 1) state.menus[display].pop();
         return;
-      case 'menu': case 'ent':
-        return note(key.toUpperCase() + ': nothing to do here in the mock (open FPL or D→)');
+      case 'ent':
+        return note('ENT: nothing to do here in the mock (open FPL or D→)');
       default:
         if (key.startsWith('softkey:')) return softkey(display, Number(key.slice(8)));
     }
@@ -396,8 +408,9 @@ window.G1000 = (function () {
         return;
       }
       case 'fms': {
-        // The PFD's Nearest window; on the MFD with no FMS cursor out, the
+        // An open Page Menu or Map Setup; the PFD's Nearest window; on the MFD with no FMS cursor out, the
         // pages; else the open FMS window.
+        if (menus.turn(part, steps, display)) return;
         const win = state.fms.win[display];
         if (display === 'pfd' && win?.type === 'nrst') return pages.pfdInput('turn', steps);
         if (display === 'mfd' && (!win || (win.type === 'fpl' && win.cursor == null))) return pages.turn(part, steps);
@@ -425,6 +438,7 @@ window.G1000 = (function () {
       case 'nav_volume': return note('NAV ID: not in the mock');
       case 'range': return note('Map pan: not in the mock yet');
       case 'fms': {
+        if (menus.push(display)) return;
         const win = state.fms.win[display];
         if (display === 'pfd' && win?.type === 'nrst') return pages.pfdInput('push');
         if (display === 'mfd' && !win) return pages.push();
@@ -558,7 +572,7 @@ window.G1000 = (function () {
   return {
     state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, WA_SOURCE: WA_NAV.source, magVarAt, toMag, toTrue,
     // The airplane's magnetic heading, as the HSI shows it.
-    magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, fuelFlow,
+    magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, airportSize, fuelFlow,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, tas, navModeName,
     tick(dt) {
       // Big gaps (a background tab) are skipped, small steps keep it stable.

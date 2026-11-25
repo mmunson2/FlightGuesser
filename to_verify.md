@@ -59,9 +59,8 @@ the GFC 700 AFMS:
     It defaults to the active waypoint.
   - In the FPL, push FMS for the cursor. The small knob inserts a
     waypoint before the selected row.
-  - CLR on a waypoint asks "Remove?". MENU on a waypoint asks to activate
-    the leg to it. The real unit goes through a page menu for this; the
-    mock asks directly.
+  - CLR on a waypoint asks "Remove?". Activate Leg is in the Page Menu
+    (below).
   - The first leg becomes active by itself once the plan has two
     waypoints. Check what the real unit does.
   - A Direct-To to a waypoint in the plan continues with the plan after
@@ -75,14 +74,59 @@ the GFC 700 AFMS:
   - The FPL key toggles the Active Flight Plan page and back.
   - Page names follow the NXi's MFD in MSFS 2020.
   - Working: Navigation Map, Airport Information, VOR Information, Trip
-    Planning, Utility, Active Flight Plan, Nearest Airports, Nearest VOR.
+    Planning, Utility, Active Flight Plan, Flight Plan Catalog, Nearest
+    Airports, Nearest VOR.
     The other pages are placeholders.
-  - Airport Information has no runways, frequencies or elevation: the
-    mock's database doesn't hold them.
   - ENT on Nearest Airports opens that airport's information page.
   - ENT on Nearest VOR loads the frequency into the tuned NAV's standby.
   - Check both ENT behaviours against the real unit, which may go through
     a frequency field.
+- **Page Menu (MENU key)** (js/g1000-menu.js):
+  - MENU opens a PAGE MENU window of the page's or window's options.
+    Either FMS knob moves the cursor (the guide may say the large knob
+    only). ENT picks an option. CLR, MENU or an FMS push closes it.
+  - The cursor starts on the first option that works. Options that are
+    greyed out can be highlighted, and ENT says why they don't work.
+    Check whether the real cursor skips them.
+  - Options that change or delete something ask first (ENT: OK, CLR:
+    back). The question wording is mine.
+  - A page with no options shows "No options with this page". That
+    includes the PFD with no window open and every page not listed below.
+    Check the real menus of Airport Information, Trip Planning and
+    Nearest.
+  - Active Flight Plan (both displays): Activate Leg, Invert Flight Plan,
+    Delete Flight Plan and Store Flight Plan work. Closest Point of FPL,
+    Parallel Track and Select Departure/Arrival/Approach are grey. The
+    real list is longer (Insert Before/After, Change Fields, airways), and
+    its order is from memory.
+  - Invert flies the reversed plan from its first leg. Delete keeps a
+    Direct-To to a waypoint outside the plan.
+  - Direct-To window: Cancel Direct-To NAV. It goes back to the plan's
+    leg to the same waypoint, or else the first leg.
+  - Navigation Map: Map Settings works. Measure Bearing/Distance and
+    Show Chart are grey.
+  - Utility: Reset Trip Statistics, Reset Odometer, Reset Flight Timer
+    and Reset All. The page now shows the odometer and the trip figures
+    (odometer, average and maximum ground speed) separately. Check the
+    names.
+  - Flight Plan Catalog (FPL group, second page): push FMS for the
+    cursor. ENT or MENU on a plan gives Activate Flight Plan, Invert &
+    Activate FPL, Delete Flight Plan and Delete All. On the real unit, ENT
+    opens the stored plan to view or edit it. The catalog starts with
+    two example plans (KPAE–KAWO–KBVS and KBFI–KPAE–KBLI). A real unit
+    keeps whatever was stored.
+- **Map Setup** (Navigation Map, MENU, Map Settings):
+  - The large knob moves between the GROUP line and the settings. The
+    small knob changes the value straight away. The real unit opens a
+    list and takes ENT.
+  - Groups: Map (Orientation: Heading/Track/North Up; Nav Range Ring)
+    and Aviation (Active FPL, Large/Medium/Small APT, VOR, each the
+    largest map range at which it shows).
+  - Heading Up and Track Up look the same because there's no wind.
+  - Airport size goes by the longest runway: large from 8,100 ft, medium
+    from 5,000 ft. Check the thresholds and whether hard surface counts.
+  - The defaults (100 NM, small airports 50 NM) are scaled to the mock's
+    100 NM maximum. The real ones are larger.
 - **PFD Nearest softkey**: opens a Nearest Airports window. Push FMS for
   the cursor; D→ offers the selection.
 - **Fuel**: 48 gal usable at start, burning at a made-up fuel flow (from
