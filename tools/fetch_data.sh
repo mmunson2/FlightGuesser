@@ -9,6 +9,8 @@
 #   ...Textures/*.png the G1000 and panel textures, for tools/labels.py
 #   schematics/*.pdf  the maintenance manual, POH, Lycoming parts catalog and
 #                     operator manual the extras are drawn from
+#   sky/*.jpg         the viewer's sky, Poly Haven's "Kloofendal 48d Partly
+#                     Cloudy (Pure Sky)" (CC0), tonemapped JPG (build/sky.py)
 #   nasr/*_CSV.zip    the FAA's NASR 28-day subscription (APT, FRQ, NAV),
 #                     for build/wa_nav.py (NASR_DATE)
 #   airspace/wa-class-airspace.geojson  the FAA ADDS Class Airspace layer cut
@@ -56,6 +58,7 @@ for f in GDU-1044B.1.xml GDU-1040.2.xml Model/GDU-104X.1.gltf Model/GDU-104X.1.b
   get "$FG/$f" "$DATA/c172p/fgdata/GDU104X/$f"
 done
 get "https://aeronav.faa.gov/d-tpp/$CYCLE/00142AD.PDF" "$DATA/kpae/00142AD_$CYCLE.pdf"
+get "https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/kloofendal_48d_partly_cloudy_puresky.jpg" "$DATA/sky/kloofendal_48d_partly_cloudy_puresky.jpg"
 # Drawings the extras (build/extras.py) are placed from: read by rendering
 # pages, not by the build.
 S=$DATA/schematics

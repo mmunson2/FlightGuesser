@@ -532,51 +532,80 @@ drains, static port, static wicks, OAT probe, stall warning, G1000 units and eng
 not most sizes, so check against your airplane:
 
 - **Static port**: the manual and POH say left side of the fuselage, ahead
-  of the door (the POH checks it at the nose). Its height is my guess.
+  of the door (the POH checks it at the nose). Drawn at FS 20, just ahead
+  of the forward door post; the station and height are my guesses.
 - **Fuel strainer**: on the front lower left of the firewall, its drain
   through the bottom of the cowling. The POH says "bottom of fuselage".
 - **Wing sump drains**: five per tank, placed from the manual's
-  under-wing drawing (between wing stations 23.62 and 71.62). The front
-  spar position is an estimate.
-- **Main battery** sizes, the **power junction box** above it, and the
-  **standby battery** behind the panel's upper left.
-- **Engine mount** tube layout: the manual shows four firewall bolts only.
+  under-wing drawing, inside the fuel bay. The front spar position is an
+  estimate.
+- **Main battery** sizes, the **power junction box** directly above it at
+  the firewall's outboard edge (with the external power receptacle), and
+  the **standby battery** behind the PFD (POH arm 11.2, 2026-11-25).
+- **Engine mount**: a triangulated frame with a dynafocal cup at each
+  engine mount (MM 71-20-00 Figs. 201, 202). The four firewall bolt spots
+  are estimates.
 - **Brake lines**: the manual shows them under the floor and out the
   skin to each gear leg; the exact routing is simplified.
 - **Fuel system under the floor** (MM 28-20-00 Figs. 201, 204, 206): the
   reservoir under the copilot's footwell, the selector valve under the
   pedestal, the auxiliary pump and shutoff valve between the reservoir and
-  the firewall. Sizes and exact spots are estimates; the supply lines are
-  drawn one per tank down the front door posts (the manual shows two
-  outlets per tank).
-- **G1000 units**: the tailcone shelf (GIA 63 ×2, GTX 33, GRS 77, GDC 74A,
-  fan) is drawn at FS 142–157 from the manual's picture; the station is my
-  estimate. Unit sizes are estimates. The GEA 71 sits under the MFD,
-  forward of the panel. The GMU 44 magnetometer is in the left wing above
-  access plate 520HB; its wing station (115) is read off the access panel
-  drawing.
+  the firewall. Since 2026-11-25: two supply lines per tank (the forward
+  outlet down the front door post (following the post's rake up to the
+  front spar; until 2026-11-25 it ran up the windshield's edge), the aft one down the rear door post and
+  forward under the floor); the return line from the fuel servo to the
+  reservoir with its check valve (POH Fig. 7-6); the shutoff valve by the
+  copilot's pedals; a taller, longer reservoir. Sizes and exact spots are
+  estimates. The selector valve sits straight under its handle; the
+  manual's floor plate (230FT) may put it 3–5 in further forward.
+- **G1000 units** (moved 2026-11-25 to the POH equipment list's arms,
+  Fig. 6-9): the GIA 63s and GTX 33 on edge at FS 107–120 (GIA arm
+  113.3), above baggage area 2; the fan in a plenum at the rack's left end
+  (arm 109.0); the GRS 77 and GDC 74A side by side aft of the rack, at FS
+  128–136 (GRS arm 134.0; the list gives the GDC 74A 11.4, which looks
+  copied from the GEA 71). Unit sizes are estimates. The GEA 71 sits under
+  the MFD, forward of the panel. The GMU 44 magnetometer is in the left
+  wing at WS 122 (access plate 520HB) and FS 52.7 (POH arm).
 - **Stall warning**: the scoop at WS 91 on the left wing's leading edge
-  (the manual's number); the horn at the upper left door post.
-- **Engine accessories**: oil cooler on the left rear baffle, starter at the
-  front lower left (both from the manual's text), oil filter and vacuum pump
-  on the accessory housing. Each sits at the nearest spot clear of the CAD
-  engine's own parts, so the starter is farther out than a real one and the
-  cooler sits a little high and aft. The filter and pump positions on the
-  housing are my reading of Lycoming's parts catalog, not measured.
+  (the manual's number); the reed horn inside the wing root above the
+  left door post, out of sight (the student, 2026-11-25: no horn shows in
+  the 172S cockpit; the manual installs it "into the wing through the
+  upper door post shield").
+- **Engine accessories**: oil cooler on the left rear baffle (a vertical
+  core about 7 × 7 × 2.5 in, since 2026-11-25), starter at the front lower
+  left (both from the manual's text), oil filter and vacuum pump on the
+  accessory housing, and the starter ring gear behind the spinner (held to
+  FlightGear's spinner size, smaller than a real one). The filter and pump
+  positions on the housing are my reading of Lycoming's parts catalog, not
+  measured; which pad the vacuum pump uses isn't settled.
+- **Engine on the propeller axis** (2026-11-25): the crankshaft was 1.9 in
+  below FlightGear's spinner. It is now on the spinner's axis. The cowling
+  has no room to raise the whole engine, so the CAD engine is squeezed
+  above the crankshaft and stretched below it within its old outline.
 - **Fuel tanks** (2026-11-25): each wing's fuel bay fills the wing between
-  the skins from WS 23.62 to 71.62 (the manual's numbers), from the front
-  spar to a rear spar 26 in aft of it (my estimate). One **fuel quantity
+  the skins from WS 31.38 to 65.125 (the manual's text; its drawing's 23.62
+  and 71.62 are the skin panel's ends), from the front spar to a rear spar
+  26 in aft of it (my estimate). FlightGear's wing is thinner and shorter
+  in chord than a real one, so the drawn bay holds about 15 gal, not 28. One **fuel quantity
   sender** per tank, drawn on the bay's inboard rib; the manual's sender
   drawing is the non-G1000 one, so check the count and spot.
-- **Static wicks**: two at the outboard trailing edge of each aileron and
-  elevator and two at the top of the rudder, as the manual's drawing
-  shows. Their length (13 cm) and spacing are estimates.
-- **OAT probe**: on the cabin roof at FS 46.46, from the manual's non-G1000
-  OAT section (the G1000 probe feeds the air data computer; the manual
-  doesn't say where it is). Drawn on the centreline; check the spot.
+- **Static wicks**: two at the outboard end of each aileron (close
+  together) and each elevator half (the inner one about 19 in in), and two
+  on the rudder (near its top and low), as the manual's drawing shows.
+  Their length (13 cm) is an estimate.
+- **OAT probe**: on the cabin roof at FS 41.5, the POH arm for the G1000's
+  GTP 59 probe (the manual's FS 46.46 is the older probe's). Drawn on the
+  centreline; check the spot.
 - **Wing struts, nose gear torque links, rudder cables** are FlightGear's
   shapes, now separate parts (they were part of the fuselage, nose strut
   and rudder). The rudder cables are only the stubs at the tail.
+- **FlightGear corrections** (2026-11-25, `geometry_audit.md`): the landing
+  gear moved 6.3 in aft to the POH's wheel arms (main 58.2, nose −6.8);
+  the cowling's old strut opening is closed and a new one cut in the belly
+  where the strut now passes. The wings are 5 in shorter per side, to the
+  172S's 36 ft 1 in span. The transponder antenna moved aft to its POH
+  arm (FS 86.3). FlightGear's belly ADF antenna is dropped (the POH lists
+  the ADF as optional; the student's airplane has none, 2026-11-25).
 - **Engine size and the dipstick** (2026-11-25): the CAD engine was ~11%
   short of the IO-360-L2A (Lycoming: 29.81 in long, 33.37 wide; the older
   notes had read the IO-360-B1C's row). It is now stretched to those, its
@@ -590,15 +619,14 @@ not most sizes, so check against your airplane:
 - **Induction air** (MM 71-60-00 Fig. 201): the filter in the chin inlet
   under the spinner, the filter box behind it, and the duct under the
   muffler to the elbow under the fuel servo. The alternate air door is
-  drawn on top of the filter box; the manual's drawing doesn't make its
-  side clear. Sizes are estimates.
-- **Nose gear mounting** (MM 32-20-00 Fig. 202): FlightGear's strut stopped
-  about 17 cm ahead of the firewall with nothing holding it. Its barrel
-  now runs up into an upper fitting, with a clamp below, both braced
-  back to plates on the firewall. That gap may mean FlightGear's strut
-  sits too far forward. The shimmy damper is drawn on the left of the
-  strut, and the steering tubes run from the collar through the firewall
-  to the rudder bars. Their sides, sizes and the bar ends are estimates.
+  on the filter box's aft wall beside the duct (the manual's Detail A).
+  Sizes are estimates.
+- **Nose gear mounting** (MM 32-20-00 Fig. 202): with the gear at the
+  POH's arms, the strut's top meets the firewall in an upper fitting, with
+  the clamp and bottom fitting below it. The shimmy damper is on the
+  strut's right side (the manual's drawing), from the steering collar's
+  arm up to a lug; the steering tubes run from the collar through the
+  firewall to the rudder bars. Sizes and the bar ends are estimates.
 - **Belly fuel drains**: the fuel reservoir, selector valve and strainer
   quick drains are separate parts now, each straight below its
   component. The POH names all three. The manual shows the reservoir and
@@ -607,13 +635,18 @@ not most sizes, so check against your airplane:
   selector drains; `ap-strainer-drain` now asks for the strainer's drain.
 - **Flight control cables** (MM chapter 27, each system's Fig. 201): the
   routes follow the manual's drawings, but it gives no pulley stations,
-  so every bend is placed by eye. Aileron cables run down the column,
-  along the floor, up the front door posts and out just aft of the
-  fuel bays, with the carry-thru across the cabin top. Elevator and trim
-  cables run under the floor and up the tailcone, and the rudder cables
-  run to FlightGear's stubs at the tail. The trim actuator is in the
-  right stabilizer ahead of the tab. The GEA 71 moved up 7 cm to clear the
-  control column.
+  so the pulleys sit at the bulkheads each drawing shows. The control
+  column is a U whose arms drop from the wheel shafts to a cross tube with
+  the aileron cable drum. Aileron cables run down from the drum, aft under
+  the floor, outboard and up the rear door posts (2026-11-25; they had
+  gone up the front posts), and out the rear spar to the bellcranks on
+  the bottom wing skin, whose push rods reach the ailerons; the carry-thru
+  runs across the cabin top. Elevator cables run under the floor and up
+  the tailcone to the aft bellcrank on the elevators' hinge line. Trim
+  cables climb to mid-height at the FS 178 bulkhead and cross to the
+  actuator in the right stabilizer. Rudder cables run beside the
+  centreline to FlightGear's stubs at the tail. Cables are drawn about
+  twice their real 1/8 in so they can be seen.
 - **Engine fuel parts from the CAD model**: the fuel manifold (spider) on
   top, the four injector lines, the servo under the engine and the lines
   between them were fused into the crankcase and servo solids; they are

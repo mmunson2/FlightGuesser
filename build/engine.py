@@ -108,6 +108,12 @@ FLANGE_Z = 952.0
 SPINNER = (0.0, -0.1, 1.66)
 REF_SCALE = 0.0008
 FIT = np.array([33.37 / 31.05, 1.0, 29.81 / 27.33])
+# The crankshaft goes on the spinner's axis (FlightGear's spinner and
+# propeller turn about y = AXIS_Y; REF_SCALE's axis is SPINNER's y). The
+# FlightGear cowling's top has no room for raising the whole engine, so the
+# engine keeps its envelope (top TOP_Y, bottom BOTTOM_Y): above the axis it
+# is squeezed, below it stretched.
+AXIS_Y, TOP_Y, BOTTOM_Y = -0.052, 0.1346, -0.4177
 
 
 def weld(v, f, cell):
@@ -131,8 +137,14 @@ def to_ref(v):
 
 
 def ref_to_scene(p):
-    """A point (or points) in the REF_SCALE frame -> the scene, at FIT."""
-    return np.array(SPINNER) + (np.asarray(p, dtype=np.float64) - SPINNER) * FIT
+    """A point (or points) in the REF_SCALE frame -> the scene, at FIT,
+    the crankshaft on AXIS_Y."""
+    q = np.array(SPINNER) + (np.asarray(p, dtype=np.float64) - SPINNER) * FIT
+    d = q[..., 1] - SPINNER[1]
+    up = (TOP_Y - AXIS_Y) / (TOP_Y - SPINNER[1])
+    down = (AXIS_Y - BOTTOM_Y) / (SPINNER[1] - BOTTOM_Y)
+    q[..., 1] = AXIS_Y + np.where(d > 0, d * up, d * down)
+    return q
 
 
 def to_scene(v):
