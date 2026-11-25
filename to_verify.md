@@ -20,6 +20,47 @@ left edge. Still open:
 - The glide distance of about 1.5 NM per 1,000 ft (`am-glide-ratio`). This
   POH's maximum glide chart is an image.
 
+## The G1000 mock (js/g1000.js)
+
+The live PFD/MFD and Operate mode follow the G1000 NXi and GFC 700 as I
+remember the pilot's guides. Softkey labels and the radio boxes' layout
+were checked against the NXi in MSFS 2020. Check the rest against
+Garmin's *G1000 NXi Pilot's Guide for the Cessna 172* (190-02520-xx) and
+the GFC 700 AFMS:
+
+- **GFC 700 logic**:
+  - The FD comes on in ROL and PIT. ROL holds the bank if it is over 6°,
+    and levels the wings if it is less.
+  - The FD can't be turned off while the AP is engaged.
+  - Pressing an active mode key returns to ROL or PIT.
+  - A mode change flashes for 10 seconds.
+  - AP disconnect flashes a yellow "AP" for about 5 seconds.
+- **NOSE UP/DN steps**: 0.5° in PIT, 100 fpm in VS, 1 kt in FLC (where
+  nose up means slower). In ALT the keys do nothing in the mock.
+- **Limits in the mock**: bank 22° in HDG and NAV, pitch −10° to +15°,
+  VS ±1,500 fpm, FLC 55–120 KIAS. All are guesses.
+- **ALTS**:
+  - Arms in PIT, VS and FLC when the selected altitude is ahead.
+  - The capture lead is |VS| ÷ 5 ft.
+  - The real GFC 700 shows ALTS green during the capture, then ALT. Check
+    those annunciations.
+- **Altitude alerter**:
+  - The box flashes 5 seconds at 1,000 ft out and again at 200 ft.
+  - It turns yellow when off by more than 200 ft after reaching the
+    altitude.
+  - The aural alert isn't modelled.
+- **NAV capture**:
+  - Arms when off course by 7° or more.
+  - Intercepts at up to 45°.
+  - VOR full scale is 10°, at 2 dots.
+- **Volume**: turning a volume knob shows a percentage in place of the
+  standby frequency for 2 seconds.
+- **Stations**: PAE VOR 110.6 and SEA VORTAC 116.8, and the airport
+  positions on the MFD map, are approximate.
+- **Simplified**:
+  - The EIS numbers and the airplane's kinematics are made up.
+  - There is no wind, and headings are true (no magnetic variation).
+
 ## The engine model
 
 The engine is a generic four-cylinder CAD model, not a true IO-360. The 15

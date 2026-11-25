@@ -108,6 +108,15 @@
     });
   }
   const meshById = Object.fromEntries(meshes.map((m) => [m.userData.part.id, m]));
+  // The mock G1000 (js/g1000-panel.js): live screens, and in Operate mode
+  // the keys and knobs work. A pressed key lights for a moment.
+  const avionics = G1000_PANEL.attach({
+    THREE, scene, camera, renderer, meshes, meshById,
+    flash(mesh) {
+      paint(mesh, HIGHLIGHT);
+      setTimeout(() => paint(mesh, selection.includes(mesh) ? HIGHLIGHT : null), 150);
+    },
+  });
   // Parts made of several (GROUPS in build/aircraft.py): both ailerons, the
   // three nav lights. A group id works wherever a part id does in a question.
   const GROUPS = SCENE_DATA.groups;
@@ -203,6 +212,28 @@
 
   undoBtn.addEventListener('click', undo);
   unhideAllBtn.addEventListener('click', unhideAll);
+
+  // Operate mode: clicks and scrolling work the G1000 instead of naming
+  // parts (other parts still select). Reset puts the flight back.
+  const operateBtn = document.getElementById('operate');
+  const resetBtn = document.getElementById('g1000-reset');
+  function setOperate(on) {
+    avionics.setOperate(on);
+    operateBtn.classList.toggle('on', on);
+    operateBtn.setAttribute('aria-pressed', on);
+    resetBtn.hidden = !on;
+    if (on) select(null);
+    else picked.textContent = selection.length ? picked.textContent : t('viewer.none');
+  }
+  operateBtn.addEventListener('click', () => {
+    setOperate(!avionics.operating);
+    if (avionics.operating) {
+      goView('panel');
+      picked.textContent = t('operate.hint');
+    }
+  });
+  resetBtn.addEventListener('click', () => avionics.reset());
+  avionics.onTurn((said) => { picked.textContent = said; });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !controlsEl.hidden) { closeControls(); return; }
     if (e.target.matches('input, select, textarea') || !startEl.hidden || !doneEl.hidden
@@ -264,6 +295,9 @@
       const mesh = meshAt(e, (p) => !p.glass);
       if (mesh) hide([mesh]);
     } else if (e.button === 0) {
+      // Operating, a click on a G1000 or autopilot control works it.
+      const said = !quizOn && avionics.click(e);
+      if (said) { picked.textContent = said; return; }
       const mesh = meshAt(e, (p) => p.kind === 'target');
       // Once an answer is in, the marks stay put until Next; and a name
       // question can't be picked at all, since picking shows the name.
@@ -595,6 +629,9 @@
     quizOn = on;
     quizEl.hidden = !on;
     newQuizBtn.hidden = on;
+    // Clicks are the quiz's while it runs.
+    if (on) setOperate(false);
+    operateBtn.hidden = on;
     select(null);
     clearMarks();
     unhideAll();
@@ -779,7 +816,7 @@
   resize();
 
   goView(Object.keys(SCENE_DATA.views)[0]);
-  renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+  renderer.setAnimationLoop(() => { controls.update(); avionics.tick(); renderer.render(scene, camera); });
   showStart();
 
   // For tools/check.py and tools/shot.py, which drive the page headless.
@@ -787,7 +824,7 @@
   window.FLIGHT_DEBUG = {
     THREE, renderer, camera, controls, nameKey, nameMatches, GRADE, namePromptKey, settings,
     meshes: () => meshes, meshById: () => meshById, meshesOf, GROUPS, askable,
-    showDiagram, goView, explore, question: () => question,
+    showDiagram, goView, explore, question: () => question, avionics, setOperate,
     select: (id) => setSelection(meshesOf(id)),
     solo: (systems) => {
       unhideAll();
