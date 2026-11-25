@@ -52,17 +52,23 @@ window.G1000_DISPLAY = (function () {
       const src = s.cdi === 'VOR' + (i + 1);
       text(ctx, n.act.toFixed(2), 210, y, { size: 24, color: src ? C.green : C.white });
       text(ctx, navLabel(i), 300, y, { size: 18, color: C.grey });
+      // NAV ID (volume knob push): the Morse identifier is on.
+      if (s.vol.navId[i]) text(ctx, 'ID', 350, y, { size: 16 });
     }
     // COM, top right: active (inside) then standby (outside, by the knob).
+    // The active frequency is green on the COM the audio panel transmits on
+    // (COM MIC).
     for (let i = 0; i < 2; i++) {
       const y = 20 + i * 32, c = s.com[i];
-      const tuning = s.comTune === i;
-      text(ctx, c.act.toFixed(3), 660, y, { size: 24, color: tuning ? C.green : C.white });
+      const tuning = s.comTune === i, tx = G.gma.transmitting() === i + 1;
+      text(ctx, c.act.toFixed(3), 660, y, { size: 24, color: tx ? C.green : C.white });
       text(ctx, '↔', 778, y, { size: 22, color: tuning ? C.cyan : C.grey });
       const vol = s.vol.show && s.vol.show.kind === 'com' && s.vol.show.i === i && s.t < s.vol.show.until;
       if (tuning) box(ctx, 802, y - 14, 112, 28, { fill: 'transparent', stroke: C.cyan });
       text(ctx, vol ? `${s.vol.com[i]}%` : c.stby.toFixed(3), 808, y, { size: 24, color: tuning ? C.cyan : C.white });
       text(ctx, 'COM' + (i + 1), 1016, y, { size: 22, align: 'right' });
+      // Squelch off (volume knob push).
+      if (s.vol.sqOff[i]) text(ctx, 'SQ', 930, y, { size: 14, align: 'center', color: C.white });
     }
   }
 
@@ -74,7 +80,8 @@ window.G1000_DISPLAY = (function () {
     const nav = G.navSolution('GPS');
     const from = l.direct ? 'D→' : l.fromId + ' →';
     text(ctx, `${from} ${l.to.id}`, 495, 20, { size: 21, align: 'center', color: C.magenta });
-    text(ctx, `DIS ${nav.dist.toFixed(1)}NM  DTK ${pad3(nav.course)}°`, 495, 52, { size: 18, align: 'center' });
+    // (No solution with LOI: dashes.)
+    text(ctx, nav ? `DIS ${nav.dist.toFixed(1)}NM  DTK ${pad3(nav.course)}°` : 'DIS __._NM  DTK ___°', 495, 52, { size: 18, align: 'center' });
   }
 
   // ---- FMS windows (js/g1000-fms.js): Direct-To and the flight plan ----
@@ -109,13 +116,36 @@ window.G1000_DISPLAY = (function () {
     text(ctx, 'ACTIVATE?', x + w / 2, y + 185, { size: 20, align: 'center', color: on ? C.black : C.cyan });
   }
 
+  // One flight plan data field for a row (js/g1000-fms.js rows()): DTK,
+  // DIS and ETE are the leg's; CUM the plan's so far; ETA and FUEL (left
+  // on arrival) from the airplane along the route, at the present ground
+  // speed and fuel flow, for the active waypoint and those after it.
+  const hhmm = (h) => `${Math.floor(h)}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+  function fplField(fd, r, s, G) {
+    const gs = Math.max(G.gs(), 30);
+    switch (fd) {
+      case 'DTK': return r.dtk == null ? '' : pad3(r.dtk) + '°';
+      case 'DIS': return r.dis == null ? '' : r.dis.toFixed(1);
+      case 'CUM': return r.dis == null ? '' : r.cum.toFixed(0);
+      case 'ETE': return r.dis == null ? '' : hhmm(r.dis / gs);
+      case 'ETA': {
+        if (r.toGo == null) return '__:__';
+        const d = new Date(s.t * 1000 + (r.toGo / gs) * 3600000 + Date.UTC(2026, 0, 1, 17, 0, 0));
+        return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+      }
+      case 'FUEL': return r.toGo == null ? '___' : (s.fuel - G.fuelFlow() * (r.toGo / gs)).toFixed(1);
+    }
+    return '';
+  }
+
   function fplWindow(ctx, s, G, win, x, y, w, h) {
     box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
     text(ctx, 'ACTIVE FLIGHT PLAN', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
     const cols = [x + 40, x + w * 0.45, x + w * 0.7, x + w - 12];
-    text(ctx, 'DTK', cols[1], y + 48, { size: 15, align: 'right', color: C.grey });
-    text(ctx, 'DIS', cols[2], y + 48, { size: 15, align: 'right', color: C.grey });
-    text(ctx, 'CUM', cols[3], y + 48, { size: 15, align: 'right', color: C.grey });
+    // The three data columns (Change Fields).
+    const fields = [s.fms.fields.f1, s.fms.fields.f2, s.fms.fields.f3];
+    fields.forEach((fd, k) => text(ctx, fd, cols[k + 1], y + 48, { size: 15, align: 'right', color: C.grey }));
+    if (s.fms.insertAfter) text(ctx, 'INSERT AFTER', x + 10, y + 48, { size: 12, color: C.grey });
     const rows = G.fms.rows();
     const rowH = 30, top = y + 76;
     const maxRows = Math.floor((h - 90 - (win.prompt ? 40 : 0)) / rowH);
@@ -135,12 +165,8 @@ window.G1000_DISPLAY = (function () {
       const color = sel ? C.black : r.active ? C.magenta : C.white;
       if (r.active) text(ctx, s.fms.fpl.dto ? 'D→' : '➔', x + 6, ry, { size: 15, color: C.magenta });
       text(ctx, r.id, cols[0], ry, { size: 22, color });
-      if (r.dtk != null) {
-        const c = r.active ? C.magenta : C.white;
-        text(ctx, pad3(r.dtk) + '°', cols[1], ry, { size: 20, align: 'right', color: c });
-        text(ctx, r.dis.toFixed(1), cols[2], ry, { size: 20, align: 'right', color: c });
-        text(ctx, r.cum.toFixed(0), cols[3], ry, { size: 20, align: 'right', color: c });
-      }
+      const c = r.active ? C.magenta : C.white;
+      fields.forEach((fd, k) => text(ctx, fplField(fd, r, s, G), cols[k + 1], ry, { size: 20, align: 'right', color: c }));
     }
     if (win.prompt) {
       box(ctx, x + 10, y + h - 46, w - 20, 36, { fill: C.cyan, stroke: null });
@@ -174,10 +200,12 @@ window.G1000_DISPLAY = (function () {
     const rowH = 27, head = 78, foot = m.confirm ? 96 : 44;
     // (The PFD's stops below the baro box.)
     const pfd = display === 'pfd', maxH = pfd ? 280 : 560;
-    const h = m.type === 'map' ? 420 : Math.min(maxH, head - rowH / 2 + Math.max(2, m.items.length) * rowH + foot);
+    // A setup window: room for its longest group (PFD: from the baro box down).
+    const h = m.type === 'cpa' ? 220 : m.type === 'map' ? (pfd ? 286 : 420) : Math.min(maxH, head - rowH / 2 + Math.max(2, m.items.length) * rowH + foot);
     const [x, y, w] = pfd ? [640, 776 - h, 378] : [590, 106, 428];
     box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.97)', stroke: C.white });
     if (m.type === 'map') return mapSetup(ctx, s, G, m, x, y, w, h);
+    if (m.type === 'cpa') return cpaWindow(ctx, s, G, m, x, y, w, h);
     text(ctx, 'PAGE MENU', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
     text(ctx, 'OPTIONS', x + 14, y + 50, { size: 15, color: C.grey });
     if (!m.items.length) {
@@ -205,9 +233,26 @@ window.G1000_DISPLAY = (function () {
         { size: 14, align: 'center', color: C.grey });
     }
   }
-  // Map Setup: the GROUP line, then the group's settings.
+  // Closest Point of FPL: the reference waypoint being typed, then the
+  // point's bearing and distance from it.
+  function cpaWindow(ctx, s, G, m, x, y, w, h) {
+    text(ctx, 'CLOSEST POINT OF FPL', x + w / 2, y + 20, { size: 19, align: 'center', color: C.cyan });
+    text(ctx, 'REFERENCE WAYPOINT', x + 18, y + 54, { size: 15, color: C.grey });
+    identField(ctx, m.entry, x + 18, y + 88, G, !m.result);
+    const r = m.result;
+    if (r && r.lat != null) {
+      text(ctx, `BRG ${pad3(r.brg)}°  DIS ${r.dist.toFixed(1)}NM`, x + 18, y + 128, { size: 19 });
+      text(ctx, `on the leg ${s.fms.fpl.wpts[r.after]} → ${s.fms.fpl.wpts[r.after + 1]}`, x + 18, y + 156, { size: 16, color: C.grey });
+      text(ctx, 'ENT: save as a user waypoint · CLR: back', x + w / 2, y + h - 16, { size: 14, align: 'center', color: C.grey });
+    } else {
+      text(ctx, 'Small knob: character · ENT: find the point', x + w / 2, y + h - 16, { size: 14, align: 'center', color: C.grey });
+    }
+  }
+  // A setup window (Map Setup, PFD Map Setup, Change Fields): the GROUP
+  // line, then the group's settings.
   function mapSetup(ctx, s, G, m, x, y, w, h) {
-    text(ctx, 'MAP SETUP', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    const view = G.menus.setupView(m), rowH = h < 400 ? 24 : 32;
+    text(ctx, view.title, x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
     const fmt = (v) => (typeof v === 'number' ? `${v}NM` : v);
     const line = (label, value, ry, sel) => {
       text(ctx, label, x + 18, ry, { size: 18, color: C.grey });
@@ -216,12 +261,11 @@ window.G1000_DISPLAY = (function () {
       if (sel) box(ctx, x + w - 20 - tw - 8, ry - 13, tw + 16, 26, { fill: C.cyan, stroke: null });
       text(ctx, value, x + w - 20, ry, { size: 19, align: 'right', color: sel ? C.black : C.cyan });
     };
-    line('GROUP', G.menus.GROUPS[m.group].name, y + 60, m.cursor === -1);
+    line('GROUP', view.group, y + 60, m.cursor === -1);
     ctx.strokeStyle = C.grey; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(x + 10, y + 80); ctx.lineTo(x + w - 10, y + 80); ctx.stroke();
-    G.menus.mapRows(m).forEach((r, i) => line(r.label, fmt(r.value), y + 104 + i * 32, m.cursor === i));
-    text(ctx, 'Large knob: setting · small knob: change it', x + w / 2, y + h - 40, { size: 14, align: 'center', color: C.grey });
-    text(ctx, 'Push FMS or CLR to return to the map', x + w / 2, y + h - 20, { size: 14, align: 'center', color: C.grey });
+    view.rows.forEach((r, i) => line(r.label, fmt(r.value), y + 100 + i * rowH, m.cursor === i));
+    text(ctx, 'Large knob: setting · small knob: change · CLR: done', x + w / 2, y + h - 16, { size: 14, align: 'center', color: C.grey });
   }
 
   // The PFD's Timer/References window (js/g1000-timer.js): the timer, the
@@ -402,8 +446,11 @@ window.G1000_DISPLAY = (function () {
       ['FLIGHT TIMER', hms(s.t - st.t0)], ['ODOMETER', st.odo.toFixed(1) + 'NM'],
       ['TRIP ODOMETER', st.trip.toFixed(1) + 'NM'], ['TRIP AVG GS', Math.round(st.trip / hours) + 'KT'],
       ['TRIP MAX GS', Math.round(st.maxGs) + 'KT'],
+      // The PFD's Tmr/Ref window sets these; shown here too.
+      ['GENERIC TIMER', `${hms(s.ref.timer.secs)} ${s.ref.timer.dir}${s.ref.timer.running ? '' : ' (stopped)'}`],
+      ['MINIMUMS', s.ref.mins.mode === 'OFF' ? 'OFF' : `BARO ${s.ref.mins.ft}FT`, C.cyan],
     ], PAGE.x + 30, PAGE.y + 70);
-    hint(ctx, 'MENU: reset the statistics. The generic timer and minimums are not in the mock.');
+    hint(ctx, 'MENU: reset the statistics. Set the timer and minimums with the PFD Tmr/Ref softkey.');
   }
 
   // AUX - System Setup: here only the airspace alert settings.
@@ -421,8 +468,20 @@ window.G1000_DISPLAY = (function () {
       if (sel) box(ctx, x + 330 - tw - 6, ry - 15, tw + 12, 30, { fill: C.cyan, stroke: null });
       text(ctx, v, x + 330, ry, { size: 21, align: 'right', color: sel ? C.black : C.cyan });
     });
+    // The Flight ID: sent with the transponder's replies (ADS-B).
+    const fy = PAGE.y + 110 + rows.length * 40 + 70;
+    text(ctx, 'TRANSPONDER', x, fy - 44, { size: 17, color: C.cyan });
+    text(ctx, 'FLIGHT ID', x, fy, { size: 18, color: C.grey });
+    if (cur === 'ident') identField(ctx, s.mfd.entry, x + 200, fy, G, true, G.pages.matchers['AUX:3']);
+    else {
+      ctx.font = font(21);
+      const tw = ctx.measureText(s.xpdr.flightId).width;
+      if (cur === rows.length) box(ctx, x + 330 - tw - 6, fy - 15, tw + 12, 30, { fill: C.cyan, stroke: null });
+      text(ctx, s.xpdr.flightId, x + 330, fy, { size: 21, align: 'right', color: cur === rows.length ? C.black : C.cyan });
+    }
     hint(ctx, cur == null ? 'Push FMS for the cursor. Other setup items are not in the mock.'
-      : 'Large knob: item · small knob: change · CLR or push FMS: done');
+      : cur === 'ident' ? 'Small knob: character · large knob: position · ENT: done'
+        : cur === rows.length ? 'ENT: edit the Flight ID' : 'Large knob: item · small knob: change · CLR or push FMS: done');
   }
 
   // The Flight Plan Catalog: stored plans on the left, the waypoints of
@@ -539,6 +598,147 @@ window.G1000_DISPLAY = (function () {
     hint(ctx, 'Class B, C and D (FAA ADDS). Floor and ceiling of the nearest shelf, MSL.');
   }
 
+  // WPT - User WPT Information: the waypoint, where it is, what it was
+  // made from (reference waypoint, radial, distance).
+  function userWptPage(ctx, s, G) {
+    pageBackground(ctx);
+    const u = G.pages.shownUser(), x = PAGE.x + 30, y = PAGE.y + 70, cur = s.mfd.cursor;
+    if (!u) {
+      text(ctx, 'No user waypoints', x, y, { size: 22, color: C.grey });
+      hint(ctx, 'MENU: create one here · ENT on the map pointer (RANGE push) makes one there');
+      return;
+    }
+    const entry = cur === 'ident' ? s.mfd.entryFor : null;
+    const field = (str, fx, fy, row) => {
+      ctx.font = font(22);
+      const tw = ctx.measureText(str).width, sel = cur === row;
+      if (sel) box(ctx, fx - 4, fy - 15, tw + 8, 30, { fill: C.cyan, stroke: null });
+      text(ctx, str, fx, fy, { size: 22, color: sel ? C.black : C.cyan });
+    };
+    if (entry === 'name') identField(ctx, s.mfd.entry, x, y, G, true, G.pages.matchers['WPT:4']);
+    else field(u.id, x, y, 0);
+    text(ctx, `${s.fms.user.indexOf(u) + 1} of ${s.fms.user.length}`, x + 200, y, { size: 15, color: C.grey });
+    const { brg, dist } = G.bearingDist(s, u);
+    rowsOf(ctx, [['COMMENT', u.name], ['POSITION', latLon(u.lat, u.lon)], ['FROM P.POS', `${pad3(G.toMag(brg))}°  ${dist.toFixed(1)}NM`]], x, y + 50);
+    const ry = y + 200;
+    text(ctx, 'REFERENCE WAYPOINT', x, ry, { size: 16, color: C.cyan });
+    const r = u.ref;
+    text(ctx, 'WPT', x, ry + 40, { size: 18, color: C.grey });
+    if (entry === 'ref') identField(ctx, s.mfd.entry, x + 230, ry + 40, G, true, G.pages.matchers['WPT:4']);
+    else field(r ? r.id : '_____', x + 230, ry + 40, 1);
+    text(ctx, 'RADIAL', x, ry + 80, { size: 18, color: C.grey });
+    field(r ? `${pad3(r.radial)}°` : '___°', x + 230, ry + 80, 2);
+    text(ctx, 'DISTANCE', x, ry + 120, { size: 18, color: C.grey });
+    field(r ? `${r.dist.toFixed(1)}NM` : '__._NM', x + 230, ry + 120, 3);
+    hint(ctx, cur == null ? 'Push FMS for the cursor · MENU: create or delete · D→: direct to it'
+      : cur === 'ident' ? 'Small knob: character · large knob: position · ENT: done'
+        : ['Small knob: next waypoint · ENT: rename', 'ENT: pick the reference waypoint', 'Small knob: radial', 'Small knob: distance'][cur]);
+  }
+
+  // Nearest User WPTs.
+  function nearestUserPage(ctx, s, G) {
+    pageBackground(ctx);
+    const list = G.pages.nearestUser(), x = PAGE.x + 30, top = PAGE.y + 60, rowH = 40, cur = s.mfd.cursor;
+    text(ctx, 'BRG', x + 220, top - 4, { size: 15, align: 'right', color: C.grey });
+    text(ctx, 'DIS', x + 340, top - 4, { size: 15, align: 'right', color: C.grey });
+    if (!list.length) text(ctx, 'No user waypoints within 200NM', x, top + 34, { size: 20, color: C.grey });
+    list.slice(0, 14).forEach((r, i) => {
+      const ry = top + 34 + i * rowH, sel = cur === i;
+      if (sel) box(ctx, x - 6, ry - 15, 100, 30, { fill: C.cyan, stroke: null });
+      text(ctx, r.w.id, x, ry, { size: 22, color: sel ? C.black : C.white });
+      text(ctx, pad3(r.brg) + '°', x + 220, ry, { size: 21, align: 'right' });
+      text(ctx, r.dist.toFixed(1) + 'NM', x + 340, ry, { size: 21, align: 'right' });
+      text(ctx, r.w.name.slice(0, 30), x + 380, ry, { size: 15, color: C.grey });
+    });
+    hint(ctx, cur == null ? 'Push FMS for the cursor' : 'ENT: its information page · D→: direct to it');
+  }
+
+  // AUX - GPS Status: the sky (north up, the rings 0° and 45° elevation),
+  // signal bars, and the solution.
+  function gpsStatusPage(ctx, s, G) {
+    pageBackground(ctx);
+    const g = G.pages.gpsStatus(), cx = PAGE.x + 200, cy = PAGE.y + 230, R = 150;
+    ctx.strokeStyle = C.grey; ctx.lineWidth = 2;
+    for (const r of [R, R / 2]) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+    text(ctx, 'N', cx, cy - R - 14, { size: 16, align: 'center', color: C.grey });
+    for (const sat of g.sats) {
+      const r = (1 - sat.el / 90) * R, a = rad(sat.az);
+      const px = cx + Math.sin(a) * r, py = cy - Math.cos(a) * r;
+      ctx.fillStyle = sat.used ? C.cyan : '#3b3f46';
+      ctx.beginPath(); ctx.arc(px, py, 13, 0, Math.PI * 2); ctx.fill();
+      text(ctx, String(sat.prn), px, py + 1, { size: 12, align: 'center', color: C.black });
+    }
+    // The solution, right of the sky.
+    const x = PAGE.x + 420, lost = g.solution === 'LOI';
+    rowsOf(ctx, [['GPS SOLUTION', g.solution, lost ? C.yellow : C.green], ['EPU', g.epu != null ? `${g.epu.toFixed(2)}NM` : '_.__NM'],
+      ['HFOM', g.hfom != null ? `${g.hfom}FT` : '___FT'], ['VFOM', g.vfom != null ? `${g.vfom}FT` : '___FT'],
+      ['SBAS', lost ? 'INACTIVE' : 'WAAS ACTIVE'], ...latLon(s.lat, s.lon).split('  ').map((v, i) => [i ? 'LON' : 'LAT', v])], x, PAGE.y + 90, 36);
+    // Signal bars along the bottom: cyan when used, grey tracked only.
+    const by = PAGE.y + PAGE.h - 110, bw = 38;
+    g.sats.forEach((sat, i) => {
+      const bx = PAGE.x + 30 + i * (bw + 16), h = (sat.sig / 55) * 90;
+      ctx.fillStyle = sat.used ? C.cyan : '#5b6068';
+      ctx.fillRect(bx, by - h, bw, h);
+      text(ctx, String(sat.prn), bx + bw / 2, by + 14, { size: 13, align: 'center', color: C.grey });
+    });
+    text(ctx, 'Made-up constellation, for the look of the page', PAGE.x + PAGE.w - 20, PAGE.y + 50, { size: 13, align: 'right', color: C.grey });
+  }
+
+  // A string cut at a word to fit `room` pixels in `f`, with an ellipsis.
+  function fit(ctx, str, room, f) {
+    ctx.font = f;
+    if (ctx.measureText(str).width <= room) return str;
+    let cut = str;
+    while (cut.length > 4 && ctx.measureText(cut + '…').width > room) cut = cut.slice(0, cut.lastIndexOf(' ') > 0 ? cut.lastIndexOf(' ') : -1);
+    return cut + '…';
+  }
+  // The Checklist page: GROUP and CHECKLIST, the items (checked green),
+  // and "Go to Next Checklist?".
+  function checklistPage(ctx, s, G) {
+    pageBackground(ctx);
+    const ck = G.checklist, c = s.chk, g = ck.group(), l = ck.list();
+    const x = PAGE.x + 20, w = PAGE.w - 40;
+    const field = (label, value, fy, sel) => {
+      text(ctx, label, x, fy, { size: 15, color: C.grey });
+      if (sel) box(ctx, x + 110, fy - 14, w - 110, 28, { fill: C.cyan, stroke: null });
+      text(ctx, value, x + 118, fy, { size: 19, color: sel ? C.black : C.cyan });
+    };
+    field('GROUP', g.group, PAGE.y + 50, c.cursor === 'group');
+    field('CHECKLIST', l.name, PAGE.y + 82, c.cursor === 'list');
+    ctx.strokeStyle = C.grey; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, PAGE.y + 100); ctx.lineTo(x + w, PAGE.y + 100); ctx.stroke();
+    const rowH = 27, top = PAGE.y + 120, n = Math.floor((PAGE.h - 220) / rowH);
+    const at = typeof c.cursor === 'number' ? c.cursor : c.cursor === 'next' ? l.items.length : 0;
+    const first = Math.max(0, Math.min(at - n + 3, l.items.length + 1 - n));
+    const done = ck.checked();
+    for (let k = 0; k < n && first + k <= l.items.length; k++) {
+      const i = first + k, ry = top + k * rowH;
+      if (i === l.items.length) {
+        const sel = c.cursor === 'next';
+        if (sel) box(ctx, x + 2, ry - 13, w - 4, 26, { fill: C.cyan, stroke: null });
+        text(ctx, ck.finished() ? '* CHECKLIST FINISHED *   Go to Next Checklist?' : 'Go to Next Checklist?', x + w / 2, ry,
+          { size: 17, align: 'center', color: sel ? C.black : ck.finished() ? C.green : C.white });
+        break;
+      }
+      const it = l.items[i], sel = c.cursor === i, ok = done[i];
+      // A heading or note: one line, cut to fit.
+      if (it.length === 1) { text(ctx, fit(ctx, it[0], w - 20, font(15, false)), x + 8, ry, { size: 15, color: C.yellow, bold: false }); continue; }
+      if (sel) box(ctx, x + 2, ry - 13, w - 4, 26, { fill: '#123a4a', stroke: C.cyan });
+      const color = ok ? C.green : C.white;
+      // The box, ticked when checked.
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.strokeRect(x + 8, ry - 8, 16, 16);
+      if (ok) { ctx.beginPath(); ctx.moveTo(x + 11, ry); ctx.lineTo(x + 15, ry + 5); ctx.lineTo(x + 22, ry - 5); ctx.stroke(); }
+      // The response in full; the challenge cut to the room left.
+      ctx.font = font(16, false);
+      const resp = it[1], room = w - 50 - ctx.measureText(resp).width - 20;
+      text(ctx, fit(ctx, it[0], room, font(16, false)), x + 34, ry, { size: 16, color, bold: false });
+      text(ctx, resp, x + w - 8, ry, { size: 16, align: 'right', color, bold: false });
+    }
+    hint(ctx, 'Large knob: cursor · small knob: group, checklist · ENT: check · CLR: uncheck');
+    text(ctx, 'From the C172S POH (2007). Not for flight.', PAGE.x + PAGE.w - 20, PAGE.y + PAGE.h - 94, { size: 12, align: 'right', color: C.grey });
+  }
+
   function placeholder(ctx, s, G) {
     pageBackground(ctx);
     text(ctx, G.pages.pageName(), PAGE.x + PAGE.w / 2, PAGE.y + PAGE.h / 2 - 20, { size: 26, align: 'center' });
@@ -567,11 +767,18 @@ window.G1000_DISPLAY = (function () {
   }
 
   function mfdPage(ctx, s, G) {
+    // The Checklist page stands in for whatever page was showing.
+    if (G.checklist.isOpen()) {
+      checklistPage(ctx, s, G);
+      box(ctx, PAGE.x + PAGE.w / 2 - 230, PAGE.y + 2, 460, 32, { fill: C.black, stroke: null });
+      text(ctx, 'CHECKLIST', PAGE.x + PAGE.w / 2, PAGE.y + 18, { size: 18, align: 'center', color: C.cyan });
+      return;
+    }
     const key = G.pages.pageKey();
     const draw = {
-      'MAP:0': navMap, 'FPL:0': navMap, 'WPT:0': airportInfo, 'WPT:3': vorInfo, 'AUX:0': tripPlanning,
-      'AUX:1': utility, 'AUX:3': systemSetup, 'FPL:1': catalog, 'NRST:0': (c, st, g) => nearestList(c, st, g, false), 'NRST:3': (c, st, g) => nearestList(c, st, g, true),
-      'NRST:5': nearestFreqPage, 'NRST:6': nearestAirspacePage,
+      'MAP:0': navMap, 'FPL:0': navMap, 'WPT:0': airportInfo, 'WPT:3': vorInfo, 'WPT:4': userWptPage, 'AUX:0': tripPlanning,
+      'AUX:1': utility, 'AUX:2': gpsStatusPage, 'AUX:3': systemSetup, 'FPL:1': catalog, 'NRST:0': (c, st, g) => nearestList(c, st, g, false), 'NRST:3': (c, st, g) => nearestList(c, st, g, true),
+      'NRST:4': nearestUserPage, 'NRST:5': nearestFreqPage, 'NRST:6': nearestAirspacePage,
     }[key] ?? placeholder;
     draw(ctx, s, G);
     const g = G.pages.GROUPS[s.mfd.group];
@@ -583,7 +790,7 @@ window.G1000_DISPLAY = (function () {
 
   function softkeys(ctx, s, G, display) {
     const menu = G.menu(display);
-    const labels = G.MENUS[menu], live = G.LIVE[menu];
+    const labels = G.labels(display), live = G.live(display);
     const w = W / 12, y = H - 34;
     box(ctx, 0, y, W, 34, { fill: C.black, stroke: null });
     labels.forEach((label, i) => {
@@ -597,7 +804,11 @@ window.G1000_DISPLAY = (function () {
         // A softkey's window open on the PFD.
         || (menu === 'pfd' && !!s.fms.win.pfd && ({ 'Tmr/Ref': 'tmr', Nearest: 'nrst' })[label] === s.fms.win.pfd.type)
         || (menu === 'pfd' && label === 'OBS' && !!s.fms.obs)
-        || (menu === 'map-layout' && label === s.pfdMap.layout);
+        || (menu === 'map-layout' && label === s.pfdMap.layout)
+        || (menu === 'wind' && label === (s.windShow === 'Off' ? 'Off' : 'Option ' + s.windShow))
+        || (menu === 'pfd-opt' && ((label === 'Bearing 1' && s.brg[0]) || (label === 'Bearing 2' && s.brg[1]) || (label === 'DME' && s.dme.on)))
+        || (menu === 'lean' && label === 'Assist' && s.sys.lean.assist)
+        || ((menu === 'lean' || menu === 'system') && label === s.eisPage);
       if (label === 'Alerts' && display === 'pfd') return alertsKey(ctx, s, G, i * w, y, w);
       if (on) box(ctx, i * w + 3, y + 3, w - 6, 28, { fill: C.cyan, stroke: null });
       text(ctx, label, i * w + w / 2, y + 17, { size: label.length > 7 ? 15 : 18, align: 'center',
@@ -853,14 +1064,27 @@ window.G1000_DISPLAY = (function () {
     ctx.lineTo(x + w - 2, cy + 24); ctx.lineTo(x + 4, cy + 24); ctx.closePath();
     ctx.fill(); ctx.stroke();
     text(ctx, String(Math.round(alt / 10) * 10), x + w - 8, cy + 1, { size: 30, align: 'right' });
+    // ALT Units, Meters: the metric altitude under the readout, and the
+    // selected altitude's beside its box.
+    const M = s.altUnits.meters, FT_M = 0.3048;
+    if (M) {
+      box(ctx, x + 4, cy + 26, w - 6, 24, { fill: C.black, stroke: C.grey });
+      text(ctx, `${Math.round(alt * FT_M)}M`, x + w - 8, cy + 38, { size: 18, align: 'right' });
+    }
     // Selected altitude box above, baro setting below.
     const al = s.alt;
     const flash = !blinkOn(s, al.flashUntil);
     const sel = al.phase === 'deviate' ? C.yellow : C.cyan;
     box(ctx, x, top - 36, w, 36, { fill: flash ? sel : C.black, stroke: C.grey });
     text(ctx, String(s.altSel), x + w / 2, top - 17, { size: 26, align: 'center', color: flash ? C.black : sel });
+    if (M) {
+      box(ctx, x - 84, top + 2, 82, 28, { fill: C.black, stroke: C.grey });
+      text(ctx, `${Math.round(s.altSel * FT_M)}M`, x - 6, top + 16, { size: 17, align: 'right', color: C.cyan });
+    }
     box(ctx, x, bot, w, 30, { fill: C.black, stroke: C.grey });
-    text(ctx, s.baro === 29.92 ? 'STD BARO' : `${s.baro.toFixed(2)}IN`, x + w / 2, bot + 15,
+    // In inches, or hectopascals (ALT Units, HPA).
+    const baroText = s.altUnits.baro === 'HPA' ? `${Math.round(s.baro * G.HPA)}HPA` : `${s.baro.toFixed(2)}IN`;
+    text(ctx, s.baro === 29.92 ? 'STD BARO' : baroText, x + w / 2, bot + 15,
       { size: 19, align: 'center', color: C.cyan });
   }
 
@@ -942,7 +1166,7 @@ window.G1000_DISPLAY = (function () {
     // at its centre and the rose's edge at the map's range.
     const hsiMap = s.pfdMap.layout === 'HSI Map';
     if (hsiMap) {
-      drawMap(ctx, s, G, { ox: cx, oy: cy, ringR: R, circle: R + 4, fill: '#0a1a10', range: G.RANGES[s.pfdMap.range], small: true });
+      drawMap(ctx, s, G, { ox: cx, oy: cy, ringR: R, circle: R + 4, fill: '#0a1a10', range: G.RANGES[s.pfdMap.range], small: true, set: s.pfdMapSet });
     }
     ctx.save();
     ctx.translate(cx, cy);
@@ -982,6 +1206,28 @@ window.G1000_DISPLAY = (function () {
       }
       ctx.restore();
     }
+    // Bearing pointers (PFD Opt, Bearing 1 and 2), cyan, under the
+    // course pointer: BRG1 a single line, BRG2 a double one.
+    [0, 1].forEach((i) => {
+      const b = G.bearingTo(s.brg[i]);
+      if (!b) return;
+      ctx.save(); ctx.rotate(rad(b.brg));
+      ctx.strokeStyle = C.cyan; ctx.lineWidth = 2;
+      const offs = i ? [-4, 4] : [0];
+      ctx.beginPath();
+      for (const o of offs) { ctx.moveTo(o, -R + 22); ctx.lineTo(o, -R + 62); ctx.moveTo(o, R - 52); ctx.lineTo(o, R - 6); }
+      // Head at the station's end, tail feathers at the other.
+      ctx.moveTo(-12, -R + 36); ctx.lineTo(0, -R + 14); ctx.lineTo(12, -R + 36);
+      ctx.moveTo(-12, R - 8); ctx.lineTo(0, R - 22); ctx.lineTo(12, R - 8);
+      ctx.stroke();
+      ctx.restore();
+    });
+    // Current track: a magenta diamond on the rose (off the lubber line
+    // by the drift).
+    ctx.save(); ctx.rotate(rad(G.toMag(G.track())));
+    ctx.fillStyle = C.magenta;
+    ctx.beginPath(); ctx.moveTo(0, -R + 2); ctx.lineTo(6, -R + 10); ctx.lineTo(0, -R + 18); ctx.lineTo(-6, -R + 10); ctx.closePath(); ctx.fill();
+    ctx.restore();
     // Heading bug.
     ctx.save(); ctx.rotate(rad(s.hdgBug));
     ctx.fillStyle = C.cyan;
@@ -1039,6 +1285,8 @@ window.G1000_DISPLAY = (function () {
       ctx.strokeStyle = C.red; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(-60, -40); ctx.lineTo(60, 40); ctx.moveTo(60, -40); ctx.lineTo(-60, 40); ctx.stroke();
     }
+    // GPS integrity lost: LOI, amber, and no deviation.
+    if (s.cdi === 'GPS' && s.sys.failed.gps) text(ctx, 'LOI', 0, 40, { size: 22, align: 'center', color: C.yellow });
     ctx.restore();
 
     // Selected heading and course boxes either side of the rose's top.
@@ -1049,17 +1297,80 @@ window.G1000_DISPLAY = (function () {
     text(ctx, 'CRS', cx + 150, cy - R - 45, { size: 20 });
     const crsText = crs != null ? pad3(crs) + '°' : '---°';
     text(ctx, crsText, cx + 282, cy - R - 45, { size: 24, align: 'right', color: srcColor });
-    // VOR: distance to the station (a DME stand-in) under the course box;
-    // GPS shows its distance in the navigation status bar instead.
-    if (nav && nav.source !== 'GPS' && !s.fms.win.pfd) text(ctx, `${nav.station.id} ${nav.dist.toFixed(1)}NM`, cx + 140, cy - R - 10, { size: 18, color: srcColor });
+  }
+
+  // ---- Beside the HSI: the wind, DME and bearing windows ----
+  // Left of the rose (right of any inset map), and BRG2 right of it.
+  const SIDE = { x: 306, w: 78 };
+  function sideBox(ctx, y, h, x = SIDE.x) {
+    box(ctx, x, y, SIDE.w, h, { fill: C.black, stroke: C.grey });
+  }
+  // PFD Opt, Wind: Option 1 head/tailwind and crosswind components with
+  // arrows; Option 2 an arrow (relative to the nose) and the speed;
+  // Option 3 the arrow, direction (magnetic) and speed. No wind data on
+  // the ground (under 30 kt).
+  function windWindow(ctx, s, G) {
+    if (s.windShow === 'Off') return;
+    const y = 548, h = 64, x = SIDE.x, w = SIDE.w;
+    sideBox(ctx, y, h);
+    if (G.tas() < 30) { text(ctx, 'NO WIND', x + w / 2, y + 22, { size: 13, align: 'center' }); text(ctx, 'DATA', x + w / 2, y + 42, { size: 13, align: 'center' }); return; }
+    const wi = G.windInfo(), calm = wi.spd < 1;
+    const arrow = (ax, ay, len, ang) => {
+      ctx.save(); ctx.translate(ax, ay); ctx.rotate(rad(ang));
+      ctx.strokeStyle = C.white; ctx.fillStyle = C.white; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, -len / 2); ctx.lineTo(0, len / 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, len / 2 + 2); ctx.lineTo(-5, len / 2 - 7); ctx.lineTo(5, len / 2 - 7); ctx.fill();
+      ctx.restore();
+    };
+    if (s.windShow === '1') {
+      // Arrows the way each component blows: down for a headwind.
+      if (!calm) arrow(x + 14, y + 22, 20, wi.head >= 0 ? 0 : 180);
+      text(ctx, String(Math.round(Math.abs(wi.head))), x + 28, y + 22, { size: 18 });
+      if (!calm) arrow(x + 14, y + 46, 20, wi.cross >= 0 ? 90 : -90);
+      text(ctx, String(Math.round(Math.abs(wi.cross))), x + 28, y + 46, { size: 18 });
+      return;
+    }
+    // The arrow points the way the wind blows, the nose being up.
+    if (!calm) arrow(x + 18, y + h / 2, 34, wi.rel);
+    if (s.windShow === '2') text(ctx, `${Math.round(wi.spd)}KT`, x + w - 6, y + h / 2, { size: 17, align: 'right' });
+    else {
+      text(ctx, calm ? 'CALM' : `${pad3(wi.dir)}°`, x + w - 6, y + 20, { size: 16, align: 'right' });
+      text(ctx, `${Math.round(wi.spd)}KT`, x + w - 6, y + 44, { size: 16, align: 'right' });
+    }
+  }
+  // PFD Opt, DME: its tuning, frequency and slant range.
+  function dmeWindow(ctx, s, G) {
+    if (!s.dme.on) return;
+    const y = 618, x = SIDE.x, d = G.dmeInfo();
+    sideBox(ctx, y, 82);
+    text(ctx, 'DME', x + 5, y + 14, { size: 12, color: C.grey });
+    text(ctx, s.dme.src, x + SIDE.w - 5, y + 14, { size: 12, align: 'right', color: C.green });
+    text(ctx, d.freq.toFixed(2), x + 6, y + 38, { size: 17, color: C.green });
+    text(ctx, d.dist != null ? `${d.dist.toFixed(1)}NM` : '-.--NM', x + 6, y + 62, { size: 17 });
+  }
+  // A bearing pointer's information: distance, the station, the source.
+  function bearingWindows(ctx, s, G) {
+    [0, 1].forEach((i) => {
+      const src = s.brg[i];
+      if (!src) return;
+      const x = i ? 642 : SIDE.x, y = 710, b = G.bearingTo(src);
+      sideBox(ctx, y, 66, x);
+      text(ctx, b ? `${b.dist.toFixed(1)}NM` : '', x + 6, y + 14, { size: 15 });
+      text(ctx, b ? b.id : 'NO DATA', x + 6, y + 34, { size: 15, color: C.cyan });
+      text(ctx, src, x + 6, y + 54, { size: 14, color: C.cyan });
+      text(ctx, i ? '═' : '─', x + SIDE.w - 8, y + 54, { size: 16, align: 'right', color: C.cyan });
+    });
   }
 
   function bottomBoxes(ctx, s) {
     const y = H - 34 - 40;
     // Outside air temperature, standard lapse from 15 °C.
+    // (Reversionary mode shows it in the engine strip instead.)
     const oat = Math.round(15 - 2 * s.trueAlt / 1000);
-    box(ctx, 0, y, 150, 38, { fill: C.black, stroke: C.grey });
-    text(ctx, `OAT ${oat}°C`, 10, y + 19, { size: 20 });
+    if (!s.reversion) {
+      box(ctx, 0, y, 150, 38, { fill: C.black, stroke: C.grey });
+      text(ctx, `OAT ${oat}°C`, 10, y + 19, { size: 20 });
+    }
     // Transponder: code, mode, ident.
     const x = s.xpdr;
     box(ctx, W - 280, y, 280, 38, { fill: C.black, stroke: C.grey });
@@ -1069,11 +1380,37 @@ window.G1000_DISPLAY = (function () {
     text(ctx, 'XPDR', W - 270, y + 19, { size: 20 });
     text(ctx, code, W - 200, y + 19, { size: 22, color: x.entry !== null ? C.cyan : modeColor });
     text(ctx, ident ? 'IDNT' : x.mode, W - 130, y + 19, { size: 22, color: modeColor });
+    // R: replying to an interrogation (a radar sweep every 4.8 s, made up).
+    if (x.mode !== 'STBY' && s.t % 4.8 < 0.6) text(ctx, 'R', W - 84, y + 19, { size: 18, color: C.green });
     const d = new Date(s.t * 1000 + Date.UTC(2026, 0, 1, 17, 0, 0));
     text(ctx, `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`, W - 10, y + 19, { size: 18, align: 'right', color: C.grey });
   }
 
-  function drawPFD(ctx, s, G) {
+  // Reversionary mode (DISPLAY BACKUP): the PFD with the engine strip down
+  // its left side, on both displays. The PFD is drawn whole off screen,
+  // then its middle (between the radios and the softkeys) put right of the
+  // strip: all but its left 140 px (empty but for the OAT box, which moves
+  // to the strip, and part of any inset map), squeezed 7% across.
+  let revCanvas = null;
+  function reversionary(ctx, s, G) {
+    revCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H });
+    const off = revCanvas.getContext('2d');
+    drawPFD(off, s, G, true);
+    const top = 70, bottom = H - 34, strip = 200;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = C.black;
+    ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(revCanvas, 0, 0, W, top, 0, 0, W, top);
+    const crop = 140;
+    ctx.drawImage(revCanvas, crop, top, W - crop, bottom - top, strip, top, W - strip, bottom - top);
+    ctx.drawImage(revCanvas, 0, bottom, W, H - bottom, 0, bottom, W, H - bottom);
+    eis(ctx, s, G);
+    text(ctx, `OAT ${Math.round(15 - 2 * s.trueAlt / 1000)}°C`, 12, bottom - 44, { size: 18 });
+    text(ctx, 'REVERSIONARY', strip / 2, bottom - 14, { size: 13, align: 'center', color: C.yellow });
+  }
+
+  function drawPFD(ctx, s, G, whole = false) {
+    if (s.reversion && !whole) return reversionary(ctx, s, G);
     ctx.clearRect(0, 0, W, H);
     attitude(ctx, s);
     aircraftSymbol(ctx, s);
@@ -1083,6 +1420,9 @@ window.G1000_DISPLAY = (function () {
     annunciationWindow(ctx, s);
     hsi(ctx, s, G);
     if (s.pfdMap.layout === 'Inset Map') insetMap(ctx, s, G);
+    windWindow(ctx, s, G);
+    dmeWindow(ctx, s, G);
+    bearingWindows(ctx, s, G);
     bottomBoxes(ctx, s);
     radios(ctx, s, G);
     navStatus(ctx, s, G);
@@ -1119,20 +1459,48 @@ window.G1000_DISPLAY = (function () {
     const ff = +G.fuelFlow().toFixed(1);
     const x = 12, w = 176;
     if (s.eisPage === 'Lean') {
+      // Four columns, EGT (bar) and CHT (tick) per cylinder; the selected
+      // one (Cyl Slct) cyan with its numbers. Lean assist: the first to
+      // peak marked, and how far below its peak it now is.
+      const L = sys.lean;
       text(ctx, 'LEAN', x, 100, { size: 18, color: C.cyan });
       gaugeBar(ctx, 'FFLOW GPH', ff, 0, 20, [[0, 20, C.green]], x, 140, w, (v) => v.toFixed(1));
-      for (let c = 1; c <= 4; c++) {
-        const egt = 1300 + 80 * s.power + c * 12;
-        ctx.fillStyle = C.white;
-        const h = (egt - 1000) / 600 * 220;
-        ctx.fillRect(x + (c - 1) * 44 + 8, 420 - h, 26, h);
-        text(ctx, String(c), x + (c - 1) * 44 + 21, 438, { size: 16, align: 'center' });
+      const base = 440, top = 220, span = (v) => Math.max(0, Math.min(1, (v - 1000) / 600)) * (base - top);
+      for (let c = 0; c < 4; c++) {
+        const cx = x + c * 44 + 8, sel = c === L.cyl, peaked = L.assist && L.peaked === c;
+        ctx.fillStyle = sel ? C.cyan : C.white;
+        const h = span(sys.egt[c]);
+        ctx.fillRect(cx, base - h, 26, h);
+        // CHT on its own scale (100-500 °F): a short bar across.
+        const ch = Math.max(0, Math.min(1, (sys.cht[c] - 100) / 400)) * (base - top);
+        ctx.fillStyle = C.green; ctx.fillRect(cx - 3, base - ch - 2, 32, 4);
+        text(ctx, String(c + 1), cx + 13, base + 16, { size: 16, align: 'center', color: sel ? C.cyan : C.white });
+        if (peaked) text(ctx, 'PEAK', cx + 13, top - 14, { size: 12, align: 'center', color: C.cyan });
       }
-      text(ctx, 'EGT °F (mock)', x, 470, { size: 16, color: C.grey });
+      const c = L.cyl;
+      text(ctx, `EGT ${c + 1}`, x, 486, { size: 16, color: C.grey });
+      text(ctx, `${Math.round(sys.egt[c])}°F`, x + w, 486, { size: 18, align: 'right', color: C.cyan });
+      text(ctx, `CHT ${c + 1}`, x, 514, { size: 16, color: C.grey });
+      text(ctx, `${Math.round(sys.cht[c])}°F`, x + w, 514, { size: 18, align: 'right', color: C.cyan });
+      if (L.assist) {
+        const p = L.peaked;
+        text(ctx, 'LEAN ASSIST', x, 554, { size: 15, color: C.cyan });
+        text(ctx, 'ΔPEAK', x, 582, { size: 16, color: C.grey });
+        text(ctx, p == null ? '---' : `${Math.round(sys.egt[p] - L.max[p])}°F`, x + w, 582, { size: 18, align: 'right' });
+        if (p == null) text(ctx, 'Lean slowly to find the peak', x, 610, { size: 12, color: C.grey });
+      }
+      text(ctx, `MIXTURE ${Math.round(s.mixture * 100)}%`, x, 650, { size: 13, color: C.grey });
       return;
     }
     if (s.eisPage === 'System') {
       text(ctx, 'SYSTEM', x, 100, { size: 18, color: C.cyan });
+      // The fuel totalizer (Rst Fuel, Dec Fuel, Inc Fuel, Rst Used).
+      text(ctx, 'CALC FUEL', x, 510, { size: 15, color: C.cyan });
+      text(ctx, 'GAL USED', x, 540, { size: 16, color: C.grey });
+      text(ctx, sys.tot.used.toFixed(1), x + w, 540, { size: 18, align: 'right' });
+      text(ctx, 'GAL REM', x, 570, { size: 16, color: C.grey });
+      text(ctx, sys.tot.rem.toFixed(1), x + w, 570, { size: 18, align: 'right', color: sys.tot.rem < 10 ? C.yellow : C.white });
+      text(ctx, `TANKS ${s.fuel.toFixed(1)}`, x, 600, { size: 13, color: C.grey });
       const vz = [[20, 24.5, C.red], [24.5, 32, C.green], [32, 34, C.red]];
       gaugeBar(ctx, 'VOLTS M', sys.voltsM, 20, 34, vz, x, 140, w, (v) => v.toFixed(1), voltColor(sys.voltsM));
       gaugeBar(ctx, 'VOLTS E', sys.voltsE, 20, 34, vz, x, 200, w, (v) => v.toFixed(1), voltColor(sys.voltsE));
@@ -1162,7 +1530,7 @@ window.G1000_DISPLAY = (function () {
     gaugeBar(ctx, 'FFLOW GPH', ff, 0, 20, [[0, 20, C.green]], x, 270, w, (v) => v.toFixed(1));
     gaugeBar(ctx, 'OIL PRES', sys.oilPsi, 0, 115, [[0, 20, C.red], [20, 50, C.yellow], [50, 90, C.green], [90, 115, C.red]], x, 320, w, (v) => v.toFixed(0), sys.oilPsi <= 20 ? C.red : C.white);
     gaugeBar(ctx, 'OIL TEMP', sys.oilF, 75, 250, [[75, 100, C.yellow], [100, 245, C.green], [245, 250, C.red]], x, 370, w, (v) => v.toFixed(0), sys.oilF >= 245 ? C.red : C.white);
-    gaugeBar(ctx, 'EGT', sys.running ? 1350 : 1000, 1000, 1600, [[1000, 1600, '#555']], x, 420, w, () => '');
+    gaugeBar(ctx, 'EGT', Math.max(...sys.egt), 1000, 1600, [[1000, 1600, '#555']], x, 420, w, () => '');
     gaugeBar(ctx, 'VAC', sys.vac, 3, 7, [[3, 4.5, '#555'], [4.5, 5.5, C.green], [5.5, 7, '#555']], x, 470, w, (v) => v.toFixed(1), sys.vac < 3.5 ? C.yellow : C.white);
     // Fuel: the POH's red 0-5 gal (1.5 gal unusable at 0), amber 5-8.
     const fz = [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]];
@@ -1186,11 +1554,14 @@ window.G1000_DISPLAY = (function () {
   // Airspace: Class B blue, C magenta, D blue dashed, as on the charts.
   const AIRSPACE = { B: { color: '#3a8bff', dash: [] }, C: { color: C.magenta, dash: [] }, D: { color: '#3a8bff', dash: [10, 7] } };
   function drawMap(ctx, s, G, v) {
-    const { range } = v, set = s.mapSet, small = v.small;
+    // v.set: the map's settings (the MFD's Map Setup, or the PFD's).
+    // v.up: the true bearing that is up (north, track or heading); v.center:
+    // what (ox, oy) is (own ship, or the pan pointer).
+    const { range } = v, set = v.set, small = v.small;
     // A map setting that is a range: the symbol shows at that map range or
     // less ('Off': never).
     const shows = (val) => val !== 'Off' && range <= val;
-    const up = v.northUp ? 0 : s.hdg;
+    const up = v.up ?? s.hdg, center = v.center ?? s;
     const { ox, oy, ringR } = v, ppn = ringR / range;
     ctx.save();
     ctx.beginPath();
@@ -1198,7 +1569,7 @@ window.G1000_DISPLAY = (function () {
     ctx.clip();
     if (v.fill) { ctx.fillStyle = v.fill; ctx.fill(); }
     const toXY = (p) => {
-      const { brg, dist } = G.bearingDist(s, p);
+      const { brg, dist } = G.bearingDist(center, p);
       const a = rad(brg - up);
       return [ox + Math.sin(a) * dist * ppn, oy - Math.cos(a) * dist * ppn];
     };
@@ -1208,7 +1579,7 @@ window.G1000_DISPLAY = (function () {
       if (!cls[a.cls]) continue;
       // Skip shelves wholly far away (their first point beyond 3 ranges
       // and 60 NM: no Washington shelf is wider).
-      if (G.bearingDist(s, { lat: a.pts[0][0], lon: a.pts[0][1] }).dist > Math.max(3 * range, 60)) continue;
+      if (G.bearingDist(center, { lat: a.pts[0][0], lon: a.pts[0][1] }).dist > Math.max(3 * range, 60)) continue;
       const st = AIRSPACE[a.cls];
       ctx.strokeStyle = st.color;
       ctx.lineWidth = small ? 1.5 : 2.5;
@@ -1218,7 +1589,7 @@ window.G1000_DISPLAY = (function () {
       ctx.closePath(); ctx.stroke();
     }
     ctx.setLineDash([]);
-    if (set.ring === 'On' && !v.circle) {
+    if (set.ring === 'On' && !v.circle && !v.center) {
       ctx.strokeStyle = 'rgba(255,255,255,0.5)';
       ctx.lineWidth = 2;
       ctx.setLineDash([8, 8]);
@@ -1252,10 +1623,9 @@ window.G1000_DISPLAY = (function () {
       ctx.lineTo(sx + Math.sin(a) * 2000, sy - Math.cos(a) * 2000); ctx.stroke();
     }
     // Airports: towered cyan, non-towered magenta, each size shown up to
-    // its Map Setup range. With the whole state in the database,
-    // identifiers show only at 15 NM range or less (declutter; 7.5 NM on
-    // the small PFD maps), and smaller rings beyond 25 NM.
-    const labels = range <= (small ? 7.5 : 15), ring = (range > 25 ? 6 : 9) * (small ? 0.75 : 1);
+    // its Map Setup range, identifiers up to APT Text's; smaller rings
+    // beyond 25 NM.
+    const labels = shows(set.aptText), ring = (range > 25 ? 6 : 9) * (small ? 0.75 : 1);
     const sized = { L: shows(set.aptL), M: shows(set.aptM), S: shows(set.aptS) };
     const far = (px, py) => Math.hypot(px - ox, py - oy) > 1500;
     for (const ap of G.AIRPORTS) {
@@ -1277,13 +1647,32 @@ window.G1000_DISPLAY = (function () {
         ctx[k ? 'lineTo' : 'moveTo'](px + Math.cos(a) * r, py + Math.sin(a) * r);
       }
       ctx.closePath(); ctx.stroke();
-      text(ctx, small ? n.id : `${n.id} ${n.freq.toFixed(1)}`, px + r + 4, py + 14, { size: small ? 13 : 16, color: C.cyan });
+      if (shows(set.vorText)) text(ctx, small ? n.id : `${n.id} ${n.freq.toFixed(1)}`, px + r + 4, py + 14, { size: small ? 13 : 16, color: C.cyan });
+    }
+    // User waypoints: a small cyan square, shown with the small airports.
+    for (const u of shows(set.aptS) ? s.fms.user : []) {
+      const [px, py] = toXY(u), r = small ? 4 : 6;
+      if (far(px, py)) continue;
+      ctx.strokeStyle = C.cyan; ctx.lineWidth = 2;
+      ctx.strokeRect(px - r, py - r, 2 * r, 2 * r);
+      if (labels) text(ctx, u.id, px + r + 4, py - 10, { size: small ? 13 : 16, color: C.cyan });
+    }
+    // Own ship: where the map is centred, or (panned) wherever it is.
+    const [sx, sy] = v.center ? toXY(s) : [ox, oy];
+    // Track vector: a dashed line to where the airplane will be after the
+    // set time, at the present track and ground speed.
+    if (set.track !== 'Off') {
+      const [n, unit] = set.track.split(' '), secs = +n * (unit === 'MIN' ? 60 : 1);
+      const len = (G.gs() * secs / 3600) * ppn, a = rad(G.track() - up);
+      ctx.strokeStyle = C.white; ctx.lineWidth = small ? 2 : 3; ctx.setLineDash([10, 8]);
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.sin(a) * len, sy - Math.cos(a) * len); ctx.stroke();
+      ctx.setLineDash([]);
     }
     // Own ship, pointing along the heading (straight up unless north up).
     // The HSI map leaves it to the HSI's own airplane symbol.
     if (!v.circle) {
       ctx.save();
-      ctx.translate(ox, oy);
+      ctx.translate(sx, sy);
       ctx.rotate(rad(s.hdg - up));
       ctx.scale(small ? 0.7 : 1, small ? 0.7 : 1);
       ctx.fillStyle = C.white;
@@ -1298,15 +1687,40 @@ window.G1000_DISPLAY = (function () {
   function navMap(ctx, s, G) {
     const x0 = 200, y0 = 106, w = W - 200, h = H - 34 - 106;
     box(ctx, x0, y0, w, h, { fill: '#0a1a10', stroke: null });
-    const range = G.RANGES[s.range], northUp = s.mapSet.orient === 'North Up';
-    // Heading or track up (the same here: no wind): own ship two thirds
-    // down, the range ring above it. North up: own ship in the middle.
-    const ox = x0 + w / 2, oy = y0 + h * (northUp ? 0.5 : 0.66), ringR = h * (northUp ? 0.42 : 0.5);
-    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR, range, northUp });
-    if (s.mapSet.ring === 'On') text(ctx, `${range}NM`, ox + ringR * 0.72, oy - ringR * 0.72, { size: 18, color: C.grey });
+    const range = G.RANGES[s.range], northUp = s.mapSet.orient === 'North Up', pan = s.pan;
+    // Heading or track up: own ship two thirds down, the range ring above
+    // it. North up, or panned: the middle (the pointer, panned).
+    const mid = northUp || pan;
+    const ox = x0 + w / 2, oy = y0 + h * (mid ? 0.5 : 0.66), ringR = h * (mid ? 0.42 : 0.5);
+    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR, range, up: G.mapUp('mfd'), center: pan ?? null, set: s.mapSet });
+    if (s.mapSet.ring === 'On' && !pan) text(ctx, `${range}NM`, ox + ringR * 0.72, oy - ringR * 0.72, { size: 18, color: C.grey });
     // The orientation, top left.
     text(ctx, { 'Heading Up': 'HDG UP', 'Track Up': 'TRK UP', 'North Up': 'NORTH UP' }[s.mapSet.orient], x0 + 10, y0 + 18, { size: 16, color: C.grey });
-    text(ctx, 'Mock map: not for navigation', x0 + 10, y0 + h - 60, { size: 13, color: C.grey });
+    if (pan) panInfo(ctx, s, G, { x0, y0, w, h, ox, oy, ppn: ringR / range });
+    else text(ctx, 'Mock map: not for navigation', x0 + 10, y0 + h - 60, { size: 13, color: C.grey });
+  }
+  // The pan pointer (an arrow at the map's middle), the measuring line
+  // from where measuring started, and a box at the top: what the pointer
+  // is on, its bearing and distance from own ship (or from the measure's
+  // start), and its position.
+  function panInfo(ctx, s, G, { x0, y0, w, ox, oy, ppn }) {
+    const p = s.pan, up = G.mapUp('mfd'), at = G.panTarget();
+    if (p.measure) {
+      const { brg, dist } = G.bearingDist(p, p.measure), a = rad(brg - up);
+      ctx.strokeStyle = C.white; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + Math.sin(a) * dist * ppn, oy - Math.cos(a) * dist * ppn); ctx.stroke();
+      ctx.beginPath(); ctx.arc(ox + Math.sin(a) * dist * ppn, oy - Math.cos(a) * dist * ppn, 5, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.fillStyle = C.white; ctx.strokeStyle = C.black; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + 6, oy + 18); ctx.lineTo(ox + 10, oy + 12); ctx.lineTo(ox + 18, oy + 20);
+    ctx.lineTo(ox + 20, oy + 18); ctx.lineTo(ox + 12, oy + 10); ctx.lineTo(ox + 18, oy + 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+    const from = p.measure ?? s, { brg, dist } = G.bearingDist(from, p);
+    const bx = x0 + w - 330, by = y0 + 40;
+    box(ctx, bx, by, 320, 96, { fill: 'rgba(8, 9, 11, 0.9)', stroke: C.grey });
+    text(ctx, at ? `${at.id}  ${(at.name ?? '').slice(0, 18)}` : p.measure ? 'MEASURING' : 'PAN', bx + 12, by + 18, { size: 18, color: at ? C.cyan : C.white });
+    text(ctx, `${p.measure ? 'FROM START' : 'FROM P.POS'}  ${pad3(G.toMag(brg))}°  ${dist.toFixed(1)}NM`, bx + 12, by + 48, { size: 17 });
+    text(ctx, latLon(p.lat, p.lon), bx + 12, by + 76, { size: 15, color: C.grey });
+    hint(ctx, 'Arrow keys: move the pointer · ENT: user waypoint here · D→ · CLR or RANGE push: done');
   }
 
   // The PFD's inset map (Map/HSI, Layout, Inset Map): lower left, heading
@@ -1315,10 +1729,12 @@ window.G1000_DISPLAY = (function () {
   function insetMap(ctx, s, G) {
     const { x0, y0, w, h } = INSET, range = G.RANGES[s.pfdMap.range];
     box(ctx, x0, y0, w, h, { fill: '#0a1a10', stroke: C.grey });
-    const ox = x0 + w / 2, oy = y0 + h * 0.72;
-    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR: h * 0.6, range, small: true });
+    // Its own Map Setup (the PFD's Page Menu): north up puts own ship in the middle.
+    const set = s.pfdMapSet, northUp = set.orient === 'North Up';
+    const ox = x0 + w / 2, oy = y0 + h * (northUp ? 0.5 : 0.72);
+    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR: h * (northUp ? 0.42 : 0.6), range, small: true, up: G.mapUp('pfd'), set });
     text(ctx, `${range}NM`, x0 + w - 8, y0 + 14, { size: 14, align: 'right', color: C.grey });
-    text(ctx, 'HDG UP', x0 + 8, y0 + 14, { size: 13, color: C.grey });
+    text(ctx, { 'Heading Up': 'HDG UP', 'Track Up': 'TRK UP', 'North Up': 'NORTH UP' }[set.orient], x0 + 8, y0 + 14, { size: 13, color: C.grey });
   }
 
   function navDataBar(ctx, s, G) {
@@ -1328,11 +1744,12 @@ window.G1000_DISPLAY = (function () {
     const nav = G.navSolution('GPS');
     let ete = '__:__';
     if (nav) {
-      const mins = (nav.dist / Math.max(G.tas(), 30)) * 60;
+      const mins = (nav.dist / Math.max(G.gs(), 30)) * 60;
       ete = `${Math.floor(mins)}:${String(Math.floor((mins % 1) * 60)).padStart(2, '0')}`;
     }
-    const fields = [['GS', `${Math.round(G.tas())}KT`], ['DTK', nav ? pad3(nav.course) + '°' : '___°'],
-      ['TRK', `${pad3(G.magHeading())}°`], ['ETE', ete]];
+    // Ground speed and track: the wind's effect included.
+    const fields = [['GS', `${Math.round(G.gs())}KT`], ['DTK', nav ? pad3(nav.course) + '°' : '___°'],
+      ['TRK', `${pad3(G.toMag(G.track()))}°`], ['ETE', ete]];
     fields.forEach(([k, v], i) => {
       const x = 220 + i * 200;
       text(ctx, k, x, 88, { size: 18 });
@@ -1341,6 +1758,7 @@ window.G1000_DISPLAY = (function () {
   }
 
   function drawMFD(ctx, s, G) {
+    if (s.reversion) return reversionary(ctx, s, G);
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = C.black;
     ctx.fillRect(0, 0, W, H);

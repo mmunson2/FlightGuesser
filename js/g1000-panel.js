@@ -1,5 +1,6 @@
 // The mock G1000 (js/g1000.js) on the 3D panel: live PFD and MFD screens
-// (js/g1000-display.js on canvas textures), and, in Operate mode, the
+// (js/g1000-display.js on canvas textures), live standby instrument faces
+// (js/g1000-standby.js), and, in Operate mode, the
 // bezel keys and knobs. js/viewer.js calls attach() once the model is
 // built, tick() every frame and click() for left clicks while operating.
 //
@@ -12,18 +13,40 @@ window.G1000_PANEL = (function () {
     nav_frequency_knob: 'nav', com_frequency_knob: 'com', hdg_knob: 'hdg', alt_knob: 'alt',
     crs_baro_knob: 'crs_baro', fms_knob: 'fms', range_knob: 'range',
     nav_volume_knob: 'nav_volume', com_volume_knob: 'com_volume',
+    // The standby altimeter's Kollsman knob (only its knob: see STBY_KNOB).
+    standby_altimeter: 'stby_baro',
+    // The audio panel's volume (small) and squelch (large) knob.
+    audio_volume_knob: 'gma_vol',
   };
+  // The standby altimeter is one part, gauge and knob; the knob is the only
+  // piece that stands proud of the bezel (in front of this depth).
+  const STBY = 'standby_altimeter', STBY_KNOB_Z = 0.36;
   const KEYS = {
     nav_transfer_key: 'nav_transfer', com_transfer_key: 'com_transfer', direct_to_key: 'direct_to',
     fpl_key: 'fpl', clr_key: 'clr', ent_key: 'ent', menu_key: 'menu', proc_key: 'proc',
     ap_key: 'ap', fd_key: 'fd', hdg_key: 'hdg', alt_key: 'alt', nav_key: 'nav', vnv_key: 'vnv',
     apr_key: 'apr', bc_key: 'bc', vs_key: 'vs', flc_key: 'flc', nose_up_key: 'nose_up', nose_dn_key: 'nose_dn',
+    // The audio panel (js/g1000-gma.js): com1_mic_key -> 'gma:com1_mic'.
+    ...Object.fromEntries(G1000_GMA.KEYS.map((k) => [k + '_key', 'gma:' + k])),
+    // The red DISPLAY BACKUP button: not a part of its own (see BACKUP).
+    display_backup: 'display_backup',
   };
+  // The audio panel is one unit in the middle: its parts straddle the
+  // displays' split, so they aren't split by display. Its volume knob's
+  // part also holds the red DISPLAY BACKUP button below it (under
+  // AUDIO_KNOB_Y): a hit there is the button, the control 'display_backup'
+  // on the knob's mesh.
+  const AUDIO = new Set([...G1000_GMA.KEYS.map((k) => k + '_key'), 'audio_volume_knob']);
+  const AUDIO_KNOB = 'audio_volume_knob', AUDIO_KNOB_Y = -0.02, BACKUP = 'display_backup';
+  // Whether a vertex at (x, y, z) belongs to a part's control on `display`.
+  const onControl = (pid, display, x, y, z) => (pid === STBY ? z < STBY_KNOB_Z
+    : pid === AUDIO_KNOB ? y > AUDIO_KNOB_Y : pid === BACKUP ? y < AUDIO_KNOB_Y
+      : AUDIO.has(pid) || displayAt(x) === display);
   // Concentric knobs: the inner knob's radius is 4.7 mm, the outer's 6.
   // Their zones are bigger than the knobs, to be easy to hit: the inner
   // knob within INNER_ZONE of the centre, the outer out to OUTER_ZONE (the
   // nearest other control is 16 mm away), panel around it included.
-  const CONCENTRIC = new Set(['nav', 'com', 'alt', 'crs_baro', 'fms']);
+  const CONCENTRIC = new Set(['nav', 'com', 'alt', 'crs_baro', 'fms', 'gma_vol']);
   const INNER_ZONE = 0.0055, OUTER_ZONE = 0.012, INNER_KNOB = 0.0049;
   // The PFD is on the pilot's side (+x), the MFD on the right (-x).
   const SPLIT_X = 0.025;
@@ -61,6 +84,33 @@ window.G1000_PANEL = (function () {
       return { id, parent, plane, canvas, ctx: canvas.getContext('2d'), texture };
     });
 
+    // ---- Standby instruments: a live face (js/g1000-standby.js) on a
+    // disc inside each bezel, in front of the model's own fixed needles.
+    // The dial's centre: midway across, and half the width down from the
+    // top (the bottom has the knob). Radius and depth from the models:
+    // the bezel lip is 32 mm out, 0.3652 deep; the dials sit at 0.3685
+    // or more. The attitude indicator's bezel reaches in to 26 mm. ----
+    const SB = window.G1000_STANDBY;
+    const gauges = Object.keys(SB.draw).filter((id) => meshById[id]).map((id) => {
+      const parent = meshById[id], box = new THREE.Box3().setFromObject(parent);
+      const w = box.max.x - box.min.x;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = SB.SIZE;
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      if ('colorSpace' in texture) texture.colorSpace = THREE.SRGBColorSpace;
+      else texture.encoding = THREE.sRGBEncoding;
+      const r = id === 'standby_attitude_indicator' ? 0.0255 : 0.0305;
+      const plane = new THREE.Mesh(new THREE.CircleGeometry(r, 64),
+        new THREE.MeshBasicMaterial({ map: texture, toneMapped: false, transparent: true }));
+      // Facing the pilot, like the screens.
+      plane.rotation.y = Math.PI;
+      plane.position.set((box.min.x + box.max.x) / 2, box.max.y - w / 2, 0.3664);
+      plane.renderOrder = 1;
+      scene.add(plane);
+      return { id, parent, plane, ctx: canvas.getContext('2d'), texture };
+    });
+
     // ---- Where on a part a click landed ----
     // Knob centres per display, from the part's vertices on that side.
     const centres = {};
@@ -70,7 +120,9 @@ window.G1000_PANEL = (function () {
       const pos = meshById[pid].geometry.attributes.position, box = new THREE.Box3(), v = new THREE.Vector3();
       for (let i = 0; i < pos.count; i++) {
         v.fromBufferAttribute(pos, i);
-        if (displayAt(v.x) === display) box.expandByPoint(v);
+        // The standby altimeter: its knob only, whichever side; the audio
+        // panel's parts whole.
+        if (onControl(pid, display, v.x, v.y, v.z)) box.expandByPoint(v);
       }
       centres[key] = { x: (box.min.x + box.max.x) / 2, y: (box.min.y + box.max.y) / 2,
                        z: (box.min.z + box.max.z) / 2, front: box.min.z, min: box.min.x, max: box.max.x };
@@ -96,9 +148,14 @@ window.G1000_PANEL = (function () {
       const mesh = c.mesh, g = mesh.geometry, pos = g.attributes.position, idx = g.index;
       const sk = slot >= 0 && centreOf('softkeys', c.display);
       const mine = (t) => {
-        let x = 0;
-        for (let j = 0; j < 3; j++) x += pos.getX(idx.getX(t + j)) / 3;
-        if (displayAt(x) !== c.display) return false;
+        let x = 0, y = 0, z = 0;
+        for (let j = 0; j < 3; j++) {
+          const i = idx.getX(t + j);
+          x += pos.getX(i) / 3; y += pos.getY(i) / 3; z += pos.getZ(i) / 3;
+        }
+        // The standby altimeter's knob: its triangles in front of the bezel.
+        if (c.pid === STBY) return [0, 1, 2].every((j) => pos.getZ(idx.getX(t + j)) < STBY_KNOB_Z);
+        if (!onControl(c.pid, c.display, x, y, z)) return false;
         if (half) {
           // The inner knob: triangles all within its 4.7 mm radius.
           const k = centreOf(c.pid, c.display);
@@ -146,6 +203,28 @@ window.G1000_PANEL = (function () {
       piece.userData.off = setTimeout(() => { piece.visible = false; }, 150);
     }
 
+    // ---- The audio panel's annunciators: each key's part has a small box
+    // at its top (the top 1.3 mm), printed with a white triangle. A green
+    // triangle over its face shows the key is on (js/g1000-gma.js lit()). ----
+    const leds = G1000_GMA.KEYS.filter((k) => meshById[k + '_key']).map((key) => {
+      const parent = meshById[key + '_key'], pos = parent.geometry.attributes.position;
+      const all = new THREE.Box3().setFromBufferAttribute(pos), box = new THREE.Box3(), v = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i);
+        if (v.y > all.max.y - 0.0013) box.expandByPoint(v);
+      }
+      const w = box.max.x - box.min.x, h = box.max.y - box.min.y;
+      const shape = new THREE.Shape();
+      shape.moveTo(-w / 2, h / 2); shape.lineTo(w / 2, h / 2); shape.lineTo(0, -h / 2); shape.closePath();
+      const led = new THREE.Mesh(new THREE.ShapeGeometry(shape),
+        new THREE.MeshBasicMaterial({ color: 0x3dff6a, toneMapped: false, side: THREE.DoubleSide }));
+      led.position.set((box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, box.min.z - 0.0002);
+      led.visible = false;
+      led.renderOrder = 1;
+      scene.add(led);
+      return { key, parent, led };
+    });
+
     const ray = new THREE.Raycaster();
     // The first visible, solid part under the pointer, if it is one the
     // mock operates: { pid, display, point, inner }.
@@ -155,6 +234,14 @@ window.G1000_PANEL = (function () {
                           y: -((e.clientY - r.top) / r.height) * 2 + 1 }, camera);
       const hit = ray.intersectObjects(meshes.filter((m) => m.visible && !m.userData.part.glass), false)[0];
       const pid = hit?.object.userData.part.id;
+      // The standby altimeter operates only by its knob (within 8 mm of it).
+      if (pid === STBY) {
+        const k = centreOf(STBY, 'mfd');
+        if (Math.hypot(hit.point.x - k.x, hit.point.y - k.y) > 0.008) return zoneAt(hit);
+      }
+      if (pid === AUDIO_KNOB && hit.point.y < AUDIO_KNOB_Y) {
+        return { pid: BACKUP, mesh: hit.object, display: displayAt(hit.point.x), point: hit.point, inner: false };
+      }
       if (hit && ((pid in KEYS) || pid === 'softkeys' || ((pid in KNOBS) && !CONCENTRIC.has(KNOBS[pid])))) {
         return { pid, mesh: hit.object, display: displayAt(hit.point.x), point: hit.point, inner: false };
       }
@@ -183,11 +270,14 @@ window.G1000_PANEL = (function () {
     const name = (c) => {
       const knob = KNOBS[c.pid];
       const half = knob && CONCENTRIC.has(knob) ? (c.inner ? ' (inner)' : ' (outer)') : '';
-      // The autopilot keys are only on the PFD; the rest are on both.
-      const where = c.mesh.userData.part.system === 'autopilot' ? '' : ' · ' + c.display.toUpperCase();
+      // The autopilot keys are only on the PFD, the audio panel is one;
+      // the rest are on both.
+      const where = ['autopilot', 'audio_panel'].includes(c.mesh.userData.part.system) ? '' : ' · ' + c.display.toUpperCase();
+      if (c.pid === STBY) return 'Standby altimeter knob (baro)';
+      if (c.pid === BACKUP) return 'DISPLAY BACKUP button';
       if (c.pid === 'softkeys') {
         const i = softkeyAt(c.point, c.display);
-        const label = G.MENUS[G.menu(c.display)][i] || 'blank';
+        const label = G.labels(c.display)[i] || 'blank';
         return `Softkey ${i + 1} “${label}” · ${c.display.toUpperCase()}`;
       }
       return (I18N['part.' + c.pid] ?? c.pid) + half + where;
@@ -424,12 +514,23 @@ window.G1000_PANEL = (function () {
     renderer.domElement.addEventListener('pointercancel', endDrag);
 
     // Flying by hand with the autopilot off: arrows for pitch and bank,
-    // Page Up/Down for power. Not while a dialog or text field has focus.
+    // Page Up/Down for power, Home/End for the mixture (richer, leaner).
+    // With the MFD map's pointer out (RANGE push) the arrows move it
+    // instead, as the joystick would. Not while a dialog or text field
+    // has focus.
     document.addEventListener('keydown', (e) => {
       if (!operating || e.target.matches('input, select, textarea')
         || document.querySelector('.modal:not([hidden])')) return;
+      const pan = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+      if (pan && G.state.pan) {
+        e.preventDefault();
+        G.pan(...pan);
+        redraw(true);
+        return;
+      }
       const input = { ArrowUp: { pitch: -0.5 }, ArrowDown: { pitch: 0.5 }, ArrowLeft: { roll: -3 },
-        ArrowRight: { roll: 3 }, PageUp: { power: 0.05 }, PageDown: { power: -0.05 } }[e.key];
+        ArrowRight: { roll: 3 }, PageUp: { power: 0.05 }, PageDown: { power: -0.05 },
+        Home: { mixture: 0.02 }, End: { mixture: -0.02 } }[e.key];
       if (!input) return;
       e.preventDefault();
       G.fly(input);
@@ -445,6 +546,10 @@ window.G1000_PANEL = (function () {
         (s.id === 'pfd' ? D.drawPFD : D.drawMFD)(s.ctx, G.state, G);
         s.texture.needsUpdate = true;
       }
+      for (const g of gauges) {
+        SB.draw[g.id](g.ctx, G.state, G);
+        g.texture.needsUpdate = true;
+      }
     }
     function tick() {
       const now = performance.now();
@@ -455,6 +560,13 @@ window.G1000_PANEL = (function () {
       for (const s of screens) {
         s.plane.visible = s.parent.visible;
         s.plane.material.opacity = s.parent.material[0].opacity;
+      }
+      // Audio panel annunciators: lit while their key is on.
+      for (const l of leds) l.led.visible = l.parent.visible && G.gma.lit(l.key);
+      for (const g of gauges) {
+        const m = Array.isArray(g.parent.material) ? g.parent.material[0] : g.parent.material;
+        g.plane.visible = g.parent.visible;
+        g.plane.material.opacity = m.opacity;
       }
       // The overlay fades out after a turn.
       if (fadeFrom) {
@@ -477,7 +589,7 @@ window.G1000_PANEL = (function () {
       onTurn(fn) { onTurn = fn; },
       reset() { G.reset(); redraw(true); },
       // For tools (tools/shot.py --js): where a part's control is.
-      controlAt, softkeyAt, screens, overlay,
+      controlAt, softkeyAt, screens, gauges, overlay, leds,
     };
   }
 

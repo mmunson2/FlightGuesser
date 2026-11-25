@@ -7,10 +7,11 @@
 // accepts), in a list it selects a row. CLR hides the cursor. D→ goes
 // direct to the selected airport or station.
 //
-// The VFR pages work: Navigation Map, Airport and VOR Information, Trip
-// Planning, Utility, Active Flight Plan, Flight Plan Catalog, Nearest
-// Airports, Nearest VOR, Nearest Frequencies and Nearest Airspaces, and
-// System Setup's airspace alert settings. MENU on a page is js/g1000-menu.js.
+// The VFR pages work: Navigation Map, Airport, VOR and User WPT
+// Information, Trip Planning, Utility, GPS Status, Active Flight Plan,
+// Flight Plan Catalog, Nearest Airports, VOR, User WPTs, Frequencies and
+// Airspaces, and System Setup's airspace alert settings. MENU on a page
+// is js/g1000-menu.js.
 // The rest show their name and a "not in the mock" placeholder.
 window.G1000_PAGES = (function () {
   const GROUPS = [
@@ -21,13 +22,15 @@ window.G1000_PAGES = (function () {
     { id: 'NRST', pages: ['Nearest Airports', 'Nearest Intersections', 'Nearest NDB', 'Nearest VOR', 'Nearest User WPTs', 'Nearest Frequencies', 'Nearest Airspaces'] },
   ];
   // Page keys the mock draws: group id + ':' + page index.
-  const LIVE = new Set(['MAP:0', 'WPT:0', 'WPT:3', 'AUX:0', 'AUX:1', 'AUX:3', 'FPL:0', 'FPL:1', 'NRST:0', 'NRST:3', 'NRST:5', 'NRST:6']);
+  const LIVE = new Set(['MAP:0', 'WPT:0', 'WPT:3', 'WPT:4', 'AUX:0', 'AUX:1', 'AUX:2', 'AUX:3', 'FPL:0', 'FPL:1',
+    'NRST:0', 'NRST:3', 'NRST:4', 'NRST:5', 'NRST:6']);
   const FPL_PAGE = 'FPL:0';
 
   // toMag(true bearing): magnetic, by the local variation.
   // openMenu(): the Page Menu (ENT on a stored flight plan opens it).
   // comms, airspace: the Nearest Frequencies and Airspaces data (data/wa-nav.js).
-  function create({ state, note, bearingDist, waypoints, fms, tas, fuelFlow, toMag, openMenu, comms, airspace, indicatedAlt }) {
+  // gs(), track(): ground speed (kt) and track (true), wind included.
+  function create({ state, note, bearingDist, waypoints, fms, gs, track, fuelFlow, toMag, openMenu, comms, airspace, indicatedAlt }) {
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     const airports = waypoints.filter((w) => w.type === 'airport');
     const vors = waypoints.filter((w) => w.type === 'vor');
@@ -38,7 +41,9 @@ window.G1000_PAGES = (function () {
       // cursor: null (knobs change pages), 'ident' (entry open: entry
       // holds it), or a row number in a list.
       cursor: null, entry: null,
-      wpt: { airport: 'KPAE', vor: 'PAE' }, tripTo: 'KAWO',
+      // user: the user waypoint shown (WPT - User WPT Information);
+      // entryFor: what an open entry there is for ('name' or 'ref').
+      wpt: { airport: 'KPAE', vor: 'PAE', user: null }, tripTo: 'KAWO', entryFor: null,
       // Utility: flight timer (from t0), odometer, and the trip's distance,
       // time (from tripT0) and top ground speed; the Page Menu resets them.
       stats: { t0: 0, odo: 0, trip: 0, tripT0: 0, maxGs: 0 },
@@ -54,6 +59,7 @@ window.G1000_PAGES = (function () {
     }).sort((a, b) => a.dist - b.dist).slice(0, n);
     const nearestAirports = () => nearest(airports);
     const nearestVors = () => nearest(vors);
+    const nearestUser = () => nearest(state.fms.user, 25).filter((r) => r.dist <= 200);
     // ---- Nearest Frequencies: center, flight service and weather ----
     // Rows, one per frequency: the nearest two center (RCAG) and flight
     // service (RCO) outlets with each of their frequencies, then the
@@ -100,7 +106,8 @@ window.G1000_PAGES = (function () {
       // The altitude buffer (AUX - System Setup) widens each shelf's floor
       // and ceiling, as the real unit's alerts do.
       const buf = state.alertSet?.buffer ?? 0;
-      const alt = indicatedAlt(), h = (state.hdg * Math.PI) / 180, reach = (tas() / 60) * 10;
+      // Ahead: along the track, ten minutes at the ground speed.
+      const alt = indicatedAlt(), h = (track() * Math.PI) / 180, reach = (gs() / 60) * 10;
       const ahead = [];
       for (let d = 0.5; d <= reach; d += 0.5) ahead.push([Math.sin(h) * d, Math.cos(h) * d]);
       const groups = new Map();
@@ -129,13 +136,13 @@ window.G1000_PAGES = (function () {
 
     // The rows a list page's cursor moves over.
     const LISTS = {
-      'FPL:1': () => state.fms.catalog, 'NRST:0': nearestAirports, 'NRST:3': nearestVors,
+      'FPL:1': () => state.fms.catalog, 'NRST:0': nearestAirports, 'NRST:3': nearestVors, 'NRST:4': nearestUser,
       'NRST:5': nearestFreqs, 'NRST:6': nearestAirspaces,
     };
     const listLength = (key) => LISTS[key]().length;
     // The Flight Plan Catalog as rows: number, first and last waypoint,
     // total distance.
-    const byId = Object.fromEntries(waypoints.map((w) => [w.id, w]));
+    const byId = fms.byId;
     function catalogRows() {
       return state.fms.catalog.map((plan, i) => {
         let dist = 0;
@@ -146,7 +153,11 @@ window.G1000_PAGES = (function () {
     // The first identifier of the right kind starting with what was typed.
     const matchIn = (list) => (typed) => (typed
       ? list.slice().sort((a, b) => a.id.localeCompare(b.id)).find((w) => w.id.startsWith(typed)) ?? null : null);
-    const matchers = { 'WPT:0': matchIn(airports), 'WPT:3': matchIn(vors), 'AUX:0': matchIn(waypoints) };
+    const literal = (typed) => (typed ? { id: typed } : null);
+    const matchers = { 'WPT:0': matchIn(airports), 'WPT:3': matchIn(vors), 'AUX:0': (t) => fms.match(t),
+      // A Flight ID, or a user waypoint's new name, is whatever was typed;
+      // its reference waypoint any waypoint.
+      'AUX:3': literal, 'WPT:4': (t) => (P().entryFor === 'ref' ? fms.match(t) : literal(t)) };
 
     // The FPL page is the flight plan window over the map (js/g1000-fms.js
     // owns it); other pages close it. A Direct-To window stays.
@@ -188,16 +199,59 @@ window.G1000_PAGES = (function () {
       if (key === 'AUX:0') return p.tripTo;
       if (key === 'NRST:0' && p.cursor != null) return nearestAirports()[p.cursor]?.w.id ?? null;
       if (key === 'NRST:3' && p.cursor != null) return nearestVors()[p.cursor]?.w.id ?? null;
+      if (key === 'NRST:4' && p.cursor != null) return nearestUser()[p.cursor]?.w.id ?? null;
+      if (key === 'WPT:4') return shownUser()?.id ?? null;
       return null;
     }
 
-    // ---- AUX - System Setup: the airspace alert settings ----
-    // Rows: the altitude buffer, then each class's alerts on or off. With
-    // the cursor out, the large knob picks the row, the small knob changes it.
-    const SETUP_ROWS = ['buffer', 'B', 'C', 'D'];
+    // ---- WPT - User WPT Information ----
+    // The user waypoint shown: the one picked, else the first.
+    const shownUser = () => state.fms.user.find((u) => u.id === P().wpt.user) ?? state.fms.user[0] ?? null;
+    // Cursor rows: the waypoint (small knob: the next one; ENT: rename),
+    // its reference waypoint (ENT: change), radial and distance from it
+    // (small knob: 1° or 1 NM a click).
+    const USER_ROWS = ['name', 'ref', 'radial', 'dist'];
+    function userChange(row, steps) {
+      const u = shownUser(), list = state.fms.user;
+      if (!u) return;
+      const k = USER_ROWS[row];
+      if (k === 'name') {
+        const i = list.indexOf(u);
+        P().wpt.user = list[(((i + steps) % list.length) + list.length) % list.length].id;
+      } else if (k === 'ref') note('Press ENT to change the reference waypoint');
+      else if (!u.ref) note('Pick a reference waypoint first (ENT on REF WPT)');
+      else if (k === 'radial') fms.placeUser(u, u.ref.id, (((u.ref.radial + steps) % 360) + 360) % 360, u.ref.dist);
+      else fms.placeUser(u, u.ref.id, u.ref.radial, clamp(u.ref.dist + steps, 0, 999));
+    }
+
+    // ---- AUX - GPS Status: a made-up but plausible sky ----
+    // Twelve satellites drifting across the sky (about 30° an hour),
+    // signal by elevation; with LOI (the 'gps' failure) too few are used
+    // and the solution has no integrity.
+    function gpsStatus() {
+      const t = state.t / 120, lost = !!state.sys.failed.gps;
+      const sats = [2, 5, 6, 9, 12, 13, 17, 19, 22, 25, 28, 31].map((prn, i) => {
+        const el = 8 + ((i * 53 + t * 0.7) % 80), az = (i * 137 + t) % 360;
+        const sig = Math.round(clamp(30 + el * 0.25 + ((prn * 7) % 6), 0, 55));
+        // With LOI only the three highest are still tracked.
+        return { prn, az, el, sig, used: !lost };
+      });
+      if (lost) sats.slice().sort((a, b) => b.el - a.el).slice(0, 3).forEach((s) => { s.used = true; });
+      // SBAS (WAAS): two geostationary satellites low in the south east.
+      sats.push({ prn: 46, az: 160, el: 30, sig: 42, used: !lost, sbas: true }, { prn: 51, az: 200, el: 33, sig: 40, used: !lost, sbas: true });
+      return { sats, solution: lost ? 'LOI' : '3D DIFF NAV', epu: lost ? null : 0.02, hfom: lost ? null : 25, vfom: lost ? null : 33 };
+    }
+
+    // ---- AUX - System Setup: the airspace alert settings, Flight ID ----
+    // Rows: the altitude buffer, each class's alerts on or off, and the
+    // Flight ID. With the cursor out, the large knob picks the row, the
+    // small knob changes it; ENT on the Flight ID edits it like an
+    // identifier (small knob: character, large knob: position, ENT).
+    const SETUP_ROWS = ['buffer', 'B', 'C', 'D', 'flightId'];
     function setupChange(row, steps) {
       const set = state.alertSet, k = SETUP_ROWS[row];
-      if (k === 'buffer') set.buffer = clamp(set.buffer + steps * 50, 0, 1000);
+      if (k === 'flightId') note('Press ENT to edit the Flight ID');
+      else if (k === 'buffer') set.buffer = clamp(set.buffer + steps * 50, 0, 1000);
       else set[k] = !set[k];
     }
 
@@ -219,6 +273,11 @@ window.G1000_PAGES = (function () {
         else setupChange(p.cursor, steps);
         return;
       }
+      if (key === 'WPT:4') {
+        if (part === 'outer') p.cursor = clamp(p.cursor + steps, 0, USER_ROWS.length - 1);
+        else userChange(p.cursor, steps);
+        return;
+      }
       p.cursor = clamp(p.cursor + steps, 0, Math.max(0, listLength(key) - 1));
     }
     function push() {
@@ -228,7 +287,9 @@ window.G1000_PAGES = (function () {
         const now = key === 'WPT:0' ? p.wpt.airport : key === 'WPT:3' ? p.wpt.vor : p.tripTo;
         p.cursor = 'ident';
         p.entry = { ident: now, pos: 0 };
-      } else if (['NRST:0', 'NRST:3', 'NRST:5', 'NRST:6'].includes(key)) {
+      } else if (key === 'WPT:4') {
+        if (shownUser()) p.cursor = 0; else note('No user waypoints: MENU to create one');
+      } else if (['NRST:0', 'NRST:3', 'NRST:4', 'NRST:5', 'NRST:6'].includes(key)) {
         if (listLength(key)) p.cursor = 0; else note('Nothing near enough to list');
       } else if (key === 'AUX:3') {
         p.cursor = 0;
@@ -253,10 +314,34 @@ window.G1000_PAGES = (function () {
         if (page === 'WPT:0') p.wpt.airport = m.id;
         if (page === 'WPT:3') p.wpt.vor = m.id;
         if (page === 'AUX:0') p.tripTo = m.id;
+        if (page === 'AUX:3') state.xpdr.flightId = m.id;
+        if (page === 'WPT:4') {
+          const u = shownUser();
+          if (p.entryFor === 'ref') fms.placeUser(u, m.id, u.ref?.radial ?? 0, u.ref?.dist ?? 0);
+          else if (m.id !== u.id && fms.byId[m.id]) { note(`${m.id} is already a waypoint`); return true; }
+          else if (m.id !== u.id && fms.inUse(u.id)) { note(`${u.id} is in a flight plan: can't rename it`); return true; }
+          else { u.id = m.id; p.wpt.user = m.id; }
+          p.cursor = USER_ROWS.indexOf(p.entryFor);
+          p.entry = p.entryFor = null;
+          return true;
+        }
         p.cursor = p.entry = null;
         return true;
       }
-      if (page === 'FPL:1') {
+      if (page === 'WPT:4') {
+        const u = shownUser(), k = USER_ROWS[p.cursor];
+        if (u && (k === 'name' || k === 'ref')) {
+          p.entryFor = k;
+          p.entry = { ident: k === 'name' ? u.id : u.ref?.id ?? '', pos: 0 };
+          p.cursor = 'ident';
+        }
+      } else if (page === 'NRST:4') {
+        // ENT on a user waypoint: its information page.
+        p.wpt.user = nearestUser()[p.cursor].w.id;
+        goPage(1, 4);
+      } else if (page === 'AUX:3') {
+        if (SETUP_ROWS[p.cursor] === 'flightId') { p.cursor = 'ident'; p.entry = { ident: state.xpdr.flightId, pos: 0 }; }
+      } else if (page === 'FPL:1') {
         // ENT on a stored plan: the Page Menu, to activate or delete it.
         openMenu();
       } else if (page === 'NRST:0') {
@@ -298,24 +383,25 @@ window.G1000_PAGES = (function () {
 
     // ---- Every step: the Utility page's statistics ----
     function step(dt) {
-      const st = P().stats, gs = tas();
-      st.odo += (gs / 3600) * dt;
-      st.trip += (gs / 3600) * dt;
-      st.maxGs = Math.max(st.maxGs, gs);
+      const st = P().stats, g = gs();
+      st.odo += (g / 3600) * dt;
+      st.trip += (g / 3600) * dt;
+      st.maxGs = Math.max(st.maxGs, g);
     }
 
     // Trip Planning from the present position to the chosen waypoint.
     function trip() {
-      const to = waypoints.find((w) => w.id === P().tripTo);
+      const to = fms.byId[P().tripTo];
       const { brg, dist } = bearingDist(state, to);
-      const hours = dist / Math.max(tas(), 30);
+      const hours = dist / Math.max(gs(), 30);
       const ff = fuelFlow();
       return { to, dtk: toMag(brg), dist, hours, ff, required: ff * hours, onboard: state.fuel, after: state.fuel - ff * hours };
     }
 
     return {
       GROUPS, LIVE, fresh, sync, goPage, fplKey, pageKey, pageName, selectedIdent, turn, push, press,
-      pfdNearest, pfdInput, step, trip, nearestAirports, nearestVors, nearestFreqs, nearestAirspaces, catalogRows, matchers,
+      pfdNearest, pfdInput, step, trip, nearestAirports, nearestVors, nearestUser, nearestFreqs, nearestAirspaces, catalogRows, matchers,
+      shownUser, gpsStatus, USER_ROWS,
       cursorOn: () => P().cursor != null,
       isFplPage: () => pageKey() === FPL_PAGE,
     };

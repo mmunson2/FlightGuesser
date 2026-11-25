@@ -12,6 +12,13 @@
 // selected row. CLR on a waypoint offers to remove it. MENU (the Page
 // Menu, js/g1000-menu.js) activates the leg to it, inverts, deletes or
 // stores the plan, and the Flight Plan Catalog's menu loads a stored one.
+//
+// User waypoints (state.fms.user) join the database: made at the present
+// position, at the MFD map's pointer, by radial and distance from another
+// waypoint (WPT - User WPT Information), or as the Closest Point of the
+// flight plan to a waypoint. Parallel Track offsets the plan's legs to
+// one side. With the GPS's integrity lost (the 'gps' failure, LOI) there
+// is no GPS course.
 window.G1000_FMS = (function () {
   const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   // CDI full scale (NM): enroute, and terminal within 31 NM of the
@@ -27,10 +34,13 @@ window.G1000_FMS = (function () {
     const toMagAt = (t, p) => ((t - magVarAt(p.lat, p.lon)) % 360 + 360) % 360;
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     const rad = (d) => (d * Math.PI) / 180;
-    const byId = Object.fromEntries(waypoints.map((w) => [w.id, w]));
+    const base = Object.fromEntries(waypoints.map((w) => [w.id, w]));
+    // By identifier: the database's, then the user waypoints.
+    const byId = new Proxy(base, { get: (t, k) => t[k] ?? state.fms?.user.find((u) => u.id === k) });
     const sorted = waypoints.slice().sort((a, b) => a.id.localeCompare(b.id));
     // The first waypoint whose identifier starts with what was typed.
-    const match = (typed) => (typed ? sorted.find((w) => w.id.startsWith(typed)) ?? null : null);
+    const match = (typed) => (typed ? [...sorted, ...F().user].sort((a, b) => a.id.localeCompare(b.id))
+      .find((w) => w.id.startsWith(typed)) ?? null : null);
 
     const fresh = () => ({
       // wpts: identifiers in order. active: index of the waypoint flown TO
@@ -49,8 +59,17 @@ window.G1000_FMS = (function () {
       // OBS mode: null, or { crs } (magnetic), the selected course
       // through the active waypoint.
       obs: null,
+      // The flight plan's options (its Page Menu): a new waypoint goes in
+      // after the selected one instead of before; the three data columns.
+      insertAfter: false, fields: freshFields(),
+      // User waypoints: { id, lat, lon, type: 'user', name, ref } (ref: the
+      // reference waypoint, radial (magnetic) and distance it was made by).
+      user: [],
+      // Parallel Track (its setup window): side, offset (NM), on or off.
+      ptk: { side: 'Right', dist: 2, on: 'Off' },
     });
     const F = () => state.fms;
+    const freshFields = () => ({ f1: 'DTK', f2: 'DIS', f3: 'CUM' });
 
     // The point `dist` NM from p along true bearing brg (great circle).
     function project(p, brg, dist) {
@@ -71,18 +90,26 @@ window.G1000_FMS = (function () {
       else if (f.active != null && f.active >= 1 && f.active < f.wpts.length) {
         l = { from: byId[f.wpts[f.active - 1]], to: byId[f.wpts[f.active]], fromId: f.wpts[f.active - 1], direct: false };
       }
-      if (!l || !obs) return l;
-      const crsTrue = obs.crs + magVarAt(l.to.lat, l.to.lon);
-      return { ...l, from: project(l.to, crsTrue + 180, 100), beyond: project(l.to, crsTrue, 100), obs: true };
+      if (l && obs) {
+        const crsTrue = obs.crs + magVarAt(l.to.lat, l.to.lon);
+        return { ...l, from: project(l.to, crsTrue + 180, 100), beyond: project(l.to, crsTrue, 100), obs: true };
+      }
+      // Parallel Track: the plan's leg moved sideways (not a Direct-To).
+      const p = F().ptk;
+      if (l && !l.direct && p.on === 'On') {
+        const side = bearingDist(l.from, l.to).brg + (p.side === 'Right' ? 90 : -90);
+        return { ...l, from: project(l.from, side, p.dist), to: { ...l.to, ...project(l.to, side, p.dist) }, ptk: true };
+      }
+      return l;
     }
     // OBS: sequencing suspended, the course to and past the active
     // waypoint picked with the CRS knob. Starts on the leg's own course.
     function toggleObs() {
       const f = F();
       if (f.obs) { f.obs = null; return true; }
-      const l = leg();
-      if (!l) return false;
-      f.obs = { crs: Math.round(navSolution().course) % 360 };
+      const nav = navSolution();
+      if (!nav) return false;
+      f.obs = { crs: Math.round(nav.course) % 360 };
       return true;
     }
     // TERM within 31 NM of the plan's first or last airport (or a
@@ -106,7 +133,8 @@ window.G1000_FMS = (function () {
     // js/g1000.js), or null with no active leg.
     function navSolution() {
       const l = leg();
-      if (!l) return null;
+      // LOI: the position can't be trusted, so no course or deviation.
+      if (!l || state.sys?.failed.gps) return null;
       const p = legPosition(l);
       const scale = scaleName();
       const to = bearingDist(state, l.to);
@@ -218,6 +246,59 @@ window.G1000_FMS = (function () {
     }
     const deleteAllStored = () => { F().catalog = []; };
 
+    // ---- User waypoints ----
+    // The next free USRnnn name.
+    function userName() {
+      for (let n = 1; ; n++) {
+        const id = 'USR' + String(n).padStart(3, '0');
+        if (!byId[id]) return id;
+      }
+    }
+    // A new user waypoint at { lat, lon } (id: a name or the next USRnnn);
+    // it, or null when the 1,000 are taken or the name is in use.
+    function addUser({ lat, lon, id = userName(), ref = null, name = 'USER WAYPOINT' }) {
+      if (F().user.length >= 1000) { note('User waypoint memory full'); return null; }
+      if (byId[id]) { note(`${id} is already a waypoint`); return null; }
+      const w = { id, lat, lon, type: 'user', name, ref };
+      F().user.push(w);
+      return w;
+    }
+    // Where a plan or a Direct-To uses a waypoint (so it can't go).
+    const inUse = (id) => F().fpl.wpts.includes(id) || F().fpl.dto?.to === id || F().catalog.some((p) => p.wpts.includes(id));
+    function removeUser(id) {
+      if (inUse(id)) { note(`${id} is in a flight plan: remove it there first`); return false; }
+      F().user = F().user.filter((u) => u.id !== id);
+      return true;
+    }
+    // From a reference: radial (magnetic, by the variation there) and distance.
+    function placeUser(w, refId, radial, dist) {
+      const r = byId[refId];
+      if (!r) return;
+      Object.assign(w, project(r, radial + magVarAt(r.lat, r.lon), dist), { ref: { id: refId, radial, dist } });
+    }
+
+    // ---- Closest Point of FPL ----
+    // The point on the plan's legs nearest a waypoint: { lat, lon, dist
+    // (NM from it), brg (magnetic, from it), after (the index of the
+    // leg's first waypoint) } or null with fewer than two waypoints. Flat
+    // geometry around the reference waypoint: plenty for a plan's legs.
+    function closestPoint(refId) {
+      const r = byId[refId], f = F().fpl;
+      if (!r || f.wpts.length < 2) return null;
+      const k = Math.cos(rad(r.lat));
+      const xy = (p) => [(p.lon - r.lon) * k, p.lat - r.lat];
+      let best = null;
+      for (let i = 1; i < f.wpts.length; i++) {
+        const a = byId[f.wpts[i - 1]], b = byId[f.wpts[i]];
+        const [ax, ay] = xy(a), [bx, by] = xy(b), dx = bx - ax, dy = by - ay;
+        const t = clamp(-(ax * dx + ay * dy) / (dx * dx + dy * dy || 1), 0, 1);
+        const p = { lat: a.lat + t * (b.lat - a.lat), lon: a.lon + t * (b.lon - a.lon) };
+        const { brg, dist } = bearingDist(r, p);
+        if (!best || dist < best.dist) best = { ...p, dist, brg: toMagAt(brg, r), after: i - 1 };
+      }
+      return best;
+    }
+
     // ---- Character entry, shared by both windows ----
     function editChar(e, steps) {
       const cur = e.ident[e.pos];
@@ -269,8 +350,11 @@ window.G1000_FMS = (function () {
       if (win.entry) {
         const m = match(win.entry.ident);
         if (!m) { note('No waypoint matches ' + win.entry.ident); return true; }
-        insert(win.cursor, m.id);
-        win.cursor++;
+        // Before the selected row, or after it (Insert After); the cursor
+        // then sits after the new waypoint, or on it.
+        const n = F().fpl.wpts.length;
+        if (F().insertAfter && win.cursor < n) { insert(win.cursor + 1, m.id); win.cursor++; }
+        else { insert(win.cursor, m.id); win.cursor++; }
         win.entry = null;
         return true;
       }
@@ -297,9 +381,10 @@ window.G1000_FMS = (function () {
     // ---- The FMS knob ----
     function turn(part, steps, display) {
       const win = F().win[display];
+      // (The MFD's pages take the knob before this; on the PFD it needs a
+      // window.)
       if (!win) {
-        note(display === 'mfd' ? 'MFD page groups: not in the mock yet (try FPL or D→)'
-          : 'FMS knob: open FPL or D→ first');
+        note('FMS knob: open FPL, D→ or a softkey window first');
         return;
       }
       if (win.type === 'dto') {
@@ -334,11 +419,13 @@ window.G1000_FMS = (function () {
 
     // The plan as rows for the display: id, desired track (magnetic, by
     // the variation at the leg's start) and distance of the leg to it,
-    // cumulative distance, and whether it is flown to now.
+    // cumulative distance, whether it is flown to now, and toGo: the
+    // distance from the airplane along the route (the active waypoint and
+    // those after it; null before), for ETE, ETA and fuel.
     function rows() {
       const f = F().fpl;
       let cum = 0;
-      return f.wpts.map((id, i) => {
+      const out = f.wpts.map((id, i) => {
         const w = byId[id];
         let dtk = null, dis = null;
         if (i > 0) {
@@ -348,12 +435,19 @@ window.G1000_FMS = (function () {
         }
         cum += dis ?? 0;
         const active = f.dto ? f.dto.index === i : f.active === i;
-        return { id, name: w.name, dtk, dis, cum, active };
+        return { id, name: w.name, dtk, dis, cum, active, toGo: null };
       });
+      const at = out.findIndex((r) => r.active);
+      if (at >= 0) {
+        out[at].toGo = bearingDist(state, byId[out[at].id]).dist;
+        for (let i = at + 1; i < out.length; i++) out[i].toGo = out[i - 1].toGo + out[i].dis;
+      }
+      return out;
     }
 
     return { fresh, press, turn, push, step, navSolution, leg, rows, match, byId, SCALE, directTo, insert, remove,
-      toggleObs, project, activateLeg, cancelDirect, invertPlan, deletePlan, storePlan, activatePlan, deleteAllStored, editChar, moveCursor };
+      toggleObs, project, freshFields, activateLeg, cancelDirect, invertPlan, deletePlan, storePlan, activatePlan, deleteAllStored, editChar, moveCursor,
+      addUser, removeUser, placeUser, userName, inUse, closestPoint };
   }
 
   return { create, CHARS };

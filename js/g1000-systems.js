@@ -17,9 +17,26 @@
 //
 // Failures (the Failures list in Operate mode) make them happen:
 // alternator, overvoltage, oil loss, vacuum pump, a left tank leak, CO
-// from the exhaust, a pitch trim fault. Both tanks dry stops the engine.
+// from the exhaust, a pitch trim fault, and the GPS's loss of integrity
+// (LOI; js/g1000-fms.js drops the GPS course). Both tanks dry, or a
+// mixture leaned far past peak, stops the engine.
+//
+// The mixture (state.mixture, 0 idle cutoff to 1 full rich) and the four
+// cylinders' EGT and CHT, for the EIS's Lean page, and the fuel totalizer
+// (fuel remaining as the pilot set it, less what the fuel flow says was
+// burnt: it knows nothing of the tanks, so a leak shows as a mismatch).
 window.G1000_SYSTEMS = (function () {
-  const FAILURES = ['alternator', 'overvolt', 'oil', 'vacuum', 'leakL', 'co', 'trim'];
+  const FAILURES = ['alternator', 'overvolt', 'oil', 'vacuum', 'leakL', 'co', 'trim', 'gps'];
+  // Richness: the fuel-air ratio over the one that gives peak EGT (1).
+  // Full rich gives 1.35 at sea level, richer as the air thins.
+  const richAt = (alt) => 1.35 * (1 + alt / 25000);
+  // Best power: about 100 °F rich of peak.
+  const BEST_POWER = 1.15;
+  // Each cylinder's share of the mixture (cylinder 2 runs leanest and
+  // peaks first) and its peak EGT, °F.
+  const CYL_RICH = [1.0, 0.97, 1.02, 0.99], CYL_PEAK = [1440, 1475, 1420, 1455];
+  // The fuel the totalizer starts with, and full usable fuel (gal).
+  const FULL_USABLE = 53;
   // Main battery: usable charge, amp-hours; the load with the alternator
   // off, amps. About 35 minutes to the 20 V where the standby battery
   // takes the essential bus (made up; the POH says only "a short time").
@@ -34,6 +51,14 @@ window.G1000_SYSTEMS = (function () {
       running: true, rpm: 2140, oilPsi: 60, oilF: 190, vac: 5.0,
       voltsM: 28.0, voltsE: 28.0, ampsM: 1.0, ampsS: 0.2, batt: BATT_AH, stbyBatt: 1, acuTripped: false,
       coPpm: 0, overvoltFor: 0,
+      egt: [0, 0, 0, 0], cht: [0, 0, 0, 0],
+      // Lean assist: on, the hottest EGT seen per cylinder since it came
+      // on, and the first cylinder to pass its peak. cyl: the cylinder
+      // Cyl Slct shows (0-3).
+      lean: { assist: false, max: [0, 0, 0, 0], peaked: null, cyl: 0 },
+      // The totalizer: fuel remaining as set (the 48 gal the mock starts
+      // with), fuel used (gal).
+      tot: { rem: 48, used: 0 },
       // How long each delayed annunciation's condition has held (s).
       held: { fuelL: 0, fuelR: 0, stby: 0 },
       failed: Object.fromEntries(FAILURES.map((f) => [f, false])),
@@ -53,12 +78,53 @@ window.G1000_SYSTEMS = (function () {
       state.fuel = state.fuelL + state.fuelR;
     }
 
+    // ---- The mixture ----
+    const richness = () => state.mixture * richAt(state.trueAlt);
+    // What the mixture does to the engine: power (1 at best power and
+    // richer, falling off lean of peak) and fuel flow (in proportion to
+    // the fuel, 1 at best power).
+    function mixtureEffect() {
+      const r = richness();
+      return { r, power: r >= 1 ? 1 : Math.max(0, 1 - 1.2 * (1 - r) ** 2), fuel: r / BEST_POWER };
+    }
+    // The mixture for best power at an altitude (where the mock starts).
+    const bestPowerMixture = (alt) => BEST_POWER / richAt(alt);
+
+    // EGT: highest at the cylinder's peak, falling 500 °F per unit of
+    // richness rich of it and 700 lean of it; hotter with power. CHT
+    // follows it, coolest well rich or well lean.
+    function temps(dt) {
+      const s = S(), r = richness();
+      for (let c = 0; c < 4; c++) {
+        const rc = r * CYL_RICH[c], peak = CYL_PEAK[c] + 100 * (state.power - 0.75);
+        const egt = !s.running ? 100 : peak - (rc >= 1 ? 500 * (rc - 1) : 700 * (1 - rc));
+        // A few seconds' lag, as the probes have.
+        s.egt[c] += clamp(egt - s.egt[c], -40 * dt, 40 * dt);
+        if (!s.egt[c] || Math.abs(s.egt[c] - egt) > 600) s.egt[c] = egt;
+        s.cht[c] = s.running ? 200 + 0.2 * (s.egt[c] - 600) - 20 * Math.abs(rc - 1.05) : 100;
+      }
+      // Lean assist: each cylinder's hottest; the first to fall 5 °F
+      // below it, having been leaned, has peaked.
+      const L = s.lean;
+      if (!L.assist) return;
+      s.egt.forEach((e, c) => { L.max[c] = Math.max(L.max[c], e); });
+      if (L.peaked == null) {
+        const c = s.egt.findIndex((e, k) => e < L.max[k] - 5 && r * CYL_RICH[k] < 1);
+        if (c >= 0) L.peaked = c;
+      }
+    }
+
     function step(dt, gph) {
       const s = S(), f = s.failed;
       burn(dt, gph);
-      // Both tanks dry: the engine stops.
-      s.running = state.fuel > 0.01;
-      s.rpm = s.running ? 700 + 1800 * state.power : 0;
+      // The totalizer counts what the fuel flow says.
+      s.tot.used += (gph / 3600) * dt;
+      s.tot.rem = Math.max(0, s.tot.rem - (gph / 3600) * dt);
+      // Both tanks dry, idle cutoff, or leaned far past peak: the engine
+      // stops (and runs again with fuel and mixture: no starter here).
+      s.running = state.fuel > 0.01 && richness() >= 0.55;
+      s.rpm = s.running ? 700 + 1800 * state.power * mixtureEffect().power : 0;
+      temps(dt);
       // Oil: pressure with RPM; lost oil drains it away and heats it up.
       const oilTarget = !s.running ? 0 : f.oil ? 5 : clamp(25 + 0.017 * s.rpm, 25, 75);
       s.oilPsi += clamp(oilTarget - s.oilPsi, -2 * dt, 4 * dt);
@@ -123,8 +189,21 @@ window.G1000_SYSTEMS = (function () {
       if (id === 'overvolt' && !on) { s.acuTripped = false; s.overvoltFor = 0; }
     }
 
-    return { fresh, step, annunciations, fail, FAILURES };
+    // Lean assist on (its peak search starts over) or off.
+    function assist(on = !S().lean.assist) {
+      Object.assign(S().lean, { assist: on, max: S().egt.slice(), peaked: null });
+    }
+    // The totalizer's softkeys.
+    function totalizer(what) {
+      const t = S().tot;
+      if (what === 'Rst Fuel') t.rem = FULL_USABLE;
+      if (what === 'Dec Fuel') t.rem = Math.max(0, Math.round(t.rem) - 1);
+      if (what === 'Inc Fuel') t.rem = Math.min(FULL_USABLE, Math.round(t.rem) + 1);
+      if (what === 'Rst Used') t.used = 0;
+    }
+
+    return { fresh, step, annunciations, fail, FAILURES, mixtureEffect, bestPowerMixture, richness, assist, totalizer };
   }
 
-  return { create, FAILURES };
+  return { create, FAILURES, FULL_USABLE };
 })();

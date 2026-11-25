@@ -15,11 +15,17 @@
 // Timer/References window, through js/g1000-systems.js the engine,
 // electrical, fuel, vacuum and CO systems (and their failures), and
 // through js/g1000-alerts.js the POH's annunciations, the messages and
-// the Alerts window. What it doesn't: VNAV, procedures and GPS
-// approaches, LOC/GS, hardware-fault messages, aural alerts, the MFD's IFR and setup pages,
-// failures, wind. Headings, bugs, courses
-// and bearings are magnetic (see magVarAt); the simulation underneath is
-// true. The airplane is a few lines of kinematics, not a flight model.
+// the Alerts window, the wind (state.wind: ground speed and track, the
+// PFD's wind window), bearing pointers and DME, map pan and measure, user
+// waypoints, GPS status (and loss of integrity), lean assist and the fuel
+// totalizer, checklists (js/g1000-checklist.js) and the audio panel's
+// selections (js/g1000-gma.js), and reversionary mode (the audio panel's
+// DISPLAY BACKUP button: both displays show the PFD with the engine strip;
+// see `reversion`). What it doesn't:
+// VNAV, procedures and GPS approaches, LOC/GS, ADF, sound (no aural
+// alerts), hardware-fault messages, the MFD's IFR pages. Headings, bugs, courses and bearings are magnetic (see
+// magVarAt); the simulation underneath is true. The airplane is a few
+// lines of kinematics, not a flight model.
 // Behaviour follows the G1000 NXi and GFC 700 pilot's guides as remembered;
 // to_verify.md lists what to check against the real guides.
 window.G1000 = (function () {
@@ -55,6 +61,8 @@ window.G1000 = (function () {
   // The altimeter setting at the airplane: indicated altitude is right
   // only when the Kollsman (BARO) setting matches it.
   const ACTUAL_BARO = 30.12;
+  // Hectopascals in an inch of mercury.
+  const HPA = 33.8639;
 
   // C172S airspeed indicator markings (POH section 2), KIAS.
   const SPEEDS = { white: [40, 85], green: [48, 129], yellow: [129, 163], vne: 163 };
@@ -65,15 +73,26 @@ window.G1000 = (function () {
     'map-hsi': ['', 'Layout', '', '', '', '', '', '', '', '', 'Back', 'Alerts'],
     'map-layout': ['', 'Map Off', 'Inset Map', 'HSI Map', '', '', '', '', '', '', 'Back', 'Alerts'],
     'pfd-opt': ['SVT', '', 'Wind', 'DME', 'Bearing 1', '', 'Bearing 2', '', 'ALT Units', 'STD Baro', 'Back', 'Alerts'],
+    // The wind window: three layouts, or none.
+    wind: ['', '', 'Option 1', 'Option 2', 'Option 3', 'Off', '', '', '', '', 'Back', 'Alerts'],
+    'alt-units': ['', '', '', '', '', 'Meters', '', 'IN', 'HPA', '', 'Back', 'Alerts'],
     xpdr: ['', '', 'Standby', 'On', 'Alt', '', 'VFR', 'Code', 'Ident', '', 'Back', 'Alerts'],
     'xpdr-code': ['0', '1', '2', '3', '4', '5', '6', '7', 'Ident', 'BKSP', 'Back', 'Alerts'],
     mfd: ['Engine', '', 'Map Opt', '', '', '', '', '', '', 'Detail', 'Charts', 'Checklist'],
     engine: ['Engine', 'Lean', 'System', '', '', '', '', '', '', '', 'Back', ''],
+    // The EIS's Lean page: the cylinder shown, lean assist.
+    lean: ['Engine', 'Lean', 'System', 'Cyl Slct', 'Assist', '', '', '', '', '', 'Back', ''],
+    // The System page: the fuel totalizer's remaining fuel (set by the
+    // pilot) and its fuel used.
+    system: ['Engine', 'Lean', 'System', 'Rst Fuel', 'Dec Fuel', 'Inc Fuel', 'Rst Used', '', '', '', 'Back', ''],
+    // The Checklist page (js/g1000-checklist.js).
+    checklist: ['Engine', '', '', '', '', '', '', '', '', '', 'Exit', 'Emergency'],
   };
   // The softkeys that do something in the mock; the rest draw grey.
   const LIVE = {
-    pfd: [1, 3, 4, 5, 7, 8, 9, 10], 'pfd-opt': [9, 10], 'map-hsi': [1, 10], 'map-layout': [1, 2, 3, 10], xpdr: [2, 3, 4, 6, 7, 8, 10],
-    'xpdr-code': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mfd: [0], engine: [0, 1, 2, 10],
+    pfd: [1, 3, 4, 5, 6, 7, 8, 9, 10], 'pfd-opt': [2, 3, 4, 6, 8, 9, 10], wind: [2, 3, 4, 5, 10], 'alt-units': [5, 7, 8, 10], 'map-hsi': [1, 10], 'map-layout': [1, 2, 3, 10], xpdr: [2, 3, 4, 6, 7, 8, 10],
+    'xpdr-code': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mfd: [0, 11], engine: [0, 1, 2, 10], lean: [0, 1, 2, 3, 4, 10],
+    system: [0, 1, 2, 3, 4, 5, 6, 10], checklist: [0, 10, 11],
   };
 
   // Map symbol sizes (Map Setup shows each up to its own range): by the
@@ -114,7 +133,7 @@ window.G1000 = (function () {
   // (js/g1000-pages.js), in state.mfd.
   const pages = G1000_PAGES.create({
     state, bearingDist, waypoints: WAYPOINTS, fms, note: (text) => note(text),
-    tas: () => tas(), fuelFlow: () => fuelFlow(), toMag: (t) => toMag(t),
+    gs: () => gs(), track: () => track(), fuelFlow: () => fuelFlow(), toMag: (t) => toMag(t),
     openMenu: () => menus.open('mfd'), comms: COMMS, airspace: AIRSPACE, indicatedAlt: () => indicatedAlt(),
   });
   // The MENU key's Page Menu and Map Setup windows (js/g1000-menu.js), in
@@ -129,27 +148,52 @@ window.G1000 = (function () {
   const DB_EXPIRES = cycle ? Date.parse(`${cycle[1]} ${cycle[2]} ${cycle[3]} 00:00 UTC`) + 28 * 86400000 : null;
   const alerts = G1000_ALERTS.create({
     state, pages, annunciations: () => systems.annunciations(), gpsNav: () => fms.navSolution(),
-    gs: () => tas(), dbExpires: DB_EXPIRES,
+    gs: () => gs(), dbExpires: DB_EXPIRES,
   });
   // The PFD's Timer/References window (js/g1000-timer.js), in state.ref.
   const timer = G1000_TIMER.create({ state, note: (text) => note(text), indicatedAlt: () => indicatedAlt() });
   const menus = G1000_MENU.create({ state, fms, pages, timer, note: (text) => note(text), ranges: RANGES });
+  // The audio panel (js/g1000-gma.js), in state.gma.
+  const gma = G1000_GMA.create({ state, note: (text) => note(text) });
+  // The MFD's Checklist page (js/g1000-checklist.js), in state.chk.
+  const checklist = G1000_CHECKLIST.create({ state, lists: window.G1000_CHECKLISTS ?? [] });
   function reset() {
     Object.assign(state, {
       t: 0,
       // The airplane: 3,500 ft over Everett, northbound, cruise power.
       lat: 47.80, lon: -122.27, trueAlt: 3500, hdg: 340, ias: 110, pitch: 2.0, roll: 0, power: 0.8,
       vs: 0,
+      // Leaned for best power at 3,500 ft (0 idle cutoff, 1 full rich).
+      mixture: systems.bestPowerMixture(3500),
+      // The wind: from (true), knots. Calm unless set (the Wind list in
+      // Operate mode, or setWind). windShow: the PFD's wind window
+      // (PFD Opt, Wind): 'Off', or layout '1', '2' or '3'.
+      wind: { dir: 0, spd: 0 }, windShow: 'Off',
+      // The HSI's bearing pointers (PFD Opt, Bearing 1 and 2): null, a NAV
+      // radio ('NAV1', 'NAV2') or 'GPS'.
+      brg: [null, null],
+      // The DME window (PFD Opt, DME) and its tuning (ADF/DME): NAV1, NAV2,
+      // or HOLD on the frequency it had (hold).
+      dme: { on: false, src: 'NAV1', hold: null },
+      // The MFD map's pan pointer (RANGE knob push): null, or { lat, lon,
+      // measure: the start of a bearing/distance measurement or null }.
+      pan: null,
       // Pilot input with the autopilot off (arrow keys): attitude targets.
       manual: { pitch: 2.0, roll: 0 },
       baro: ACTUAL_BARO,
+      // The standby altimeter's own Kollsman setting (set before flight).
+      stbyBaro: ACTUAL_BARO,
       com: [{ act: 132.950, stby: 120.200 }, { act: 128.650, stby: 121.900 }], comTune: 0,
       nav: [{ act: 110.60, stby: 116.80 }, { act: 116.80, stby: 110.60 }], navTune: 0,
       // A volume change shows in place of the standby frequency briefly.
-      vol: { com: [80, 80], nav: [60, 60], show: null },
+      // sqOff: COM squelch turned off; navId: NAV Morse identifier on.
+      vol: { com: [80, 80], nav: [60, 60], show: null, sqOff: [false, false], navId: [false, false] },
+      // PFD Opt, ALT Units: the metric overlay, and the baro unit (IN, HPA).
+      altUnits: { meters: false, baro: 'IN' },
       hdgBug: 340, crs: [340, 340], altSel: 5500,
       cdi: 'GPS',
-      xpdr: { code: '1200', mode: 'ALT', identUntil: 0, entry: null },
+      // flightId: sent with the transponder's replies (AUX - System Setup).
+      xpdr: { code: '1200', mode: 'ALT', identUntil: 0, entry: null, flightId: 'N172SP' },
       afcs: { ap: false, fd: false, lat: null, latArmed: null, vert: null, vertArmed: null,
               ref: { pitch: 0, roll: 0, vs: 0, ias: 0, alt: 0 }, changed: {}, apOffAt: -99 },
       // Selected altitude alerter: 'approach' (within 1,000 ft), 'reached'
@@ -159,14 +203,17 @@ window.G1000 = (function () {
       mfd: pages.fresh(), eisPage: 'Engine', range: 6,
       // The PFD's map (Map/HSI, Layout): 'Map Off', 'Inset Map' or 'HSI Map',
       // and its range (an index into RANGES).
-      pfdMap: { layout: 'Map Off', range: 4 },
+      pfdMap: { layout: 'Map Off', range: 4 }, pfdMapSet: menus.freshPfdMap(),
       // Usable fuel on board, gallons (both tanks).
       fuel: 48, fuelL: 24, fuelR: 24, sys: systems.fresh(),
       // A line of text for the last thing the mock can't do yet.
       note: null,
+      // Reversionary mode (DISPLAY BACKUP): both displays show the PFD
+      // with the EIS strip, and the MFD's keys and knobs work the PFD.
+      reversion: false,
       fms: fms.fresh(),
       pageMenu: menus.fresh(), mapSet: menus.freshMap(), ref: timer.fresh(),
-      alerts: alerts.fresh(), alertSet: alerts.freshSet(),
+      alerts: alerts.fresh(), alertSet: alerts.freshSet(), chk: checklist.fresh(), gma: gma.fresh(),
     });
     state.afcs.ref.alt = state.trueAlt;
     // Northbound means 340° magnetic: the true heading carries the
@@ -177,12 +224,91 @@ window.G1000 = (function () {
   reset();
 
   const indicatedAlt = () => state.trueAlt + (state.baro - ACTUAL_BARO) * 1000;
+  // The standby altimeter, by its own setting.
+  const standbyAlt = () => state.trueAlt + (state.stbyBaro - ACTUAL_BARO) * 1000;
   const tas = () => state.ias * (1 + 0.02 * state.trueAlt / 1000);
   // Fuel flow (GPH): made up from power and altitude, not the POH's tables.
   // None with the engine stopped.
-  const fuelFlow = () => (state.sys.running ? 2 + 9 * state.power * (1 - state.trueAlt / 30000) : 0);
-  // The power the engine makes: none once it has stopped.
-  const power = () => (state.sys.running ? state.power : 0);
+  // Leaner or richer than best power scales it (js/g1000-systems.js).
+  const fuelFlow = () => (state.sys.running
+    ? (2 + 9 * state.power * (1 - state.trueAlt / 30000)) * systems.mixtureEffect().fuel : 0);
+  // The power the engine makes: none once it has stopped, less lean of
+  // peak.
+  const power = () => (state.sys.running ? state.power * systems.mixtureEffect().power : 0);
+
+  // ---- Wind: ground speed and track ----
+  // The airplane's velocity over the ground: its TAS along the heading
+  // plus the wind's (which blows toward wind.dir + 180). Track is true.
+  function groundVector() {
+    const T = tas(), w = state.wind, h = rad(state.hdg), to = rad(w.dir + 180);
+    const n = T * Math.cos(h) + w.spd * Math.cos(to), e = T * Math.sin(h) + w.spd * Math.sin(to);
+    return { gs: Math.hypot(n, e), trk: wrap360(deg(Math.atan2(e, n))) };
+  }
+  const gs = () => groundVector().gs;
+  const track = () => groundVector().trk;
+  // The wind as the PFD shows it: from (magnetic), speed, its head (+)
+  // and cross (+ from the right) components, and where it comes from
+  // relative to the nose (degrees, + right).
+  function windInfo() {
+    const w = state.wind, rel = diff(w.dir, state.hdg);
+    return { dir: toMag(w.dir), spd: w.spd, head: w.spd * Math.cos(rad(rel)), cross: w.spd * Math.sin(rad(rel)), rel };
+  }
+
+  // ---- Bearing pointers and DME ----
+  // A bearing pointer's target: { id, brg (magnetic), dist } or null (no
+  // station tuned or received, no GPS waypoint).
+  function bearingTo(src) {
+    if (!src) return null;
+    if (src === 'GPS') {
+      const l = fms.leg(), nav = fms.navSolution();
+      return l && nav ? { id: l.to.id, brg: nav.bearingTo, dist: nav.dist } : null;
+    }
+    const st = tunedStation(src === 'NAV1' ? 0 : 1);
+    if (!st) return null;
+    const { brg, dist } = bearingDist(state, st);
+    return dist > 60 ? null : { id: st.id, brg: toMag(brg), dist };
+  }
+  // The DME: slant range to the VOR/DME or VORTAC on the radio it is
+  // tuned by (or the frequency it holds). { freq, id, dist }, or { freq }
+  // with no DME received.
+  function dmeInfo() {
+    const d = state.dme, freq = d.src === 'HOLD' ? d.hold : state.nav[d.src === 'NAV1' ? 0 : 1].act;
+    const st = NAVAIDS.find((n) => Math.abs(n.freq - freq) < 0.001 && /DME|TAC/.test(n.kind));
+    if (!st) return { freq };
+    const dist = bearingDist(state, st).dist, up = (state.trueAlt - (st.elev ?? 0)) / 6076;
+    return dist > 100 ? { freq } : { freq, id: st.id, dist: Math.hypot(dist, up) };
+  }
+
+  // ---- The MFD map's pan pointer ----
+  // Which way is up on a map: north, the track or the heading (true).
+  function mapUp(display = 'mfd') {
+    const orient = (display === 'pfd' ? state.pfdMapSet : state.mapSet).orient;
+    return orient === 'North Up' ? 0 : orient === 'Track Up' ? track() : state.hdg;
+  }
+  // Pan: the pointer moves an eighth of the map range per step, in the
+  // map's own directions (dx right, dy up).
+  function pan(dx, dy) {
+    const p = state.pan;
+    if (!p) return;
+    const d = (RANGES[state.range] / 8) * Math.hypot(dx, dy);
+    if (!d) return;
+    Object.assign(p, fms.project(p, mapUp() + deg(Math.atan2(dx, dy)), d));
+  }
+  // The waypoint under the pointer: the nearest within a twentieth of the
+  // range (0.3 NM at least), or null.
+  function panTarget() {
+    const p = state.pan;
+    if (!p) return null;
+    const reach = Math.max(0.3, RANGES[state.range] / 20);
+    let best = null;
+    for (const w of [...WAYPOINTS, ...state.fms.user]) {
+      if (Math.abs(w.lat - p.lat) > 1 || Math.abs(w.lon - p.lon) > 1.5) continue;
+      const d = bearingDist(p, w).dist;
+      if (d < reach && (!best || d < best.d)) best = { w, d };
+    }
+    return best?.w ?? null;
+  }
+  const panPage = () => ['MAP:0', 'FPL:0'].includes(pages.pageKey());
   const note = (text) => { state.note = { text, until: state.t + 4 }; };
 
   // ---- Navigation: the active CDI source's deviation ----
@@ -296,6 +422,23 @@ window.G1000 = (function () {
   // js/g1000-fms.js, D→ offering what the page shows. True when handled.
   function windowKey(key, display) {
     if (['ent', 'clr', 'menu', 'fpl', 'direct_to', 'proc'].includes(key) && menus.press(key, display)) return true;
+    // The MFD map's pointer: CLR stops measuring, then puts it away; ENT
+    // makes a user waypoint where it points (or names what is there); D→
+    // offers what it points at.
+    const mw = state.fms.win.mfd;
+    if (display === 'mfd' && state.pan && !mw?.entry && mw?.type !== 'dto') {
+      if (key === 'clr') { if (state.pan.measure) state.pan.measure = null; else state.pan = null; return true; }
+      if (key === 'ent') {
+        const at = panTarget();
+        if (at) { note(`${at.id}: ${at.name ?? ''}`); return true; }
+        const w = fms.addUser({ lat: state.pan.lat, lon: state.pan.lon });
+        if (w) note(`User waypoint ${w.id} created at the pointer`);
+        return true;
+      }
+      if (key === 'direct_to') return fms.press(key, display, { dtoDefault: panTarget()?.id ?? null });
+    }
+    // The Checklist page takes ENT and CLR.
+    if (display === 'mfd' && !mw && checklist.isOpen() && (key === 'ent' || key === 'clr')) return checklist.press(key);
     const win = state.fms.win[display];
     if (display === 'mfd' && key === 'fpl' && win?.type !== 'dto') { pages.fplKey(); return true; }
     if (display === 'pfd' && win?.type === 'nrst' && (key === 'ent' || key === 'clr')) return pages.pfdInput(key);
@@ -304,10 +447,36 @@ window.G1000 = (function () {
     if (display === 'mfd' && !win && pages.press(key)) return true;
     const handled = fms.press(key, display, { dtoDefault: pages.selectedIdent(display) });
     pages.sync();
+    // The pointer belongs to the map pages.
+    if (state.pan && !panPage()) state.pan = null;
     return handled;
   }
+  // In reversionary mode both displays are the PFD: the MFD's bezel works
+  // it too.
+  const pfdIfReverted = (display) => (state.reversion ? 'pfd' : display);
+  // DISPLAY BACKUP: into reversionary mode, or back out (the PFD's own
+  // softkeys back at the top: the engine menus belong to the MFD then).
+  function displayBackup() {
+    state.reversion = !state.reversion;
+    if (!state.reversion && ['engine', 'lean', 'system'].includes(menu('pfd'))) state.menus.pfd = ['pfd'];
+    if (!state.reversion) state.eisPage = 'Engine';
+  }
+  // The softkey labels a menu shows, and which of them do something: the
+  // PFD's top menu gains Engine (the EIS pages) in reversionary mode.
+  const labelsOf = (m) => (m === 'pfd' && state.reversion ? ['Engine', ...MENUS.pfd.slice(1)] : MENUS[m]);
+  const liveOf = (m) => (m === 'pfd' && state.reversion ? [0, ...LIVE.pfd] : LIVE[m]);
+  const menu = (display) => {
+    const d = pfdIfReverted(display);
+    return state.menus[d][state.menus[d].length - 1];
+  };
+
   function press(key, display = 'pfd') {
     const a = state.afcs;
+    // The audio panel's keys ('gma:com1_mic' and so on), and its DISPLAY
+    // BACKUP button.
+    if (key.startsWith('gma:')) return gma.press(key.slice(4));
+    if (key === 'display_backup') return displayBackup();
+    display = pfdIfReverted(display);
     if (windowKey(key, display)) return;
     switch (key) {
       case 'ap':
@@ -325,7 +494,7 @@ window.G1000 = (function () {
       case 'nav': return navKey('NAV');
       case 'apr': return navKey('APR');
       case 'bc': return note('BC needs a localizer: not in the mock');
-      case 'vnv': return note('VNV needs a flight plan: not in the mock');
+      case 'vnv': return note('VNV: vertical navigation is not in the mock yet');
       case 'alt': return modeKey('vert', 'ALT');
       case 'vs': return modeKey('vert', 'VS');
       case 'flc': return modeKey('vert', 'FLC');
@@ -361,11 +530,11 @@ window.G1000 = (function () {
   function softkey(display, i) {
     const stack = state.menus[display];
     const menu = stack[stack.length - 1];
-    const label = MENUS[menu][i];
+    const label = labelsOf(menu)[i];
     if (!label) return;
     // ALERTS, the last softkey on every PFD menu.
     if (label === 'Alerts' && display === 'pfd') return alerts.softkey();
-    if (!LIVE[menu].includes(i)) return note(label + ': not in the mock yet');
+    if (!liveOf(menu).includes(i)) return note(label + ': not in the mock yet');
     const x = state.xpdr;
     switch (menu + ':' + label) {
       case 'pfd:PFD Opt': stack.push('pfd-opt'); return;
@@ -395,18 +564,57 @@ window.G1000 = (function () {
         if (menu !== 'pfd') stack.splice(1);
         return;
       case 'pfd-opt:STD Baro': state.baro = 29.92; return;
+      case 'pfd-opt:Wind': stack.push('wind'); return;
+      case 'wind:Option 1': case 'wind:Option 2': case 'wind:Option 3': state.windShow = label.slice(-1); return;
+      case 'wind:Off': state.windShow = 'Off'; return;
+      case 'wind:Back': stack.pop(); return;
+      // Each press: off, NAV (1 or 2), GPS, off. (ADF isn't in the mock.)
+      case 'pfd-opt:Bearing 1': case 'pfd-opt:Bearing 2': {
+        const i = label.endsWith('1') ? 0 : 1, order = [null, 'NAV' + (i + 1), 'GPS'];
+        state.brg[i] = order[(order.indexOf(state.brg[i]) + 1) % order.length];
+        return;
+      }
+      case 'pfd-opt:DME': state.dme.on = !state.dme.on; return;
+      // ADF/DME: here only the DME's tuning, each press the next of NAV1,
+      // NAV2 and HOLD (on the frequency it had).
+      case 'pfd:ADF/DME': {
+        const d = state.dme, order = ['NAV1', 'NAV2', 'HOLD'];
+        const next = order[(order.indexOf(d.src) + 1) % 3];
+        if (next === 'HOLD') d.hold = dmeInfo().freq;
+        d.src = next;
+        note(`DME tuning: ${next}${next === 'HOLD' ? ' ' + d.hold.toFixed(2) : ''}`);
+        return;
+      }
+      case 'pfd-opt:ALT Units': stack.push('alt-units'); return;
+      // A metric readout beside the altitude; the baro in inches or hPa.
+      case 'alt-units:Meters': state.altUnits.meters = !state.altUnits.meters; return;
+      case 'alt-units:IN': case 'alt-units:HPA': state.altUnits.baro = label; return;
       case 'xpdr:Standby': x.mode = 'STBY'; return;
       case 'xpdr:On': x.mode = 'ON'; return;
       case 'xpdr:Alt': x.mode = 'ALT'; return;
       case 'xpdr:VFR': x.code = '1200'; return;
       case 'xpdr:Code': x.entry = ''; stack.push('xpdr-code'); return;
       case 'xpdr-code:BKSP': x.entry = x.entry.slice(0, -1); return;
-      case 'pfd-opt:Back': case 'xpdr:Back': case 'engine:Back': case 'map-hsi:Back': case 'map-layout:Back':
+      case 'pfd-opt:Back': case 'xpdr:Back': case 'engine:Back': case 'map-hsi:Back': case 'map-layout:Back': case 'alt-units:Back':
         stack.pop(); return;
       case 'xpdr-code:Back': x.entry = null; stack.pop(); return;
-      case 'mfd:Engine': stack.push('engine'); return;
+      case 'mfd:Engine': case 'pfd:Engine': stack.push('engine'); return;
+      case 'mfd:Checklist': checklist.open(); stack.push('checklist'); return;
+      case 'checklist:Exit': checklist.close(); stack.pop(); return;
+      case 'checklist:Emergency': checklist.emergency(); return;
+      case 'checklist:Engine': checklist.close(); stack[stack.length - 1] = 'engine'; return;
+      // The EIS pages; Lean and System bring their own softkeys.
       case 'engine:Engine': case 'engine:Lean': case 'engine:System':
-        state.eisPage = label; return;
+      case 'lean:Engine': case 'lean:Lean': case 'lean:System':
+      case 'system:Engine': case 'system:Lean': case 'system:System':
+        state.eisPage = label;
+        stack[stack.length - 1] = { Engine: 'engine', Lean: 'lean', System: 'system' }[label];
+        return;
+      case 'lean:Cyl Slct': state.sys.lean.cyl = (state.sys.lean.cyl + 1) % 4; return;
+      case 'lean:Assist': systems.assist(); return;
+      case 'system:Rst Fuel': case 'system:Dec Fuel': case 'system:Inc Fuel': case 'system:Rst Used':
+        systems.totalizer(label); return;
+      case 'lean:Back': case 'system:Back': state.eisPage = 'Engine'; stack.pop(); return;
     }
     if (menu === 'xpdr-code' && /^[0-7]$/.test(label)) {
       x.entry += label;
@@ -419,6 +627,7 @@ window.G1000 = (function () {
   // nav_volume. part: 'inner' or 'outer' (one-piece knobs ignore it).
   // steps: + clockwise.
   function turn(knob, part, steps, display = 'pfd') {
+    display = pfdIfReverted(display);
     switch (knob) {
       case 'com': {
         const c = state.com[state.comTune];
@@ -441,7 +650,10 @@ window.G1000 = (function () {
         state.altSel = clamp(state.altSel + steps * (part === 'outer' ? 1000 : 100), -1000, 20000);
         return;
       case 'crs_baro':
-        if (part === 'outer') {
+        if (part === 'outer' && state.altUnits.baro === 'HPA') {
+          // In hPa: whole hectopascals.
+          state.baro = clamp((Math.round(state.baro * HPA) + steps) / HPA, 27.0, 31.0);
+        } else if (part === 'outer') {
           state.baro = clamp(+(state.baro + steps * 0.01).toFixed(2), 27.0, 31.0);
         } else if (state.cdi !== 'GPS') {
           const i = state.cdi === 'VOR1' ? 0 : 1;
@@ -452,6 +664,10 @@ window.G1000 = (function () {
         }
         return;
       // Each display's RANGE knob zooms its own map.
+      // The standby altimeter's knob: its own Kollsman setting.
+      case 'stby_baro': state.stbyBaro = clamp(+(state.stbyBaro + steps * 0.01).toFixed(2), 28.0, 31.0); return;
+      // The audio panel's volume knob: small knob volume, large squelch.
+      case 'gma_vol': return gma.turn(part, steps);
       case 'range': {
         const m = display === 'pfd' ? state.pfdMap : state;
         m.range = clamp(m.range - steps, 0, RANGES.length - 1);
@@ -468,6 +684,7 @@ window.G1000 = (function () {
         // An open Page Menu or Map Setup; the PFD's Nearest window; on the MFD with no FMS cursor out, the
         // pages; else the open FMS window.
         if (menus.turn(part, steps, display)) return;
+        if (display === 'mfd' && checklist.isOpen() && !state.fms.win.mfd) return checklist.turn(part, steps);
         const win = state.fms.win[display];
         if (display === 'pfd' && win?.type === 'nrst') return pages.pfdInput('turn', steps);
         if (display === 'pfd' && win?.type === 'tmr') return timer.input('turn', part, steps);
@@ -481,6 +698,7 @@ window.G1000 = (function () {
 
   // Pushing a knob.
   function push(knob, display = 'pfd') {
+    display = pfdIfReverted(display);
     switch (knob) {
       // Push: tune the other radio (the cyan box moves).
       case 'com': state.comTune = 1 - state.comTune; return;
@@ -494,11 +712,22 @@ window.G1000 = (function () {
         else if (nav) state.crs[state.cdi === 'VOR1' ? 0 : 1] = Math.round(nav.bearingTo);
         return;
       }
-      case 'com_volume': return note('COM squelch: not in the mock');
-      case 'nav_volume': return note('NAV ID: not in the mock');
-      case 'range': return note('Map pan: not in the mock yet');
+      // Volume knob pushes: COM automatic squelch off (on again), and the
+      // NAV radio's Morse identifier on (off again), for the radio tuned.
+      case 'com_volume': state.vol.sqOff[state.comTune] = !state.vol.sqOff[state.comTune]; return;
+      case 'nav_volume': state.vol.navId[state.navTune] = !state.vol.navId[state.navTune]; return;
+      case 'stby_baro': return;
+      case 'gma_vol': return gma.push();
+      // RANGE push: the MFD map's pan pointer, from own ship; again, back.
+      case 'range':
+        if (display === 'pfd') return note('PFD map pan: not in the mock (pan the MFD map)');
+        if (state.pan) { state.pan = null; return; }
+        if (!panPage()) return note('Map pan: on the Navigation Map or the flight plan page');
+        state.pan = { lat: state.lat, lon: state.lon, measure: null };
+        return;
       case 'fms': {
         if (menus.push(display)) return;
+        if (display === 'mfd' && checklist.isOpen() && !state.fms.win.mfd) return;
         const win = state.fms.win[display];
         if (display === 'pfd' && win?.type === 'nrst') return pages.pfdInput('push');
         if (display === 'pfd' && win?.type === 'tmr') return timer.input('push');
@@ -528,8 +757,9 @@ window.G1000 = (function () {
     if (a.lat === 'HDG') rollCmd = clamp(diff(toTrue(state.hdgBug), state.hdg) * 1.2, -22, 22);
     if ((a.lat === 'NAV' || a.lat === 'APR') && nav) {
       // Intercept angle grows with the distance off course, up to 45°.
-      const track = wrap360(nav.courseTrue - clamp(nav.xtk * 40, -45, 45));
-      rollCmd = clamp(diff(track, state.hdg) * 1.2, -22, 22);
+      // Steered by the track, so a crosswind is crabbed into.
+      const want = wrap360(nav.courseTrue - clamp(nav.xtk * 40, -45, 45));
+      rollCmd = clamp(diff(want, track()) * 1.2, -22, 22);
     } else if ((a.lat === 'NAV' || a.lat === 'APR') && !nav) {
       setMode('lat', LAT_DEFAULT);
     }
@@ -593,9 +823,10 @@ window.G1000 = (function () {
     state.trueAlt += (state.vs / 60) * dt;
     const turnRate = (1091 * Math.tan(rad(state.roll))) / Math.max(T, 40);
     state.hdg = wrap360(state.hdg + turnRate * dt);
-    const nm = (T / 3600) * dt;
-    state.lat += (nm / 60) * Math.cos(rad(state.hdg));
-    state.lon += (nm / 60) * Math.sin(rad(state.hdg)) / Math.cos(rad(state.lat));
+    // Over the ground: the wind's drift added.
+    const g = groundVector(), nm = (g.gs / 3600) * dt;
+    state.lat += (nm / 60) * Math.cos(rad(g.trk));
+    state.lon += (nm / 60) * Math.sin(rad(g.trk)) / Math.cos(rad(state.lat));
     state.magVar = magVarAt(state.lat, state.lon);
 
     fms.step();
@@ -633,8 +864,9 @@ window.G1000 = (function () {
 
   // Pilot input with the autopilot off. Grabbing the controls with the
   // AP on would disconnect it in a real airplane; here the keys just wait.
-  function fly({ pitch = 0, roll = 0, power = 0 }) {
+  function fly({ pitch = 0, roll = 0, power = 0, mixture = 0 }) {
     state.power = clamp(state.power + power, 0, 1);
+    state.mixture = clamp(state.mixture + mixture, 0, 1);
     if (state.afcs.ap) return;
     state.manual.pitch = clamp(state.manual.pitch + pitch, -10, 15);
     state.manual.roll = clamp(state.manual.roll + roll, -30, 30);
@@ -643,15 +875,20 @@ window.G1000 = (function () {
   return {
     state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, AIRSPACE, COMMS, WA_SOURCE: WA_NAV.source, magVarAt, toMag, toTrue,
     // The airplane's magnetic heading, as the HSI shows it.
-    magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, systems, airportSize, fuelFlow,
+    magHeading: () => toMag(state.hdg), HPA, SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, systems, airportSize, fuelFlow,
     FAILURES: G1000_SYSTEMS.FAILURES, fail: (id, on) => systems.fail(id, on), DB_EXPIRES,
-    press, turn, push, fly, bearingDist, navSolution, indicatedAlt, tas, navModeName,
+    press, turn, push, fly, bearingDist, navSolution, indicatedAlt, standbyAlt, tas, gs, track, navModeName,
+    windInfo, bearingTo, dmeInfo, mapUp, pan, panTarget, checklist, gma,
+    // Sets the wind: from (true), knots.
+    setWind: (dir, spd) => { state.wind = { dir: wrap360(dir), spd: Math.max(0, spd) }; },
     tick(dt) {
       // Big gaps (a background tab) are skipped, small steps keep it stable.
       dt = Math.min(dt, 0.5);
       watchSel();
       for (let left = dt; left > 1e-6; left -= 0.05) step(Math.min(0.05, left));
     },
-    menu: (display) => state.menus[display][state.menus[display].length - 1],
+    // The menu a display's softkeys show (the PFD's, on both, reverted),
+    // its labels and live softkeys.
+    menu, labels: (display) => labelsOf(menu(display)), live: (display) => liveOf(menu(display)),
   };
 })();
