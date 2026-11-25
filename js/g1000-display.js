@@ -159,7 +159,106 @@ window.G1000_DISPLAY = (function () {
     const [x, y, w, h] = display === 'pfd' ? [660, 548, 358, 228] : [600, 106, 418, H - 34 - 160];
     if (win.type === 'dto') dtoWindow(ctx, s, G, win, x, y, w, Math.min(h, 228));
     else if (win.type === 'nrst') pfdNearest(ctx, s, G, win, x, y, w, h);
+    else if (win.type === 'tmr') timerWindow(ctx, s, G, win, x, 500, w, 276);
+    else if (win.type === 'alerts') alertsWindow(ctx, s, G, win, x, 548, w, 228);
     else fplWindow(ctx, s, G, win, x, y, w, h);
+  }
+
+  // ---- The MENU key's windows (js/g1000-menu.js) ----
+  // PFD: the lower right, over any FMS window; MFD: the map's right half.
+  function pageMenuWindow(ctx, s, G, display) {
+    const m = s.pageMenu[display];
+    if (!m) return;
+    // As tall as the options need, up to the space there is; the PFD's
+    // sits on the softkey bar's boxes, the MFD's hangs from the top.
+    const rowH = 27, head = 78, foot = m.confirm ? 96 : 44;
+    // (The PFD's stops below the baro box.)
+    const pfd = display === 'pfd', maxH = pfd ? 280 : 560;
+    const h = m.type === 'map' ? 420 : Math.min(maxH, head - rowH / 2 + Math.max(2, m.items.length) * rowH + foot);
+    const [x, y, w] = pfd ? [640, 776 - h, 378] : [590, 106, 428];
+    box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.97)', stroke: C.white });
+    if (m.type === 'map') return mapSetup(ctx, s, G, m, x, y, w, h);
+    text(ctx, 'PAGE MENU', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    text(ctx, 'OPTIONS', x + 14, y + 50, { size: 15, color: C.grey });
+    if (!m.items.length) {
+      text(ctx, 'No options with this page', x + w / 2, y + head + 4, { size: 19, align: 'center' });
+    }
+    const top = y + head;
+    const n = Math.floor((h - head - foot + rowH / 2) / rowH);
+    // Keep the cursor in view.
+    const first = Math.max(0, Math.min(m.cursor - n + 1, m.items.length - n));
+    m.items.slice(first, first + n).forEach((it, k) => {
+      const i = first + k, ry = top + k * rowH, sel = i === m.cursor;
+      if (sel) box(ctx, x + 8, ry - 13, w - 16, 26, { fill: it.run ? C.cyan : C.grey, stroke: null });
+      text(ctx, it.label, x + 18, ry, { size: 19, color: sel ? C.black : it.run ? C.white : '#5b6068' });
+    });
+    if (first > 0) text(ctx, '▲', x + w - 18, top - 4, { size: 14, align: 'center', color: C.grey });
+    if (first + n < m.items.length) text(ctx, '▼', x + w - 18, top + (n - 1) * rowH + 4, { size: 14, align: 'center', color: C.grey });
+    if (m.confirm) {
+      box(ctx, x + 10, y + h - 82, w - 20, 72, { fill: C.black, stroke: C.cyan });
+      text(ctx, m.confirm.text, x + w / 2, y + h - 62, { size: 18, align: 'center' });
+      box(ctx, x + w / 2 - 50, y + h - 46, 100, 28, { fill: C.cyan, stroke: null });
+      text(ctx, 'OK', x + w / 2, y + h - 31, { size: 18, align: 'center', color: C.black });
+      text(ctx, 'CLR: cancel', x + w - 20, y + h - 31, { size: 14, align: 'right', color: C.grey });
+    } else {
+      text(ctx, 'Press the FMS CRSR knob to return to base page', x + w / 2, y + h - 20,
+        { size: 14, align: 'center', color: C.grey });
+    }
+  }
+  // Map Setup: the GROUP line, then the group's settings.
+  function mapSetup(ctx, s, G, m, x, y, w, h) {
+    text(ctx, 'MAP SETUP', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    const fmt = (v) => (typeof v === 'number' ? `${v}NM` : v);
+    const line = (label, value, ry, sel) => {
+      text(ctx, label, x + 18, ry, { size: 18, color: C.grey });
+      ctx.font = font(19);
+      const tw = ctx.measureText(value).width;
+      if (sel) box(ctx, x + w - 20 - tw - 8, ry - 13, tw + 16, 26, { fill: C.cyan, stroke: null });
+      text(ctx, value, x + w - 20, ry, { size: 19, align: 'right', color: sel ? C.black : C.cyan });
+    };
+    line('GROUP', G.menus.GROUPS[m.group].name, y + 60, m.cursor === -1);
+    ctx.strokeStyle = C.grey; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + 10, y + 80); ctx.lineTo(x + w - 10, y + 80); ctx.stroke();
+    G.menus.mapRows(m).forEach((r, i) => line(r.label, fmt(r.value), y + 104 + i * 32, m.cursor === i));
+    text(ctx, 'Large knob: setting · small knob: change it', x + w / 2, y + h - 40, { size: 14, align: 'center', color: C.grey });
+    text(ctx, 'Push FMS or CLR to return to the map', x + w / 2, y + h - 20, { size: 14, align: 'center', color: C.grey });
+  }
+
+  // The PFD's Timer/References window (js/g1000-timer.js): the timer, the
+  // V-speeds, the minimums. Each field the cursor can take is drawn by
+  // `field`, which boxes it cyan under the cursor.
+  const hms = (sec) => [sec / 3600, (sec / 60) % 60, sec % 60].map((v) => String(Math.floor(v)).padStart(2, '0')).join(':');
+  function timerWindow(ctx, s, G, win, x, y, w, h) {
+    box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
+    text(ctx, 'TIMER / REFERENCES', x + w / 2, y + 20, { size: 19, align: 'center', color: C.cyan });
+    const r = s.ref, t = r.timer, F = G1000_TIMER.FIELDS;
+    let n = 0;
+    // The next cursor stop's value at (fx, fy), right-aligned.
+    const field = (str, fx, fy, color = C.cyan) => {
+      const sel = win.cursor === n++;
+      ctx.font = font(19);
+      const tw = ctx.measureText(str).width;
+      if (sel) box(ctx, fx - tw - 4, fy - 13, tw + 8, 26, { fill: C.cyan, stroke: null });
+      text(ctx, str, fx, fy, { size: 19, align: 'right', color: sel ? C.black : color });
+    };
+    const rowY = (i) => y + 54 + i * 29;
+    text(ctx, 'TIMER', x + 12, rowY(0), { size: 16, color: C.grey });
+    field(hms(t.secs), x + 180, rowY(0), t.expired && !blinkOn(s, s.t + 1) ? C.yellow : C.white);
+    field(t.dir, x + 236, rowY(0));
+    field(G.timer.action(), x + w - 12, rowY(0));
+    text(ctx, 'REFERENCES', x + 12, rowY(1), { size: 15, color: C.grey });
+    G1000_TIMER.VSPEEDS.forEach((v, i) => {
+      const ref = r.v[v.key];
+      text(ctx, v.name, x + 30, rowY(2 + i), { size: 18 });
+      field(`${ref.kt}KT`, x + 210, rowY(2 + i));
+      field(ref.on ? 'ON' : 'OFF', x + w - 12, rowY(2 + i), ref.on ? C.cyan : C.grey);
+    });
+    text(ctx, 'MINIMUMS', x + 12, rowY(6), { size: 16, color: C.grey });
+    field(r.mins.mode, x + 210, rowY(6), r.mins.mode === 'OFF' ? C.grey : C.cyan);
+    field(`${r.mins.ft}FT`, x + w - 12, rowY(6));
+    console.assert(n === F.length, 'timer window fields');
+    text(ctx, 'Large knob: field · small knob: change · ENT: timer', x + w / 2, y + h - 16,
+      { size: 14, align: 'center', color: C.grey });
   }
 
   // The PFD's Nearest Airports window: identifier, bearing, distance.
@@ -297,13 +396,58 @@ window.G1000_DISPLAY = (function () {
 
   function utility(ctx, s, G) {
     pageBackground(ctx);
-    const st = s.mfd.stats, hours = Math.max(s.t - st.t0, 1) / 3600;
+    const st = s.mfd.stats, hours = Math.max(s.t - st.tripT0, 1) / 3600;
     const hms = (sec) => [sec / 3600, (sec / 60) % 60, sec % 60].map((v) => String(Math.floor(v)).padStart(2, '0')).join(':');
     rowsOf(ctx, [
       ['FLIGHT TIMER', hms(s.t - st.t0)], ['ODOMETER', st.odo.toFixed(1) + 'NM'],
-      ['AVG GS', Math.round(st.odo / hours) + 'KT'], ['MAX GS', Math.round(st.maxGs) + 'KT'],
+      ['TRIP ODOMETER', st.trip.toFixed(1) + 'NM'], ['TRIP AVG GS', Math.round(st.trip / hours) + 'KT'],
+      ['TRIP MAX GS', Math.round(st.maxGs) + 'KT'],
     ], PAGE.x + 30, PAGE.y + 70);
-    hint(ctx, 'Since Reset flight. The generic timer and minimums are not in the mock.');
+    hint(ctx, 'MENU: reset the statistics. The generic timer and minimums are not in the mock.');
+  }
+
+  // AUX - System Setup: here only the airspace alert settings.
+  function systemSetup(ctx, s, G) {
+    pageBackground(ctx);
+    const x = PAGE.x + 30, set = s.alertSet, cur = s.mfd.cursor;
+    text(ctx, 'AIRSPACE ALERTS', x, PAGE.y + 64, { size: 17, color: C.cyan });
+    const rows = [['ALTITUDE BUFFER', `${set.buffer}FT`], ['CLASS B/TMA', set.B ? 'ON' : 'OFF'],
+      ['CLASS C/TCA', set.C ? 'ON' : 'OFF'], ['CLASS D', set.D ? 'ON' : 'OFF']];
+    rows.forEach(([k, v], i) => {
+      const ry = PAGE.y + 110 + i * 40, sel = cur === i;
+      text(ctx, k, x, ry, { size: 18, color: C.grey });
+      ctx.font = font(21);
+      const tw = ctx.measureText(v).width;
+      if (sel) box(ctx, x + 330 - tw - 6, ry - 15, tw + 12, 30, { fill: C.cyan, stroke: null });
+      text(ctx, v, x + 330, ry, { size: 21, align: 'right', color: sel ? C.black : C.cyan });
+    });
+    hint(ctx, cur == null ? 'Push FMS for the cursor. Other setup items are not in the mock.'
+      : 'Large knob: item · small knob: change · CLR or push FMS: done');
+  }
+
+  // The Flight Plan Catalog: stored plans on the left, the waypoints of
+  // the one under the cursor (or the first) on the right.
+  function catalog(ctx, s, G) {
+    pageBackground(ctx);
+    const rows = G.pages.catalogRows(), cur = s.mfd.cursor;
+    const x = PAGE.x + 30, top = PAGE.y + 60, rowH = 36;
+    text(ctx, 'FLIGHT PLAN', x, top - 4, { size: 15, color: C.grey });
+    text(ctx, 'DIS', x + 400, top - 4, { size: 15, align: 'right', color: C.grey });
+    if (!rows.length) text(ctx, 'No stored flight plans', x, top + 34, { size: 20, color: C.grey });
+    rows.slice(0, 13).forEach((r, i) => {
+      const ry = top + 34 + i * rowH, sel = cur === i;
+      if (sel) box(ctx, x - 6, ry - 15, 300, 30, { fill: C.cyan, stroke: null });
+      text(ctx, `${r.num}  ${r.from} / ${r.to}`, x, ry, { size: 21, color: sel ? C.black : C.white });
+      text(ctx, r.dist.toFixed(0) + 'NM', x + 400, ry, { size: 20, align: 'right' });
+    });
+    const shown = rows[cur ?? 0];
+    if (shown) {
+      const wx = PAGE.x + 500;
+      text(ctx, `PLAN ${shown.num}`, wx, top - 4, { size: 15, color: C.cyan });
+      shown.wpts.slice(0, 13).forEach((id, i) => text(ctx, id, wx, top + 34 + i * rowH, { size: 20 }));
+    }
+    hint(ctx, cur == null ? 'Push FMS for the cursor · MENU: page options'
+      : 'ENT or MENU: activate, invert or delete the plan');
   }
 
   // Nearest Airports / VOR: a list with the cursor.
@@ -334,6 +478,65 @@ window.G1000_DISPLAY = (function () {
     });
     hint(ctx, cur == null ? 'Push FMS for the cursor'
       : vor ? 'ENT: frequency to NAV standby · D→: direct to it' : 'ENT: airport information · D→: direct to it');
+  }
+
+  // Nearest Frequencies: center, flight service and weather, a section
+  // each, one row per frequency.
+  // Who answers an outlet: the center or flight service station's name.
+  const VIA = { ZSE: 'SEATTLE CENTER', SEA: 'SEATTLE RADIO' };
+  function nearestFreqPage(ctx, s, G) {
+    pageBackground(ctx);
+    const rows = G.pages.nearestFreqs(), cur = s.mfd.cursor;
+    const x = PAGE.x + 30, rowH = 31;
+    let y = PAGE.y + 60, last = null;
+    const TITLE = { ARTCC: 'ARTCC', FSS: 'FSS', WX: 'WEATHER' };
+    rows.forEach((r, i) => {
+      if (r.kind !== last) {
+        if (last) y += 10;
+        text(ctx, TITLE[r.kind], x, y, { size: 15, color: C.cyan });
+        text(ctx, 'BRG', x + 420, y, { size: 14, align: 'right', color: C.grey });
+        text(ctx, 'DIS', x + 520, y, { size: 14, align: 'right', color: C.grey });
+        y += rowH;
+        last = r.kind;
+      }
+      const sel = cur === i;
+      // Center and FSS: who answers, and the outlet; weather: the station.
+      const who = r.kind === 'WX' ? `${r.w.id}  ${r.w.via}` : `${VIA[r.w.via] ?? r.w.via}`;
+      text(ctx, who, x, y, { size: 18 });
+      text(ctx, r.kind === 'WX' ? '' : r.w.name, x + 200, y, { size: 14, color: C.grey });
+      text(ctx, pad3(r.brg) + '°', x + 420, y, { size: 18, align: 'right' });
+      text(ctx, r.dist.toFixed(1) + 'NM', x + 520, y, { size: 18, align: 'right' });
+      if (sel) box(ctx, x + 545, y - 14, 96, 28, { fill: C.cyan, stroke: null });
+      text(ctx, r.freq.toFixed(3), x + 550, y, { size: 19, color: sel ? C.black : C.green });
+      y += rowH;
+    });
+    hint(ctx, cur == null ? 'Push FMS for the cursor' : 'ENT: frequency to COM standby');
+  }
+
+  // Nearest Airspaces: name, class, where the airplane stands, the
+  // shelf's floor and ceiling.
+  const altText = (ft, agl) => (ft === 0 ? 'SFC' : `${ft}${agl ? 'AGL' : ''}`);
+  function nearestAirspacePage(ctx, s, G) {
+    pageBackground(ctx);
+    const list = G.pages.nearestAirspaces(), cur = s.mfd.cursor;
+    const x = PAGE.x + 30, top = PAGE.y + 60, rowH = 46;
+    text(ctx, 'AIRSPACE', x, top - 4, { size: 15, color: C.grey });
+    text(ctx, 'STATUS', x + 470, top - 4, { size: 15, color: C.grey });
+    text(ctx, 'ALT', x + 790, top - 4, { size: 15, align: 'right', color: C.grey });
+    if (!list.length) text(ctx, 'No airspace within 50NM', x, top + 34, { size: 20, color: C.grey });
+    const color = { B: '#3a8bff', C: C.magenta, D: '#3a8bff' };
+    list.forEach((a, i) => {
+      const ry = top + 34 + i * rowH;
+      if (ry > PAGE.y + PAGE.h - 90) return;
+      if (cur === i) box(ctx, x - 6, ry - 19, PAGE.w - 48, 38, { fill: '#123a4a', stroke: C.cyan });
+      box(ctx, x, ry - 12, 24, 24, { fill: C.black, stroke: color[a.cls] });
+      text(ctx, a.cls, x + 12, ry + 1, { size: 16, align: 'center', color: color[a.cls] });
+      text(ctx, a.name.replace(/ CLASS [BCD]\d*$/, '').slice(0, 34), x + 36, ry, { size: 18 });
+      const stColor = a.rank === 0 || a.rank === 2 || a.rank === 3 ? C.yellow : C.white;
+      text(ctx, a.status ?? `${a.dist.toFixed(1)}NM`, x + 470, ry, { size: 18, color: stColor });
+      text(ctx, `${altText(a.lo, a.loAgl)}-${a.hi}FT`, x + 790, ry, { size: 17, align: 'right' });
+    });
+    hint(ctx, 'Class B, C and D (FAA ADDS). Floor and ceiling of the nearest shelf, MSL.');
   }
 
   function placeholder(ctx, s, G) {
@@ -367,7 +570,8 @@ window.G1000_DISPLAY = (function () {
     const key = G.pages.pageKey();
     const draw = {
       'MAP:0': navMap, 'FPL:0': navMap, 'WPT:0': airportInfo, 'WPT:3': vorInfo, 'AUX:0': tripPlanning,
-      'AUX:1': utility, 'NRST:0': (c, st, g) => nearestList(c, st, g, false), 'NRST:3': (c, st, g) => nearestList(c, st, g, true),
+      'AUX:1': utility, 'AUX:3': systemSetup, 'FPL:1': catalog, 'NRST:0': (c, st, g) => nearestList(c, st, g, false), 'NRST:3': (c, st, g) => nearestList(c, st, g, true),
+      'NRST:5': nearestFreqPage, 'NRST:6': nearestAirspacePage,
     }[key] ?? placeholder;
     draw(ctx, s, G);
     const g = G.pages.GROUPS[s.mfd.group];
@@ -389,11 +593,63 @@ window.G1000_DISPLAY = (function () {
       ctx.strokeRect(i * w + 3, y + 3, w - 6, 28);
       // The selected option of a menu shows lit (cyan).
       const on = (menu === 'xpdr' && ({ Standby: 'STBY', On: 'ON', Alt: 'ALT' })[label] === s.xpdr.mode)
-        || (menu === 'engine' && label === s.eisPage);
+        || (menu === 'engine' && label === s.eisPage)
+        // A softkey's window open on the PFD.
+        || (menu === 'pfd' && !!s.fms.win.pfd && ({ 'Tmr/Ref': 'tmr', Nearest: 'nrst' })[label] === s.fms.win.pfd.type)
+        || (menu === 'pfd' && label === 'OBS' && !!s.fms.obs)
+        || (menu === 'map-layout' && label === s.pfdMap.layout);
+      if (label === 'Alerts' && display === 'pfd') return alertsKey(ctx, s, G, i * w, y, w);
       if (on) box(ctx, i * w + 3, y + 3, w - 6, 28, { fill: C.cyan, stroke: null });
       text(ctx, label, i * w + w / 2, y + 17, { size: label.length > 7 ? 15 : 18, align: 'center',
         color: on ? C.black : live.includes(i) ? C.white : '#5b6068' });
     });
+  }
+  // The PFD's ALERTS softkey: the most urgent unacknowledged level,
+  // flashing (WARNING red, CAUTION amber, ADVISORY white, each on black);
+  // lit while the Alerts window is open.
+  const LEVEL_KEY = { warning: ['WARNING', C.red], caution: ['CAUTION', C.yellow], advisory: ['ADVISORY', C.white] };
+  function alertsKey(ctx, s, G, x, y, w) {
+    const lv = G.alerts.pending();
+    if (lv) {
+      const [label, color] = LEVEL_KEY[lv], lit = Math.floor(s.t * 2) % 2 === 0;
+      box(ctx, x + 3, y + 3, w - 6, 28, { fill: lit ? color : C.black, stroke: null });
+      text(ctx, label, x + w / 2, y + 17, { size: 14, align: 'center', color: lit ? C.black : color });
+      return;
+    }
+    const open = s.fms.win.pfd?.type === 'alerts';
+    if (open) box(ctx, x + 3, y + 3, w - 6, 28, { fill: C.cyan, stroke: null });
+    text(ctx, 'Alerts', x + w / 2, y + 17, { size: 18, align: 'center', color: open ? C.black : C.white });
+  }
+
+  // The annunciation window, right of the VSI: warnings (red) above
+  // cautions (amber). Unacknowledged ones flash (reverse video).
+  function annunciationWindow(ctx, s) {
+    const cas = s.alerts.cas;
+    if (!cas.length) return;
+    const x = 912, w = 108, y0 = 128, rowH = 26;
+    box(ctx, x, y0 - 4, w, cas.length * rowH + 8, { fill: C.black, stroke: C.grey });
+    cas.forEach((c, i) => {
+      const color = c.level === 'warning' ? C.red : C.yellow, y = y0 + i * rowH + rowH / 2;
+      const flash = !c.acked && Math.floor(s.t * 2) % 2 === 0;
+      if (flash) box(ctx, x + 3, y - 11, w - 6, 22, { fill: color, stroke: null });
+      text(ctx, c.text, x + w / 2, y + 1, { size: c.text.length > 10 ? 13 : 15, align: 'center', color: flash ? C.black : color });
+    });
+  }
+
+  // The PFD's Alerts window: the messages, newest first.
+  function alertsWindow(ctx, s, G, win, x, y, w, h) {
+    box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
+    text(ctx, 'ALERTS', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    const msgs = s.alerts.messages;
+    if (!msgs.length) text(ctx, 'No messages', x + w / 2, y + 70, { size: 18, align: 'center', color: C.grey });
+    const rowH = 58, n = Math.floor((h - 60) / rowH);
+    msgs.slice(win.first, win.first + n).forEach((m, k) => {
+      const ry = y + 52 + k * rowH;
+      text(ctx, m.title, x + 12, ry, { size: 17, color: C.white });
+      text(ctx, m.text, x + 12, ry + 20, { size: 14, color: C.white, bold: false });
+      text(ctx, m.about.replace(/ CLASS ([BCD])\d*$/, ' ($1)').slice(0, 40), x + 12, ry + 38, { size: 13, color: C.grey });
+    });
+    if (win.first + n < msgs.length) text(ctx, '▼', x + w - 16, y + h - 14, { size: 14, color: C.grey });
   }
 
   function noteBar(ctx, s) {
@@ -532,6 +788,14 @@ window.G1000_DISPLAY = (function () {
       }
     }
     ctx.restore();
+    // V-speed references that are on (Tmr/Ref): a cyan tag outside the
+    // tape's right edge at the speed, when it is on the tape.
+    for (const v of G1000_TIMER.VSPEEDS) {
+      const ref = s.ref.v[v.key], y = yOf(ref.kt);
+      if (!ref.on || y < top + 10 || y > bot - 10) continue;
+      box(ctx, x + w + 2, y - 11, 22, 22, { fill: C.black, stroke: C.cyan });
+      text(ctx, v.tag, x + w + 13, y + 1, { size: 16, align: 'center', color: C.cyan });
+    }
     // Readout.
     const color = s.ias >= sp.vne ? C.red : s.ias >= sp.yellow[0] ? C.yellow : C.white;
     ctx.fillStyle = C.black;
@@ -565,7 +829,22 @@ window.G1000_DISPLAY = (function () {
     const yb = Math.min(bot - 8, Math.max(top + 8, yOf(s.altSel)));
     ctx.fillStyle = C.cyan;
     ctx.fillRect(x, yb - 16, 9, 32);
+    // Minimums bug (Tmr/Ref, BARO): a bar across the tape's left half,
+    // cyan, yellow once below.
+    const mins = s.ref.mins, minColor = mins.below ? C.yellow : C.cyan;
+    if (mins.mode === 'BARO') {
+      const ym = yOf(mins.ft);
+      ctx.fillStyle = minColor;
+      ctx.beginPath(); ctx.moveTo(x, ym - 9); ctx.lineTo(x + 14, ym); ctx.lineTo(x, ym + 9); ctx.fill();
+      ctx.fillRect(x, ym - 2, 46, 4);
+    }
     ctx.restore();
+    // The minimums box, left of the baro setting.
+    if (mins.mode === 'BARO') {
+      box(ctx, x - 150, bot, 146, 30, { fill: C.black, stroke: C.grey });
+      text(ctx, 'BARO MIN', x - 143, bot + 15, { size: 13, color: minColor });
+      text(ctx, `${mins.ft}FT`, x - 8, bot + 15, { size: 16, align: 'right', color: minColor });
+    }
     // Readout.
     ctx.fillStyle = C.black;
     ctx.strokeStyle = C.white;
@@ -643,16 +922,34 @@ window.G1000_DISPLAY = (function () {
     slot(a.vert, x0 + 275, C.green, 'vert');
     if (vref) text(ctx, vref, x0 + 308, y + 1, { size: 19, color: C.green });
     slot(a.vertArmed, x0 + w - 8, C.white, 'vertArmed', 'right');
+    // Under the strip: PTRM (red, pitch trim failure) and MAXSPD (amber,
+    // flashing: overspeed protection is pitching up).
+    const below = [];
+    if (s.sys.failed.trim) below.push(['PTRM', C.red, true]);
+    if (a.maxspd) below.push(['MAXSPD', C.yellow, blinkOn(s, s.t + 1)]);
+    below.forEach(([str, color, show], i) => {
+      const bx = x0 + w / 2 - (below.length * 110) / 2 + i * 110;
+      box(ctx, bx + 5, 108, 100, 28, { fill: C.black, stroke: color });
+      if (show) text(ctx, str, bx + 55, 123, { size: 19, align: 'center', color });
+    });
   }
 
   function hsi(ctx, s, G) {
     const cx = 512, cy = 690, R = 125;
     const nav = G.navSolution();
     const srcColor = s.cdi === 'GPS' ? C.magenta : C.green;
+    // HSI Map (Map/HSI, Layout): a heading-up map inside the rose, own ship
+    // at its centre and the rose's edge at the map's range.
+    const hsiMap = s.pfdMap.layout === 'HSI Map';
+    if (hsiMap) {
+      drawMap(ctx, s, G, { ox: cx, oy: cy, ringR: R, circle: R + 4, fill: '#0a1a10', range: G.RANGES[s.pfdMap.range], small: true });
+    }
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.fillStyle = 'rgba(12, 14, 18, 0.85)';
-    ctx.beginPath(); ctx.arc(0, 0, R + 4, 0, Math.PI * 2); ctx.fill();
+    if (!hsiMap) {
+      ctx.fillStyle = 'rgba(12, 14, 18, 0.85)';
+      ctx.beginPath(); ctx.arc(0, 0, R + 4, 0, Math.PI * 2); ctx.fill();
+    }
     // Turn rate indicator: a fixed arc above the rose with standard rate
     // marks (18° in 6 s) and a magenta 6-second heading trend.
     ctx.strokeStyle = C.white;
@@ -735,6 +1032,9 @@ window.G1000_DISPLAY = (function () {
     text(ctx, s.cdi, -46, -26, { size: 17, align: 'center', color: srcColor });
     // GPS: the CDI scale (ENR 2 NM, TERM 1 NM full scale).
     if (nav?.scale) text(ctx, nav.scale, 46, -26, { size: 17, align: 'center', color: srcColor });
+    // OBS mode: sequencing suspended on the active waypoint.
+    if (nav?.obs) text(ctx, 'OBS', 46, 30, { size: 17, align: 'center', color: srcColor });
+    if (hsiMap) text(ctx, G.RANGES[s.pfdMap.range] + 'NM', 0, R - 46, { size: 14, align: 'center', color: C.grey });
     if (s.cdi !== 'GPS' && !nav) {
       ctx.strokeStyle = C.red; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(-60, -40); ctx.lineTo(60, 40); ctx.moveTo(60, -40); ctx.lineTo(-60, 40); ctx.stroke();
@@ -780,21 +1080,25 @@ window.G1000_DISPLAY = (function () {
     airspeedTape(ctx, s, G);
     altitudeTape(ctx, s, G);
     vsi(ctx, s);
+    annunciationWindow(ctx, s);
     hsi(ctx, s, G);
+    if (s.pfdMap.layout === 'Inset Map') insetMap(ctx, s, G);
     bottomBoxes(ctx, s);
     radios(ctx, s, G);
     navStatus(ctx, s, G);
     fma(ctx, s, G);
     fmsWindow(ctx, s, G, 'pfd');
+    pageMenuWindow(ctx, s, G, 'pfd');
     softkeys(ctx, s, G, 'pfd');
     noteBar(ctx, s);
     last.pfd = { t: s.t, ias: s.ias, trend: last.pfd?.trend };
   }
 
   // ---- MFD: engine strip (EIS) on the left, the navigation map ----
-  function gaugeBar(ctx, label, value, lo, hi, zones, x, y, w, fmt) {
-    text(ctx, label, x, y, { size: 16 });
-    text(ctx, fmt(value), x + w, y, { size: 18, align: 'right' });
+  // color: the value's colour (red or amber when out of limits).
+  function gaugeBar(ctx, label, value, lo, hi, zones, x, y, w, fmt, color = C.white) {
+    text(ctx, label, x, y, { size: 16, color: color === C.white ? C.white : color });
+    text(ctx, fmt(value), x + w, y, { size: 18, align: 'right', color });
     const by = y + 14, bw = w;
     for (const [a, b, color] of zones) {
       ctx.fillStyle = color;
@@ -807,8 +1111,11 @@ window.G1000_DISPLAY = (function () {
 
   function eis(ctx, s, G) {
     box(ctx, 0, 70, 200, H - 104, { fill: C.panel, stroke: null });
-    // Plausible engine numbers from power and altitude.
-    const rpm = Math.round(700 + 1800 * s.power);
+    // The numbers come from js/g1000-systems.js.
+    const sys = s.sys, rpm = Math.round(sys.rpm);
+    // POH limits: red outside them, amber on a discharging battery.
+    const voltColor = (v) => (v < 24.5 || v > 32 ? C.red : C.white);
+    const ampColor = (v) => (v < -1.5 ? C.yellow : C.white);
     const ff = +G.fuelFlow().toFixed(1);
     const x = 12, w = 176;
     if (s.eisPage === 'Lean') {
@@ -826,10 +1133,13 @@ window.G1000_DISPLAY = (function () {
     }
     if (s.eisPage === 'System') {
       text(ctx, 'SYSTEM', x, 100, { size: 18, color: C.cyan });
-      gaugeBar(ctx, 'VOLTS M', 28.0, 20, 32, [[20, 24, C.red], [24, 32, C.green]], x, 140, w, (v) => v.toFixed(1));
-      gaugeBar(ctx, 'VOLTS E', 28.0, 20, 32, [[20, 24, C.red], [24, 32, C.green]], x, 200, w, (v) => v.toFixed(1));
-      gaugeBar(ctx, 'AMPS M', 5, -60, 60, [[-60, 60, C.green]], x, 260, w, (v) => v.toFixed(0));
-      gaugeBar(ctx, 'AMPS S', 0, -10, 10, [[-10, 10, C.green]], x, 320, w, (v) => v.toFixed(0));
+      const vz = [[20, 24.5, C.red], [24.5, 32, C.green], [32, 34, C.red]];
+      gaugeBar(ctx, 'VOLTS M', sys.voltsM, 20, 34, vz, x, 140, w, (v) => v.toFixed(1), voltColor(sys.voltsM));
+      gaugeBar(ctx, 'VOLTS E', sys.voltsE, 20, 34, vz, x, 200, w, (v) => v.toFixed(1), voltColor(sys.voltsE));
+      gaugeBar(ctx, 'AMPS M', sys.ampsM, -60, 60, [[-60, 60, C.green]], x, 260, w, (v) => v.toFixed(0), ampColor(sys.ampsM));
+      gaugeBar(ctx, 'AMPS S', sys.ampsS, -10, 10, [[-10, 10, C.green]], x, 320, w, (v) => v.toFixed(1), sys.ampsS < 0 ? C.yellow : C.white);
+      gaugeBar(ctx, 'OIL PSI', sys.oilPsi, 0, 115, [[0, 20, C.red], [20, 50, C.yellow], [50, 90, C.green], [90, 115, C.red]], x, 380, w, (v) => v.toFixed(0), sys.oilPsi <= 20 ? C.red : C.white);
+      gaugeBar(ctx, 'OIL °F', sys.oilF, 75, 250, [[75, 100, C.yellow], [100, 245, C.green], [245, 250, C.red]], x, 440, w, (v) => v.toFixed(0), sys.oilF >= 245 ? C.red : C.white);
       return;
     }
     // ENGINE page: RPM as an arc, then bars.
@@ -850,93 +1160,165 @@ window.G1000_DISPLAY = (function () {
     text(ctx, 'RPM', 100, 230, { size: 16, align: 'center' });
     text(ctx, String(Math.round(rpm / 10) * 10), 100, 208, { size: 24, align: 'center' });
     gaugeBar(ctx, 'FFLOW GPH', ff, 0, 20, [[0, 20, C.green]], x, 270, w, (v) => v.toFixed(1));
-    gaugeBar(ctx, 'OIL PRES', 60, 0, 115, [[0, 20, C.red], [20, 50, C.yellow], [50, 90, C.green], [90, 115, C.red]], x, 320, w, (v) => v.toFixed(0));
-    gaugeBar(ctx, 'OIL TEMP', 190, 75, 245, [[75, 100, C.yellow], [100, 245, C.green]], x, 370, w, (v) => v.toFixed(0));
-    gaugeBar(ctx, 'EGT', 1350, 1000, 1600, [[1000, 1600, '#555']], x, 420, w, () => '');
-    gaugeBar(ctx, 'VAC', 5.0, 3, 7, [[3, 4.5, '#555'], [4.5, 5.5, C.green], [5.5, 7, '#555']], x, 470, w, (v) => v.toFixed(1));
-    gaugeBar(ctx, 'FUEL QTY L', s.fuel / 2, 0, 30, [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]], x, 530, w, (v) => v.toFixed(0));
-    gaugeBar(ctx, 'FUEL QTY R', s.fuel / 2, 0, 30, [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]], x, 580, w, (v) => v.toFixed(0));
-    text(ctx, 'ENG 1,234.5 HRS', x, 640, { size: 15, color: C.grey });
+    gaugeBar(ctx, 'OIL PRES', sys.oilPsi, 0, 115, [[0, 20, C.red], [20, 50, C.yellow], [50, 90, C.green], [90, 115, C.red]], x, 320, w, (v) => v.toFixed(0), sys.oilPsi <= 20 ? C.red : C.white);
+    gaugeBar(ctx, 'OIL TEMP', sys.oilF, 75, 250, [[75, 100, C.yellow], [100, 245, C.green], [245, 250, C.red]], x, 370, w, (v) => v.toFixed(0), sys.oilF >= 245 ? C.red : C.white);
+    gaugeBar(ctx, 'EGT', sys.running ? 1350 : 1000, 1000, 1600, [[1000, 1600, '#555']], x, 420, w, () => '');
+    gaugeBar(ctx, 'VAC', sys.vac, 3, 7, [[3, 4.5, '#555'], [4.5, 5.5, C.green], [5.5, 7, '#555']], x, 470, w, (v) => v.toFixed(1), sys.vac < 3.5 ? C.yellow : C.white);
+    // Fuel: the POH's red 0-5 gal (1.5 gal unusable at 0), amber 5-8.
+    const fz = [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]];
+    const fc = (g) => (g < 5 ? C.yellow : C.white);
+    gaugeBar(ctx, 'FUEL QTY L', s.fuelL, 0, 30, fz, x, 530, w, (v) => v.toFixed(0), fc(s.fuelL));
+    gaugeBar(ctx, 'FUEL QTY R', s.fuelR, 0, 30, fz, x, 580, w, (v) => v.toFixed(0), fc(s.fuelR));
+    // Bus volts and battery amps at the bottom (POH: M BUS E, M BATT S).
+    const pair = (label, a, b, y, ca, cb, d) => {
+      text(ctx, label, x + w / 2, y, { size: 13, align: 'center', color: C.grey });
+      text(ctx, a.toFixed(d), x, y, { size: 16, color: ca });
+      text(ctx, b.toFixed(d), x + w, y, { size: 16, align: 'right', color: cb });
+    };
+    pair('M  VOLTS  E', sys.voltsM, sys.voltsE, 630, voltColor(sys.voltsM), voltColor(sys.voltsE), 1);
+    pair('M  AMPS  S', sys.ampsM, sys.ampsS, 656, ampColor(sys.ampsM), sys.ampsS < 0 ? C.yellow : C.white, 1);
   }
 
-  function navMap(ctx, s, G) {
-    const x0 = 200, y0 = 106, w = W - 200, h = H - 34 - 106;
-    box(ctx, x0, y0, w, h, { fill: '#0a1a10', stroke: null });
-    const range = G.RANGES[s.range];
-    // Heading up: own ship two thirds down, the range ring above it.
-    const ox = x0 + w / 2, oy = y0 + h * 0.66, ringR = h * 0.5;
-    const ppn = ringR / range;
+  // ---- Moving maps: the MFD's Navigation Map, the PFD's inset and HSI
+  // maps. One drawing, by a view: the area (a rectangle, or a circle for
+  // the HSI map), where own ship sits, the range and the orientation. What
+  // shows follows Map Setup (s.mapSet) on all three. ----
+  // Airspace: Class B blue, C magenta, D blue dashed, as on the charts.
+  const AIRSPACE = { B: { color: '#3a8bff', dash: [] }, C: { color: C.magenta, dash: [] }, D: { color: '#3a8bff', dash: [10, 7] } };
+  function drawMap(ctx, s, G, v) {
+    const { range } = v, set = s.mapSet, small = v.small;
+    // A map setting that is a range: the symbol shows at that map range or
+    // less ('Off': never).
+    const shows = (val) => val !== 'Off' && range <= val;
+    const up = v.northUp ? 0 : s.hdg;
+    const { ox, oy, ringR } = v, ppn = ringR / range;
     ctx.save();
-    ctx.beginPath(); ctx.rect(x0, y0, w, h); ctx.clip();
+    ctx.beginPath();
+    if (v.circle) ctx.arc(ox, oy, v.circle, 0, Math.PI * 2); else ctx.rect(v.x0, v.y0, v.w, v.h);
+    ctx.clip();
+    if (v.fill) { ctx.fillStyle = v.fill; ctx.fill(); }
     const toXY = (p) => {
       const { brg, dist } = G.bearingDist(s, p);
-      const a = rad(brg - s.hdg);
+      const a = rad(brg - up);
       return [ox + Math.sin(a) * dist * ppn, oy - Math.cos(a) * dist * ppn];
     };
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 8]);
-    ctx.beginPath(); ctx.arc(ox, oy, ringR, 0, Math.PI * 2); ctx.stroke();
+    // Airspace first, under everything: each shelf's outline.
+    const cls = { B: shows(set.clsB), C: shows(set.clsC), D: shows(set.clsD) };
+    for (const a of G.AIRSPACE) {
+      if (!cls[a.cls]) continue;
+      // Skip shelves wholly far away (their first point beyond 3 ranges
+      // and 60 NM: no Washington shelf is wider).
+      if (G.bearingDist(s, { lat: a.pts[0][0], lon: a.pts[0][1] }).dist > Math.max(3 * range, 60)) continue;
+      const st = AIRSPACE[a.cls];
+      ctx.strokeStyle = st.color;
+      ctx.lineWidth = small ? 1.5 : 2.5;
+      ctx.setLineDash(st.dash);
+      ctx.beginPath();
+      a.pts.forEach(([lat, lon], k) => { const [px, py] = toXY({ lat, lon }); ctx[k ? 'lineTo' : 'moveTo'](px, py); });
+      ctx.closePath(); ctx.stroke();
+    }
     ctx.setLineDash([]);
-    text(ctx, `${range}NM`, ox + ringR * 0.72, oy - ringR * 0.72, { size: 18, color: C.grey });
-    // The flight plan: legs white, the active leg (or Direct-To) magenta.
-    const f = s.fms.fpl, l = G.fms.leg();
-    ctx.lineWidth = 3;
+    if (set.ring === 'On' && !v.circle) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath(); ctx.arc(ox, oy, ringR, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    // The flight plan: legs white, the active leg (or Direct-To) magenta;
+    // in OBS, the selected course through the waypoint and on past it.
+    const f = s.fms.fpl, l = G.fms.leg(), showFpl = shows(set.fpl);
+    ctx.lineWidth = small ? 2 : 3;
     ctx.strokeStyle = C.white;
-    for (let i = 1; i < f.wpts.length; i++) {
+    for (let i = 1; showFpl && i < f.wpts.length; i++) {
       if (!f.dto && i === f.active) continue;
       const [ax, ay] = toXY(G.fms.byId[f.wpts[i - 1]]), [bx, by] = toXY(G.fms.byId[f.wpts[i]]);
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
     }
-    if (l) {
-      const [ax, ay] = toXY(l.from), [bx, by] = toXY(l.to);
+    if (l && showFpl) {
+      const [ax, ay] = toXY(l.from), [bx, by] = toXY(l.beyond ?? l.to);
       ctx.strokeStyle = C.magenta;
-      ctx.lineWidth = 5;
+      ctx.lineWidth = small ? 3 : 5;
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
     }
     // Selected VOR course line from the station.
     const nav = G.navSolution();
     if (nav && nav.source !== 'GPS') {
       const [sx, sy] = toXY(nav.station);
-      const a = rad(nav.courseTrue - s.hdg);
+      const a = rad(nav.courseTrue - up);
       ctx.strokeStyle = C.green;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(sx - Math.sin(a) * 2000, sy + Math.cos(a) * 2000);
       ctx.lineTo(sx + Math.sin(a) * 2000, sy - Math.cos(a) * 2000); ctx.stroke();
     }
-    // Airports: towered cyan, non-towered magenta. With the whole state in
-    // the database, identifiers show only at 15 NM range or less
-    // (declutter), and smaller rings beyond 25 NM.
-    const labels = range <= 15, ring = range > 25 ? 6 : 9;
+    // Airports: towered cyan, non-towered magenta, each size shown up to
+    // its Map Setup range. With the whole state in the database,
+    // identifiers show only at 15 NM range or less (declutter; 7.5 NM on
+    // the small PFD maps), and smaller rings beyond 25 NM.
+    const labels = range <= (small ? 7.5 : 15), ring = (range > 25 ? 6 : 9) * (small ? 0.75 : 1);
+    const sized = { L: shows(set.aptL), M: shows(set.aptM), S: shows(set.aptS) };
+    const far = (px, py) => Math.hypot(px - ox, py - oy) > 1500;
     for (const ap of G.AIRPORTS) {
+      if (!sized[G.airportSize(ap)]) continue;
       const [px, py] = toXY(ap);
-      if (px < x0 - 40 || px > x0 + w + 40 || py < y0 - 40 || py > y0 + h + 40) continue;
+      if (far(px, py)) continue;
       ctx.strokeStyle = ap.towered ? C.cyan : C.magenta;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = small ? 2 : 3;
       ctx.beginPath(); ctx.arc(px, py, ring, 0, Math.PI * 2); ctx.stroke();
-      if (labels) text(ctx, ap.id, px + 14, py - 12, { size: 18 });
+      if (labels) text(ctx, ap.id, px + 12, py - 11, { size: small ? 14 : 18 });
     }
-    for (const n of G.NAVAIDS) {
-      const [px, py] = toXY(n);
+    for (const n of shows(set.vor) ? G.NAVAIDS : []) {
+      const [px, py] = toXY(n), r = small ? 8 : 11;
       ctx.strokeStyle = C.cyan;
       ctx.lineWidth = 2;
       ctx.beginPath();
       for (let k = 0; k < 6; k++) {
         const a = rad(60 * k);
-        ctx[k ? 'lineTo' : 'moveTo'](px + Math.cos(a) * 11, py + Math.sin(a) * 11);
+        ctx[k ? 'lineTo' : 'moveTo'](px + Math.cos(a) * r, py + Math.sin(a) * r);
       }
       ctx.closePath(); ctx.stroke();
-      text(ctx, `${n.id} ${n.freq.toFixed(1)}`, px + 15, py + 16, { size: 16, color: C.cyan });
+      text(ctx, small ? n.id : `${n.id} ${n.freq.toFixed(1)}`, px + r + 4, py + 14, { size: small ? 13 : 16, color: C.cyan });
     }
-    // Own ship.
-    ctx.fillStyle = C.white;
-    ctx.beginPath();
-    ctx.moveTo(ox, oy - 18); ctx.lineTo(ox + 14, oy + 12); ctx.lineTo(ox, oy + 5); ctx.lineTo(ox - 14, oy + 12);
-    ctx.closePath(); ctx.fill();
+    // Own ship, pointing along the heading (straight up unless north up).
+    // The HSI map leaves it to the HSI's own airplane symbol.
+    if (!v.circle) {
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.rotate(rad(s.hdg - up));
+      ctx.scale(small ? 0.7 : 1, small ? 0.7 : 1);
+      ctx.fillStyle = C.white;
+      ctx.beginPath();
+      ctx.moveTo(0, -18); ctx.lineTo(14, 12); ctx.lineTo(0, 5); ctx.lineTo(-14, 12);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
     ctx.restore();
-    // Heading-up compass arc label and page title.
-    text(ctx, 'HDG UP', x0 + 10, y0 + 18, { size: 16, color: C.grey });
+  }
+
+  function navMap(ctx, s, G) {
+    const x0 = 200, y0 = 106, w = W - 200, h = H - 34 - 106;
+    box(ctx, x0, y0, w, h, { fill: '#0a1a10', stroke: null });
+    const range = G.RANGES[s.range], northUp = s.mapSet.orient === 'North Up';
+    // Heading or track up (the same here: no wind): own ship two thirds
+    // down, the range ring above it. North up: own ship in the middle.
+    const ox = x0 + w / 2, oy = y0 + h * (northUp ? 0.5 : 0.66), ringR = h * (northUp ? 0.42 : 0.5);
+    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR, range, northUp });
+    if (s.mapSet.ring === 'On') text(ctx, `${range}NM`, ox + ringR * 0.72, oy - ringR * 0.72, { size: 18, color: C.grey });
+    // The orientation, top left.
+    text(ctx, { 'Heading Up': 'HDG UP', 'Track Up': 'TRK UP', 'North Up': 'NORTH UP' }[s.mapSet.orient], x0 + 10, y0 + 18, { size: 16, color: C.grey });
     text(ctx, 'Mock map: not for navigation', x0 + 10, y0 + h - 60, { size: 13, color: C.grey });
+  }
+
+  // The PFD's inset map (Map/HSI, Layout, Inset Map): lower left, heading
+  // up, its own range (the PFD's RANGE knob).
+  const INSET = { x0: 4, y0: 545, w: 300, h: 228 };
+  function insetMap(ctx, s, G) {
+    const { x0, y0, w, h } = INSET, range = G.RANGES[s.pfdMap.range];
+    box(ctx, x0, y0, w, h, { fill: '#0a1a10', stroke: C.grey });
+    const ox = x0 + w / 2, oy = y0 + h * 0.72;
+    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR: h * 0.6, range, small: true });
+    text(ctx, `${range}NM`, x0 + w - 8, y0 + 14, { size: 14, align: 'right', color: C.grey });
+    text(ctx, 'HDG UP', x0 + 8, y0 + 14, { size: 13, color: C.grey });
   }
 
   function navDataBar(ctx, s, G) {
@@ -967,6 +1349,7 @@ window.G1000_DISPLAY = (function () {
     navDataBar(ctx, s, G);
     radios(ctx, s, G);
     fmsWindow(ctx, s, G, 'mfd');
+    pageMenuWindow(ctx, s, G, 'mfd');
     pageGroups(ctx, s, G);
     softkeys(ctx, s, G, 'mfd');
     noteBar(ctx, s);

@@ -384,10 +384,15 @@ G1000_CHECKS = r"""() => {
   expect(s.fms.win.pfd.prompt?.text === 'Remove KPWT?', `CLR prompt: ${s.fms.win.pfd.prompt?.text}`);
   G.press('ent', 'pfd');
   expect(f().wpts.join() === 'KPAE,KAWO,KBVS' && leg().to.id === 'KAWO', `FPL remove: ${JSON.stringify(f())}`);
-  // MENU on KBVS: activate the leg to it.
+  // MENU on KBVS: the Page Menu starts on Activate Leg, which asks first.
   G.turn('fms', 'outer', 1, 'pfd');
-  G.press('menu', 'pfd'); G.press('ent', 'pfd');
-  expect(f().active === 2 && leg().fromId === 'KAWO', `MENU activate leg: ${JSON.stringify(f())}`);
+  G.press('menu', 'pfd');
+  const pm = () => s.pageMenu.pfd;
+  expect(pm()?.items[pm().cursor].label === 'Activate Leg', `Page Menu opened on ${pm()?.items[pm().cursor]?.label}`);
+  G.press('ent', 'pfd');
+  expect(pm()?.confirm?.text === 'Activate leg to KBVS?', `Activate Leg asks: ${pm()?.confirm?.text}`);
+  G.press('ent', 'pfd');
+  expect(!pm() && f().active === 2 && leg().fromId === 'KAWO', `MENU activate leg: ${JSON.stringify(f())}`);
 
   // Sequencing: D→ KAWO (in the plan), then on to KBVS by itself.
   G.fms.directTo('KAWO');
@@ -504,6 +509,284 @@ G1000_CHECKS = r"""() => {
   expect(Math.abs(fuel0 - s.fuel - ff / 6) < 0.3, `600 s at ${ff.toFixed(1)} GPH burned ${(fuel0 - s.fuel).toFixed(2)} gal`);
   const tp = P.trip();
   expect(Math.abs(tp.required - tp.ff * tp.hours) < 1e-9 && tp.after === tp.onboard - tp.required, 'Trip Planning fuel');
+
+  // Page Menu: pick an option by its label with the large FMS knob.
+  const menuTo = (label, d) => {
+    const m = s.pageMenu[d], i = m.items.findIndex((it) => it.label === label);
+    G.turn('fms', 'outer', i - m.cursor, d);
+    expect(m.items[m.cursor]?.label === label, `Page Menu: no ${label} (${m.items.map((it) => it.label)})`);
+  };
+  // Active FPL: invert, store, delete; Flight Plan Catalog: activate.
+  G.reset();
+  G.fms.activatePlan(['KPAE', 'KAWO', 'KBVS']);
+  G.press('fpl', 'mfd');
+  G.press('menu', 'mfd');
+  expect(s.pageMenu.mfd?.items[s.pageMenu.mfd.cursor].label === 'Invert Flight Plan',
+    `FPL menu with no cursor should start on Invert: ${s.pageMenu.mfd?.items[s.pageMenu.mfd.cursor]?.label}`);
+  G.press('ent', 'mfd'); G.press('ent', 'mfd');
+  expect(f().wpts.join() === 'KBVS,KAWO,KPAE' && f().active === 1, `Invert: ${JSON.stringify(f())}`);
+  // A grey option says why and leaves the menu open.
+  G.press('menu', 'mfd'); menuTo('Parallel Track', 'mfd'); G.press('ent', 'mfd');
+  expect(s.pageMenu.mfd && /not in the mock/.test(s.note?.text), `grey option: ${s.note?.text}`);
+  const stored = s.fms.catalog.length;
+  menuTo('Store Flight Plan', 'mfd'); G.press('ent', 'mfd');
+  expect(s.fms.catalog.length === stored + 1 && s.fms.catalog[stored].wpts.join() === 'KBVS,KAWO,KPAE' && !s.pageMenu.mfd,
+    `Store: ${JSON.stringify(s.fms.catalog)}`);
+  // Delete asks; CLR backs out to the menu, a second CLR closes it.
+  G.press('menu', 'mfd'); menuTo('Delete Flight Plan', 'mfd'); G.press('ent', 'mfd'); G.press('clr', 'mfd');
+  expect(f().wpts.length === 3 && s.pageMenu.mfd && !s.pageMenu.mfd.confirm, 'CLR on the Delete question');
+  G.press('ent', 'mfd'); G.press('ent', 'mfd');
+  expect(f().wpts.length === 0 && f().active === null && !s.pageMenu.mfd, `Delete: ${JSON.stringify(f())}`);
+  // The catalog (FPL's second page): cursor on the stored plan, ENT gives
+  // its menu, Invert & Activate flies it reversed.
+  G.press('fpl', 'mfd');
+  mt('outer', 3 - s.mfd.group); mt('inner', 1 - s.mfd.last[3]);
+  expect(P.pageKey() === 'FPL:1', `Flight Plan Catalog: ${P.pageKey()}`);
+  G.push('fms', 'mfd'); mt('inner', stored);
+  G.press('ent', 'mfd');
+  expect(s.pageMenu.mfd?.items[0].label === 'Activate Flight Plan', 'ENT on a stored plan should open its menu');
+  menuTo('Invert & Activate FPL', 'mfd'); G.press('ent', 'mfd'); G.press('ent', 'mfd');
+  expect(f().wpts.join() === 'KPAE,KAWO,KBVS' && leg()?.to.id === 'KAWO', `Invert & Activate: ${JSON.stringify(f())}`);
+  expect(s.fms.catalog.every((p) => p.wpts.every((id) => G.fms.byId[id])), 'a stored plan with an unknown waypoint');
+
+  // D→ window's menu cancels the Direct-To, back to the plan's leg.
+  G.fms.directTo('KBVS');
+  G.press('direct_to', 'pfd'); G.press('menu', 'pfd');
+  expect(s.pageMenu.pfd?.items[0].label === 'Cancel Direct-To NAV', 'D→ menu');
+  G.press('ent', 'pfd');
+  expect(!f().dto && leg()?.to.id === 'KBVS' && leg().fromId === 'KAWO', `Cancel D→: ${JSON.stringify(f())}`);
+  G.press('direct_to', 'pfd');
+  // A page with no options says so; MENU again closes it.
+  G.press('menu', 'pfd');
+  expect(s.pageMenu.pfd?.items.length === 0, 'the PFD with no window should have no options');
+  G.press('menu', 'pfd');
+  expect(!s.pageMenu.pfd, 'MENU should close the Page Menu');
+
+  // Utility: Reset Trip Statistics keeps the odometer and flight timer.
+  G.reset();
+  mt('outer', 2); mt('inner', 1);
+  run(60);
+  G.press('menu', 'mfd'); menuTo('Reset Trip Statistics', 'mfd'); G.press('ent', 'mfd'); G.press('ent', 'mfd');
+  const st = s.mfd.stats;
+  expect(st.trip === 0 && st.maxGs === 0 && st.odo > 1 && st.t0 === 0, `trip reset: ${JSON.stringify(st)}`);
+
+  // Map Settings: Map Setup, North Up, small airports off at every range.
+  mt('outer', -2);
+  G.press('menu', 'mfd');
+  expect(s.pageMenu.mfd?.items[0].label === 'Map Settings', 'Navigation Map menu');
+  G.press('ent', 'mfd');
+  expect(s.pageMenu.mfd?.type === 'map', 'Map Settings should open Map Setup');
+  mt('outer', 1); mt('inner', 2);
+  expect(s.mapSet.orient === 'North Up', `orientation ${s.mapSet.orient}`);
+  mt('outer', -1); mt('inner', 1); mt('outer', 4); mt('inner', -99);
+  expect(s.mapSet.aptS === 'Off', `Small APT ${s.mapSet.aptS}`);
+  G.push('fms', 'mfd');
+  expect(!s.pageMenu.mfd && P.pageKey() === 'MAP:0', 'push FMS should close Map Setup');
+  expect(G.airportSize(G.fms.byId.KPAE) === 'L', 'Paine (9,010 ft) should be a large airport');
+
+  // Tmr/Ref: a 2-minute count down, set and started with the knobs and
+  // ENT; it expires and counts up. Then Vy on, and BARO minimums.
+  G.reset();
+  const pt = (part, n) => G.turn('fms', part, n, 'pfd'), r = s.ref;
+  G.press('softkey:9', 'pfd');
+  expect(s.fms.win.pfd?.type === 'tmr', 'Tmr/Ref softkey opened no window');
+  pt('inner', 1);
+  expect(r.timer.dir === 'DN', `timer direction ${r.timer.dir}`);
+  pt('outer', -1); pt('inner', 2);
+  expect(r.timer.secs === 120 && G.timer.action() === 'START?', `timer set ${r.timer.secs} s, ${G.timer.action()}`);
+  G.press('ent', 'pfd');
+  run(60);
+  expect(r.timer.running && Math.abs(r.timer.secs - 60) < 1 && G.timer.action() === 'STOP?', `count down at ${r.timer.secs}`);
+  run(70);
+  expect(r.timer.expired && Math.abs(r.timer.secs - 10) < 1, `after expiry ${r.timer.secs} s, expired ${r.timer.expired}`);
+  G.press('ent', 'pfd');
+  expect(!r.timer.running && G.timer.action() === 'RESET?', `stopped: ${G.timer.action()}`);
+  G.press('ent', 'pfd');
+  expect(r.timer.secs === 120 && G.timer.action() === 'START?', `reset to ${r.timer.secs}`);
+  // Vy: the large knob to its ON/OFF (Vglide, Vr, Vx before it).
+  pt('outer', 8); pt('inner', 1);
+  expect(r.v.y.on && !r.v.x.on, `Vy on: ${JSON.stringify(r.v)}`);
+  // The Page Menu: All References On.
+  G.press('menu', 'pfd');
+  expect(s.pageMenu.pfd?.items[0].label === 'All References On', 'Tmr/Ref menu');
+  G.press('ent', 'pfd');
+  expect(Object.values(r.v).every((v) => v.on), 'All References On');
+  // BARO minimums at 3,400 ft: an alert on descending through them.
+  pt('outer', 1); pt('inner', 1); pt('outer', 1); pt('inner', 240);
+  expect(r.mins.mode === 'BARO' && r.mins.ft === 3400, `minimums ${r.mins.mode} ${r.mins.ft}`);
+  run(2);
+  expect(!r.mins.below, 'below minimums at 3,500 ft');
+  s.manual.pitch = -3;
+  expect(run(120, () => r.mins.below) && s.note?.text === 'MINIMUMS', `no MINIMUMS alert: ${s.note?.text}`);
+  G.press('clr', 'pfd');
+  expect(!s.fms.win.pfd, 'CLR should close Tmr/Ref');
+
+  // OBS: starts on the leg's course; CRS picks another through KAWO; the
+  // CDI follows it; no sequencing past the waypoint until OBS is off.
+  G.reset();
+  G.fms.activatePlan(['KPAE', 'KAWO', 'KBVS']);
+  const dtk0 = G.navSolution().course;
+  G.press('softkey:4', 'pfd');
+  expect(s.fms.obs && s.fms.obs.crs === Math.round(dtk0) % 360, `OBS on: ${JSON.stringify(s.fms.obs)} vs DTK ${dtk0}`);
+  G.turn('crs_baro', 'inner', 40);
+  const kawo = G.fms.byId.KAWO, obsTrue = s.fms.obs.crs + G.magVarAt(kawo.lat, kawo.lon);
+  Object.assign(s, G.fms.project(kawo, obsTrue + 180, 5));
+  nav = G.navSolution();
+  expect(nav.obs && nav.course === s.fms.obs.crs && Math.abs(nav.dev) < 0.05 && nav.toFrom === 'TO',
+    `OBS on course 5 NM before: ${JSON.stringify({ c: nav.course, dev: nav.dev, tf: nav.toFrom })}`);
+  Object.assign(s, G.fms.project(kawo, obsTrue, 5));
+  run(2);
+  nav = G.navSolution();
+  expect(nav.toFrom === 'FROM' && leg().to.id === 'KAWO', `OBS past KAWO: ${nav.toFrom}, leg to ${leg().to.id}`);
+  G.push('crs_baro');
+  expect(Math.abs(angle(s.fms.obs.crs, G.navSolution().bearingTo)) < 1, 'CRS push in OBS should point the course at the waypoint');
+  G.press('softkey:4', 'pfd');
+  run(1);
+  expect(!s.fms.obs && leg().to.id === 'KBVS', `OBS off past KAWO should sequence: leg to ${leg()?.to.id}`);
+  s.cdi = 'VOR1';
+  G.press('softkey:4', 'pfd');
+  expect(!s.fms.obs, 'OBS mode with a VOR source');
+
+  // PFD maps: Map/HSI, Layout, Inset Map; the PFD's RANGE knob is its own.
+  G.reset();
+  G.press('softkey:1', 'pfd'); G.press('softkey:1', 'pfd');
+  expect(G.menu('pfd') === 'map-layout', `Map/HSI, Layout: ${G.menu('pfd')}`);
+  G.press('softkey:2', 'pfd');
+  expect(s.pfdMap.layout === 'Inset Map', `layout ${s.pfdMap.layout}`);
+  const mfdRange = s.range, pfdRange = s.pfdMap.range;
+  G.turn('range', '', 1, 'pfd');
+  expect(s.pfdMap.range === pfdRange - 1 && s.range === mfdRange, 'PFD RANGE should zoom the PFD map only');
+  G.press('softkey:3', 'pfd');
+  expect(s.pfdMap.layout === 'HSI Map', `layout ${s.pfdMap.layout}`);
+  expect(s.mapSet.clsB !== undefined && s.mapSet.clsD === 25, 'Map Setup airspace settings');
+
+  // Airspace: Paine's Class D (SFC-3,100), and inside it at 1,500 ft.
+  const paeD = G.AIRSPACE.filter((x) => x.name === 'EVERETT CLASS D');
+  expect(paeD.length && paeD[0].cls === 'D' && paeD[0].lo === 0 && paeD[0].hi === 3100,
+    `Everett Class D: ${JSON.stringify(paeD.map((x) => [x.lo, x.hi]))}`);
+  Object.assign(s, { lat: G.fms.byId.KPAE.lat, lon: G.fms.byId.KPAE.lon, trueAlt: 1500 });
+  let spaces = P.nearestAirspaces();
+  expect(spaces[0]?.name === 'EVERETT CLASS D' && spaces[0].status === 'INSIDE', `over KPAE at 1,500: ${spaces[0]?.name} ${spaces[0]?.status}`);
+  s.trueAlt = 4000;
+  spaces = P.nearestAirspaces();
+  expect(spaces.find((x) => x.name === 'EVERETT CLASS D')?.status === 'ABOVE', 'over KPAE at 4,000 should be above its Class D');
+  // Heading for Paine from 8 NM south at 2,000 ft: AHEAD within 10 minutes.
+  Object.assign(s, G.fms.project(G.fms.byId.KPAE, 180, 8), { trueAlt: 2000, hdg: 0 });
+  spaces = P.nearestAirspaces();
+  expect(spaces.find((x) => x.name === 'EVERETT CLASS D')?.status === 'AHEAD <10MIN', `toward KPAE: ${JSON.stringify(spaces.find((x) => x.name === 'EVERETT CLASS D'))}`);
+
+  // Airspace alerts: inside Paine's Class D gives INSIDE ARSPC and a
+  // flashing ADVISORY; the softkey acknowledges and opens the window.
+  G.reset();
+  // (s.alerts is replaced by each reset, so look it up every time.)
+  const al = s.alerts, msg = (id) => s.alerts.messages.find((m) => m.id === id);
+  const at = (p, extra) => { Object.assign(s, p, extra); run(1.5); };
+  at({ lat: G.fms.byId.KPAE.lat, lon: G.fms.byId.KPAE.lon }, { trueAlt: 1500 });
+  expect(msg('inside')?.about === 'EVERETT CLASS D' && al.unseen, `inside KPAE D: ${JSON.stringify(al)}`);
+  G.press('softkey:11', 'pfd');
+  expect(!al.unseen && s.fms.win.pfd?.type === 'alerts', 'ALERTS softkey should acknowledge and open the window');
+  G.press('softkey:11', 'pfd');
+  expect(!s.fms.win.pfd, 'ALERTS softkey again should close the window');
+  // The 200 ft buffer: 3,250 ft is inside a 3,100 ft ceiling; with no
+  // buffer it is above, and the message goes.
+  at({}, { trueAlt: 3250 });
+  expect(msg('inside'), 'within the altitude buffer above the Class D should still be inside');
+  mt('outer', 2); mt('inner', 3 - s.mfd.last[2]);
+  expect(P.pageKey() === 'AUX:3', `System Setup: ${P.pageKey()}`);
+  G.push('fms', 'mfd'); mt('inner', -4);
+  expect(s.alertSet.buffer === 0, `buffer ${s.alertSet.buffer}`);
+  run(1.5);
+  expect(!msg('inside'), 'with no buffer, 3,250 ft is above the Class D');
+  // Class D alerts off: nothing for Paine even inside it.
+  mt('outer', 3); mt('inner', 1);
+  expect(!s.alertSet.D, 'Class D alerts off');
+  at({}, { trueAlt: 1500 });
+  expect(!msg('inside'), 'Class D alerts off should silence INSIDE ARSPC');
+  mt('inner', 1);
+  // Heading for Paine from 8 NM south at 2,000 ft: ARSPC AHEAD.
+  at(G.fms.project(G.fms.byId.KPAE, 180, 8), { trueAlt: 2000, hdg: 0, roll: 0, manual: { pitch: 2, roll: 0 } });
+  expect(msg('ahead')?.about === 'EVERETT CLASS D' && !msg('inside'), `toward KPAE: ${JSON.stringify(al.messages)}`);
+
+  // Annunciations (POH section 7): none at the start; each failure gives
+  // its own, at the POH's thresholds.
+  const cas = () => s.alerts.cas.map((c) => c.id).join();
+  const fresh = (fn) => { G.reset(); if (fn) fn(); };
+  fresh(); run(2);
+  expect(cas() === '' && G.alerts.pending() !== 'warning', `annunciations at the start: ${cas()}`);
+  // LOW VOLTS below 1,000 RPM (POH note), out again at cruise power.
+  s.power = 0.1; run(2);
+  expect(cas() === 'lowVolts' && s.sys.rpm < 1000 && G.alerts.pending() === 'warning', `idle: ${cas()} at ${s.sys.rpm} RPM`);
+  G.press('softkey:11', 'pfd');
+  expect(s.alerts.cas[0].acked && G.alerts.pending() !== 'warning', 'the WARNING softkey should acknowledge');
+  s.power = 0.8; run(2);
+  expect(cas() === '', `back at cruise power: ${cas()}`);
+  // Alternator: LOW VOLTS at once (battery 24 V), discharge on M BATT;
+  // about 35 minutes later the standby battery takes over: STBY BATT.
+  fresh(() => G.fail('alternator')); run(2);
+  expect(cas() === 'lowVolts' && s.sys.ampsM < 0, `alternator failed: ${cas()}, ${s.sys.ampsM} A`);
+  expect(run(3000, () => cas().includes('stby')) && s.sys.voltsM <= 20.1 && s.sys.ampsS < -0.5,
+    `no STBY BATT: ${cas()}, ${s.sys.voltsM.toFixed(1)} V`);
+  // Overvoltage: HIGH VOLTS, then the ACU trips the alternator: LOW VOLTS.
+  fresh(() => G.fail('overvolt')); run(1);
+  expect(cas() === 'highVolts', `overvoltage: ${cas()}`);
+  run(4);
+  expect(cas() === 'lowVolts' && s.sys.acuTripped, `after the ACU trip: ${cas()}`);
+  // Oil pressure 20 PSI or less; low vacuum; CO 50 PPM or more.
+  fresh(() => G.fail('oil'));
+  expect(run(60, () => cas().includes('oil')) && s.sys.oilPsi <= 20, `oil: ${s.sys.oilPsi.toFixed(0)} PSI`);
+  fresh(() => G.fail('vacuum'));
+  expect(run(10, () => cas() === 'vac'), `vacuum: ${cas()} at ${s.sys.vac.toFixed(1)}`);
+  fresh(() => G.fail('co'));
+  expect(run(40, () => cas() === 'co') && s.sys.coPpm >= 50, `CO: ${cas()}`);
+  // LOW FUEL L: under 5 gal for more than 60 seconds, the left tank only.
+  fresh(() => { s.fuelL = 5.3; G.fail('leakL'); });
+  run(50);
+  expect(s.fuelL < 5 && !cas().includes('fuelL'), `LOW FUEL L too early: ${s.fuelL.toFixed(2)} gal`);
+  run(70);
+  expect(cas() === 'fuelL', `left leak: ${cas()}`);
+  // Cautions acknowledge after warnings: WARNING, then CAUTION.
+  G.fail('oil', true);
+  run(40);
+  expect(G.alerts.pending() === 'warning', `pending ${G.alerts.pending()}`);
+  G.press('softkey:11', 'pfd');
+  expect(G.alerts.pending() === 'caution', `after WARNING: ${G.alerts.pending()}`);
+  G.press('softkey:11', 'pfd');
+  expect(s.alerts.cas.every((c) => c.acked), 'after CAUTION all acknowledged');
+  // Both tanks dry: the engine stops; no fuel flow, oil pressure gone.
+  fresh(() => { s.fuelL = s.fuelR = 0.002; });
+  run(30);
+  expect(!s.sys.running && G.fuelFlow() === 0 && cas().includes('oil') && cas().includes('lowVolts'), `fuel exhaustion: ${cas()}`);
+  // PTRM: the autopilot disconnects and won't engage again.
+  fresh(() => G.press('ap'));
+  G.fail('trim'); run(1);
+  G.press('ap');
+  expect(!a().ap, 'PTRM: the autopilot should be off and stay off');
+  // MAXSPD: the autopilot diving in PIT holds the speed under Vne.
+  fresh(() => { G.press('ap'); s.power = 1; for (let i = 0; i < 30; i++) G.press('nose_dn'); });
+  let fastest = 0, maxspd = false;
+  run(120, () => { fastest = Math.max(fastest, s.ias); maxspd ||= a().maxspd; return false; });
+  expect(maxspd && fastest < G.SPEEDS.vne + 3, `overspeed: MAXSPD ${maxspd}, fastest ${fastest.toFixed(0)} KIAS`);
+
+  // Messages: WPT ARRIVAL within 10 seconds of the waypoint, TIMER EXPIRD,
+  // and the database's 28-day expiry.
+  fresh(() => G.fms.directTo('KAWO'));
+  Object.assign(s, G.fms.project(G.fms.byId.KAWO, G.navSolution('GPS').courseTrue + 180, 0.25));
+  run(1);
+  expect(msg('wpt')?.about === 'KAWO' && msg('wpt').title === 'WPT ARRIVAL', `WPT ARRIVAL: ${JSON.stringify(s.alerts.messages)}`);
+  s.ref.timer.expired = true; run(1);
+  expect(msg('timer')?.title === 'TIMER EXPIRD', 'TIMER EXPIRD message');
+  expect(G.DB_EXPIRES === Date.UTC(2026, 10, 26), `database expiry ${new Date(G.DB_EXPIRES).toISOString()}`);
+
+  // Nearest Frequencies: sections in order, nearest first; ENT tunes COM.
+  G.reset();
+  const fr = P.nearestFreqs();
+  expect(fr.length && fr[0].kind === 'ARTCC' && fr.some((r) => r.kind === 'FSS') && fr[fr.length - 1].kind === 'WX',
+    `Nearest Frequencies sections: ${fr.map((r) => r.kind)}`);
+  expect(fr.every((r) => r.freq >= 118 && r.freq < 137), 'a non-VHF frequency on Nearest Frequencies');
+  mt('outer', 4); mt('inner', 5);
+  expect(P.pageKey() === 'NRST:5', `Nearest Frequencies page: ${P.pageKey()}`);
+  G.push('fms', 'mfd'); mt('inner', 2); G.press('ent', 'mfd');
+  expect(s.com[0].stby === fr[2].freq, `NRST FREQ ENT: COM1 standby ${s.com[0].stby}, row ${fr[2].freq}`);
 
   // Transponder: XPDR, Code, four digits, back on the XPDR menu.
   G.reset();

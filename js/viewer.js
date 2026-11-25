@@ -219,6 +219,7 @@
     operateBtn.classList.toggle('on', on);
     operateBtn.setAttribute('aria-pressed', on);
     resetBtn.hidden = !on;
+    failSel.hidden = !on;
     if (on) select(null);
     else picked.textContent = selection.length ? picked.textContent : t('viewer.none');
   }
@@ -229,7 +230,23 @@
       picked.textContent = t('operate.hint');
     }
   });
-  resetBtn.addEventListener('click', () => avionics.reset());
+  // Failures (js/g1000-systems.js): choosing one fails that system, or
+  // fixes it if it has failed (ticked); the last entry fixes everything.
+  const failSel = document.getElementById('g1000-fail');
+  function failOptions() {
+    const failed = G1000.state.sys.failed;
+    failSel.replaceChildren(new Option(t('tools.fail'), ''),
+      ...G1000.FAILURES.map((id) => new Option(`${failed[id] ? '✓ ' : ''}${t('fail.' + id)}`, id)),
+      new Option(t('tools.failClear'), '*'));
+  }
+  failSel.addEventListener('change', () => {
+    const id = failSel.value;
+    if (id === '*') G1000.FAILURES.forEach((f) => G1000.fail(f, false));
+    else if (id) G1000.fail(id);
+    failOptions();
+  });
+  failOptions();
+  resetBtn.addEventListener('click', () => { avionics.reset(); failOptions(); });
   avionics.onTurn((said) => { picked.textContent = said; });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !controlsEl.hidden) { closeControls(); return; }

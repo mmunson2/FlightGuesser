@@ -59,9 +59,8 @@ the GFC 700 AFMS:
     It defaults to the active waypoint.
   - In the FPL, push FMS for the cursor. The small knob inserts a
     waypoint before the selected row.
-  - CLR on a waypoint asks "Remove?". MENU on a waypoint asks to activate
-    the leg to it. The real unit goes through a page menu for this; the
-    mock asks directly.
+  - CLR on a waypoint asks "Remove?". Activate Leg is in the Page Menu
+    (below).
   - The first leg becomes active by itself once the plan has two
     waypoints. Check what the real unit does.
   - A Direct-To to a waypoint in the plan continues with the plan after
@@ -75,14 +74,204 @@ the GFC 700 AFMS:
   - The FPL key toggles the Active Flight Plan page and back.
   - Page names follow the NXi's MFD in MSFS 2020.
   - Working: Navigation Map, Airport Information, VOR Information, Trip
-    Planning, Utility, Active Flight Plan, Nearest Airports, Nearest VOR.
+    Planning, Utility, Active Flight Plan, Flight Plan Catalog, Nearest
+    Airports, Nearest VOR, Nearest Frequencies, Nearest Airspaces, and
+    System Setup's airspace alert settings.
     The other pages are placeholders.
-  - Airport Information has no runways, frequencies or elevation: the
-    mock's database doesn't hold them.
   - ENT on Nearest Airports opens that airport's information page.
   - ENT on Nearest VOR loads the frequency into the tuned NAV's standby.
   - Check both ENT behaviours against the real unit, which may go through
     a frequency field.
+- **Page Menu (MENU key)** (js/g1000-menu.js):
+  - MENU opens a PAGE MENU window of the page's or window's options.
+    Either FMS knob moves the cursor (the guide may say the large knob
+    only). ENT picks an option. CLR, MENU or an FMS push closes it.
+  - The cursor starts on the first option that works. Options that are
+    greyed out can be highlighted, and ENT says why they don't work.
+    Check whether the real cursor skips them.
+  - Options that change or delete something ask first (ENT: OK, CLR:
+    back). The question wording is mine.
+  - A page with no options shows "No options with this page". That
+    includes the PFD with no window open and every page not listed below.
+    Check the real menus of Airport Information, Trip Planning and
+    Nearest.
+  - Active Flight Plan (both displays): Activate Leg, Invert Flight Plan,
+    Delete Flight Plan and Store Flight Plan work. Closest Point of FPL,
+    Parallel Track and Select Departure/Arrival/Approach are grey. The
+    real list is longer (Insert Before/After, Change Fields, airways), and
+    its order is from memory.
+  - Invert flies the reversed plan from its first leg. Delete keeps a
+    Direct-To to a waypoint outside the plan.
+  - Direct-To window: Cancel Direct-To NAV. It goes back to the plan's
+    leg to the same waypoint, or else the first leg.
+  - Navigation Map: Map Settings works. Measure Bearing/Distance and
+    Show Chart are grey.
+  - Utility: Reset Trip Statistics, Reset Odometer, Reset Flight Timer
+    and Reset All. The page now shows the odometer and the trip figures
+    (odometer, average and maximum ground speed) separately. Check the
+    names.
+  - Flight Plan Catalog (FPL group, second page): push FMS for the
+    cursor. ENT or MENU on a plan gives Activate Flight Plan, Invert &
+    Activate FPL, Delete Flight Plan and Delete All. On the real unit, ENT
+    opens the stored plan to view or edit it. The catalog starts with
+    two example plans (KPAE–KAWO–KBVS and KBFI–KPAE–KBLI). A real unit
+    keeps whatever was stored.
+- **Map Setup** (Navigation Map, MENU, Map Settings):
+  - The large knob moves between the GROUP line and the settings. The
+    small knob changes the value straight away. The real unit opens a
+    list and takes ENT.
+  - Groups: Map (Orientation: Heading/Track/North Up; Nav Range Ring),
+    Aviation (Active FPL, Large/Medium/Small APT, VOR) and Airspace
+    (Class B/TMA, Class C/TCA, Class D). Each range setting is the
+    largest map range at which that symbol shows. Airspace defaults: B
+    and C 100 NM, D 25 NM.
+  - The settings apply to all three maps: the MFD map, the PFD inset and
+    the HSI map. The real PFD maps have their own settings.
+  - Airspace colours: B blue, C magenta, D blue dashed, as on the
+    sectional. Check against the G1000's own symbols.
+  - Heading Up and Track Up look the same because there's no wind.
+  - Airport size goes by the longest runway: large from 8,100 ft, medium
+    from 5,000 ft. Check the thresholds and whether hard surface counts.
+  - The defaults (100 NM, small airports 50 NM) are scaled to the mock's
+    100 NM maximum. The real ones are larger.
+- **Tmr/Ref softkey** (js/g1000-timer.js): a window in the PFD's lower
+  right.
+  - Generic timer: UP or DN, START?/STOP?/RESET? on ENT. The small knob
+    sets the time in whole minutes while the timer is stopped. A count
+    down shows "Timer expired" at zero and then counts up. Check the real
+    expiry behaviour and how the time is entered (the real unit may
+    take hours, minutes and seconds separately).
+  - The cursor opens on UP/DN. ENT from any field runs the timer's action.
+  - References, each ON/OFF with an adjustable speed: Vglide 68, Vr 55,
+    Vx 62, Vy 74 KIAS (this POH). When on, each shows as a cyan G, R, X
+    or Y tag beside the airspeed tape. Check the real defaults, which
+    Garmin sets per airplane, and how tags show when the speed is off
+    the tape.
+  - Minimums: OFF or BARO (no radar altimeter in a 172), in 10 ft
+    steps. BARO puts a bug on the altitude tape and a BARO MIN box left
+    of the baro setting. Both turn yellow below minimums, with a
+    "MINIMUMS" note once on the way down. The real aural alert and its
+    100 ft-above cue aren't modelled. TEMP COMP isn't in the mock.
+  - Page Menu: All References On, All References Off, Restore Defaults.
+    Check the names.
+  - The Tmr/Ref and Nearest softkeys light up while their window is
+    open.
+- **OBS softkey** (GPS only):
+  - Needs an active leg or Direct-To.
+  - Suspends sequencing on the active waypoint. The CRS knob then sets
+    a course to and through it, starting from the leg's own DTK.
+  - CRS push points the course straight at the waypoint.
+  - The HSI shows "OBS" under the scale. The map draws the OBS course
+    through the waypoint and 100 NM past it.
+  - Turning OBS off returns to the plan's leg and sequences if the
+    waypoint is already behind. The real unit may build the course
+    differently. Check the "SUSP" annunciation too, which isn't drawn.
+  - Direct-To, Activate Leg and loading a plan cancel OBS.
+  - With a VOR CDI, the softkey says to use CRS.
+- **Map/HSI softkey** → Layout → Map Off / Inset Map / HSI Map:
+  - The inset sits in the PFD's lower left, heading up.
+  - The HSI map is a heading-up map inside the rose, with the rose's
+    edge at the range.
+  - Both use the PFD's own RANGE knob, starting at 5 NM.
+  - The real Map/HSI menu has more (Detail, Traffic, weather overlays).
+- **Nearest Frequencies** (NRST group, page 6):
+  - ARTCC: the two nearest center outlets, each frequency a row, under
+    "SEATTLE CENTER".
+  - FSS: the two nearest RCOs ("SEATTLE RADIO").
+  - Weather: the three nearest ASOS/AWOS.
+  - Each row shows bearing and distance to the outlet. ENT loads the
+    selected frequency into the tuned COM's standby.
+  - The real page lists one frequency per outlet in a different layout.
+    Check it.
+- **Nearest Airspaces** (NRST group, page 7):
+  - Up to 12 Class B/C/D airspaces within 50 NM, one row per airspace
+    (shelves grouped).
+  - Status: INSIDE (within a shelf and between its floor and ceiling),
+    ABOVE/BELOW (over or under the shelf you're inside laterally),
+    AHEAD <10MIN (the straight-ahead track enters a shelf at the
+    present altitude within 10 minutes), or else the distance.
+  - ALT is the relevant shelf's floor and ceiling.
+  - Also WITHIN 2NM and NEAR, AHEAD. The real page's wording may
+    differ (e.g. "Ahead < 10 min").
+  - Statuses use the altitude buffer from System Setup (below).
+- **Airspace alerts** (js/g1000-alerts.js):
+  - Checked once a second for the classes turned on in System Setup.
+  - Messages, worded from memory of Garmin's list:
+    - INSIDE ARSPC: "Inside airspace."
+    - ARSPC AHEAD: "Airspace ahead -- less than 10 minutes."
+    - ARSPC NEAR: "Airspace near and ahead."
+    - ARSPC NEAR: "Airspace near -- less than 2 nm."
+  - A message stays while its condition holds, one of each kind, for the
+    nearest airspace with it. The mock adds the airspace's name under
+    the message; the real one doesn't name it.
+  - A new message turns the ALERTS softkey into a flashing ADVISORY
+    (white and black). Pressing it acknowledges the message and opens
+    the Alerts window in the PFD's lower right. Pressing ALERTS again
+    or CLR closes the window.
+  - Check: the advisory colours, whether the real unit also sounds a
+    tone, and the exact "ahead" and "near" rules (here, the track
+    straight ahead for 10 minutes at the present speed, and 2 NM
+    laterally at an altitude inside the buffered band).
+  - The airplane starts at 3,500 ft north of Seattle, so an advisory may
+    flash right away.
+- **Annunciations** (js/g1000-systems.js, js/g1000-alerts.js). These
+  follow this POH: section 7, "G1000 annunciator panel", and the
+  electrical, oil, vacuum, fuel and CO pages.
+  - The eight annunciations, in the window right of the VSI:
+    - OIL PRESSURE: red, at 20 PSI or less.
+    - LOW VOLTS: red, main bus under 24.5 V.
+    - HIGH VOLTS: red, a bus over 32.0 V.
+    - CO LVL HIGH: red, 50 PPM or more.
+    - LOW FUEL L and LOW FUEL R: amber, under 5 gal for more than 60 s.
+    - LOW VACUUM: amber, under 3.5 inHg.
+    - STBY BATT: amber, standby battery discharging over 0.5 A for 10 s.
+  - A new one flashes. The ALERTS softkey becomes a flashing WARNING (red)
+    or CAUTION (amber) until pressed. Each press acknowledges one level,
+    warnings first, then ADVISORY for messages.
+  - The POH's tones (CO, low fuel) aren't modelled. Check the flashing
+    and the exact softkey behaviour against the CRG.
+  - Reaching them:
+    - LOW VOLTS comes on by itself below 1,000 RPM (the POH's note).
+    - LOW FUEL comes on as the tanks burn down.
+    - Both tanks dry stops the engine: no thrust, oil pressure or
+      alternator.
+    - The rest need a failure from the Failures list in Operate mode:
+      alternator, overvoltage, oil loss, vacuum pump, left tank leak, CO
+      leak, pitch trim. Choosing a failure again fixes it. Reset flight
+      fixes everything.
+  - The systems model, made up but in the POH's direction:
+    - Alternator off: the main battery runs the bus from 24 V down to
+      20 V in about 35 minutes (the POH says only "a short time"). Then
+      the standby battery takes the essential bus, giving STBY BATT.
+    - Overvoltage: 32.6 V for 3 s, then the ACU trips the alternator
+      (HIGH VOLTS, then LOW VOLTS).
+    - Oil loss: pressure falls to 5 PSI as oil temperature rises.
+    - CO builds to 120 PPM over about 40 s.
+    - The left leak drains 20 gal/h. The fuel selector is BOTH.
+  - The EIS now reads these: oil pressure and temperature, vacuum, fuel
+    per tank, and the bus volts and battery amps at the bottom of the
+    ENGINE page (M VOLTS E, M AMPS S, as the POH describes). Volts are
+    red outside 24.5–32. A discharging battery shows amber, the main one
+    below −1.5 A.
+  - PTRM (pitch trim fault): red, under the autopilot mode strip. The AP
+    disconnects and won't engage again, as the POH's procedure says.
+  - MAXSPD: amber, flashing, under the strip. With the AP engaged, the
+    nose comes up to hold Vne − 5 (158 KIAS). Check where the real one
+    shows and the speed it protects.
+- **Messages** (Alerts window), besides the airspace ones above:
+  - WPT ARRIVAL "Arriving at waypoint": 10 seconds or less to the active
+    waypoint, not in OBS.
+  - TIMER EXPIRD "Timer has expired.": a count-down timer reached zero.
+    It replaces the mock's old note.
+  - DATABASE EXPIRE "Navigation database has expired.": from 28 days
+    after the NASR cycle (29 Oct 2026, so from 26 Nov 2026), by the
+    computer's real date. Rebuild with `make fetch nav` for a new cycle.
+  - Hardware-fault messages are left out on purpose.
+- **AUX - System Setup** (AUX page 4): only the Airspace Alerts box.
+  Altitude buffer 0–1,000 ft in 50 ft steps (default 200), and Class
+  B/TMA, C/TCA and D alerts on or off (all on). Push FMS for the cursor,
+  large knob for the item, small knob to change it. Check the real
+  defaults and step size. The rest of the page isn't modelled.
 - **PFD Nearest softkey**: opens a Nearest Airports window. Push FMS for
   the cursor; D→ offers the selection.
 - **Fuel**: 48 gal usable at start, burning at a made-up fuel flow (from
@@ -97,12 +286,22 @@ the GFC 700 AFMS:
   cycle effective 29 Oct 2026):
   - Covers Washington's 117 open public-use land airports, their
     runways, VHF frequencies (CTAF, UNICOM, tower, ground, clearance,
-    ATIS, approach), and the 16 operational VORs.
+    ATIS, ASOS/AWOS, approach), and the 16 operational VORs.
+  - Also the state's center outlets (RCAG, low-altitude frequencies
+    only), flight service outlets (RCO) and ASOS/AWOS stations, all from
+    FRQ.csv, for Nearest Frequencies.
   - Positions are surveyed, so the mock is accurate as of that cycle. It
     goes out of date every 28 days; rebuild with `make fetch nav`.
   - Left out: private fields, heliports and seaplane bases, NDBs,
-    intersections, AWOS/ASOS frequencies (not in FRQ.csv), and airports
-    over the state line.
+    intersections, and airports over the state line.
+- **Airspace** (FAA ADDS Class Airspace layer, downloaded 25 Nov 2026,
+  cut to Washington's box):
+  - Class B, C and D shelves in WA, OR and ID. Canadian airspace is
+    left out.
+  - Outlines are simplified to about 40 m.
+  - Floors and ceilings are MSL. A shelf whose floor is the surface shows
+    SFC. A few Canadian-style AGL floors are kept as numbers.
+  - "VANCOUVER CLASS C" is Vancouver's airspace over Point Roberts, WA.
   - TPA is AGL in NASR. The page shows field elevation + TPA as MSL.
     Many towered fields publish none.
 - **Magnetic**: everything the pilot sees or sets is magnetic: heading,
@@ -120,7 +319,8 @@ the GFC 700 AFMS:
   - Not modelled: the variation's yearly drift, and the compass's own
     errors.
 - **Simplified**:
-  - The EIS numbers and the airplane's kinematics are made up.
+  - The airplane's kinematics and the systems model's rates are made up.
+    The annunciation thresholds are the POH's.
   - There is no wind.
 
 ## The engine model
