@@ -1142,6 +1142,66 @@ G1000_CHECKS = r"""() => {
     expect(!s.reversion && G.menu('pfd') === 'pfd' && G.labels('pfd')[0] === '' && s.eisPage === 'Engine', `back to normal: ${G.menu('pfd')}`);
   }
 
+  // Panel switches (js/g1000-systems.js): the MASTER interlock, buses and
+  // displays, STBY BATT, avionics bus 2 and the autopilot.
+  {
+    G.reset();
+    const sys = () => s.sys, sw = () => s.sys.sw, Y = G.systems;
+    Y.setSwitch('bat', false);
+    expect(!sw().alt, 'MASTER BAT off should take ALT off');
+    Y.setSwitch('alt', true);
+    expect(sw().bat, 'MASTER ALT on should turn BAT on');
+    Y.setSwitch('bat', false);
+    run(1);
+    expect(sys().voltsM === 0 && !Y.buses().main, `master off: main bus ${sys().voltsM} V`);
+    expect(Y.powered('pfd') && !Y.powered('mfd'), 'master off, STBY BATT ARM: PFD on the essential bus, MFD dark');
+    Y.setSwitch('stby', 'off');
+    run(1);
+    expect(!Y.powered('pfd'), 'master off, STBY BATT OFF: the PFD should be dark');
+    Y.setSwitch('stby', 'test');
+    expect(Y.testLamp(), 'STBY BATT TEST should light the lamp (battery charged)');
+    run(2);
+    expect(sw().stby === 'off', `TEST should spring back to OFF: ${sw().stby}`);
+
+    G.reset();
+    G.press('ap');
+    Y.setSwitch('avn2', false);
+    run(1);
+    expect(!a().ap, 'AVIONICS BUS 2 off should disconnect the autopilot');
+    G.press('ap');
+    expect(!a().ap, 'the autopilot should not engage with BUS 2 off');
+  }
+
+  // The ignition switch: one magneto drops the RPM, OFF stops the engine,
+  // START springs back to BOTH.
+  {
+    G.reset();
+    run(1);
+    const both = s.sys.rpm;
+    G.turn('mags', '', -1);
+    run(1);
+    expect(s.sys.sw.mags === 'l' && s.sys.rpm < both && both - s.sys.rpm <= 150, `L: ${s.sys.rpm} vs ${both}`);
+    G.turn('mags', '', -2);
+    run(1);
+    expect(s.sys.sw.mags === 'off' && !s.sys.running, `OFF should stop the engine: ${s.sys.sw.mags}`);
+    G.turn('mags', '', 4);
+    expect(s.sys.sw.mags === 'start', `turned to START: ${s.sys.sw.mags}`);
+    run(2);
+    expect(s.sys.sw.mags === 'both' && s.sys.running, `START should spring back to BOTH, running: ${s.sys.sw.mags}`);
+  }
+
+  // The magnetic compass (js/g1000-standby.js): no error level, UNOS
+  // turning through north and south, ANDS on east and west.
+  {
+    const T = G1000_STANDBY.compass.target, off = (x, y) => angle(x, y);
+    expect(off(T(0, 0, 0, 0), 0) < 0.5 && off(T(90, 0, 0, 0), 90) < 0.5, 'compass level should read the heading');
+    expect(off(T(0, 0, 15, 0), 330) < 10, `right turn through N should lag (show W): ${T(0, 0, 15, 0)}`);
+    expect(off(T(180, 0, 15, 0), 210) < 10, `right turn through S should lead: ${T(180, 0, 15, 0)}`);
+    expect(off(T(90, 0, 15, 0), 90) < 0.5, 'no turning error on E');
+    expect(T(90, 0, 0, 1) < 90 && T(270, 0, 0, 1) > 270, 'accelerating on E or W should show a turn north');
+    expect(T(90, 0, 0, -1) > 90 && T(270, 0, 0, -1) < 270, 'decelerating on E or W should show a turn south');
+  }
+
   G.reset();
   return errors;
 }"""

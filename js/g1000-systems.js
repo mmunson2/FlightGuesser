@@ -253,10 +253,10 @@ window.G1000_SYSTEMS = (function () {
       if (key === 'bat' && !value) sw.alt = false;
       if (key === 'stby' && value === 'test') S().testFor = TEST_S;
     }
-    // The ignition switch a notch clockwise (+) or back (-).
+    // The ignition switch `steps` notches clockwise (+) or back (-).
     function turnMags(steps) {
       const s = S(), i = MAGS.indexOf(s.sw.mags);
-      const next = MAGS[Math.max(0, Math.min(MAGS.length - 1, i + Math.sign(steps)))];
+      const next = MAGS[Math.max(0, Math.min(MAGS.length - 1, i + Math.trunc(steps)))];
       if (next === 'start') s.startFor = TEST_S;
       s.sw.mags = next;
     }
