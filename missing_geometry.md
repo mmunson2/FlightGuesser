@@ -20,11 +20,17 @@ from MM and PC figures and placing them by station (`build/extras.py`).
   (`induction_air_filter`, `induction_air_box`, `induction_air_duct`,
   `alternate_air_door`), the oil filler tube (in `oil_filler_cap`), and
   the nose gear mounting (`nose_gear_fittings`, `shimmy_damper`,
-  `nose_steering_tubes`; the strut's barrel extended up to its fitting),
+  `nose_steering_tubes`; the strut meets the firewall since the gear moved
+  to the POH's arms),
   and the flight control runs (`control_column`, `aileron_cables`,
   `aileron_bellcranks`, `elevator_cables`, `elevator_bellcranks`,
   `rudder_cables` extended to the rudder bar, `elevator_trim_cables`,
-  `trim_tab_actuator`).
+  `trim_tab_actuator`), `starter_ring_gear`, the fuel return line and
+  each tank's aft supply line (in `fuel_lines`), the power receptacle (in
+  `power_junction_box`), the heat shroud's inlet hose.
+- FlightGear corrections (`geometry_audit.md`): the landing light lens is
+  its own glass part (`landing_light_lens`), the cowling's nose strut arch
+  is closed and a slot cut in the belly, the ADF antenna is dropped.
 
 ## Visible on preflight (high priority)
 
