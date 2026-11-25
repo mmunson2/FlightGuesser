@@ -10,9 +10,9 @@
 // through js/g1000-fms.js the flight plan, Direct-To and GPS legs, and
 // through js/g1000-pages.js the MFD's page groups and the PFD's Nearest
 // window. What it doesn't: VNAV, procedures and GPS approaches, LOC/GS,
-// the MFD's IFR and setup pages, failures, wind, magnetic variation
-// (headings are true). The airplane is a few lines of kinematics, not a
-// flight model.
+// the MFD's IFR and setup pages, failures, wind. Headings, bugs, courses
+// and bearings are magnetic (see magVarAt); the simulation underneath is
+// true. The airplane is a few lines of kinematics, not a flight model.
 // Behaviour follows the G1000 NXi and GFC 700 pilot's guides as remembered;
 // to_verify.md lists what to check against the real guides.
 window.G1000 = (function () {
@@ -67,17 +67,38 @@ window.G1000 = (function () {
   // Map ranges (NM), as the RANGE knob steps them.
   const RANGES = [1, 1.5, 2.5, 4, 5, 7.5, 10, 15, 25, 40, 50, 75, 100];
 
+  // ---- Magnetic variation ----
+  // The simulation runs in true (positions, the airplane's heading); what
+  // the pilot sees and sets is magnetic: heading, bug, DTK, TRK, bearings.
+  // Local variation (degrees, east +) is an inverse-distance mean of the
+  // four nearest airports whose NASR variation is from 2010 or later:
+  // older figures are stale (Washington's has fallen about 4° since 1985).
+  // VORs use their own declared variation (js navSolution), as the real
+  // stations are aligned to it.
+  const VAR_POINTS = AIRPORTS.filter((a) => a.magVar != null && a.magVarYear >= 2010);
+  function magVarAt(lat, lon) {
+    const k = Math.cos(rad(lat));
+    const near = VAR_POINTS.map((p) => ({ v: p.magVar, d: Math.hypot(p.lat - lat, (p.lon - lon) * k) }))
+      .sort((a, b) => a.d - b.d).slice(0, 4);
+    if (near[0].d < 1e-6) return near[0].v;
+    const w = near.map((n) => 1 / n.d);
+    return near.reduce((sum, n, i) => sum + n.v * w[i], 0) / w.reduce((a, b) => a + b, 0);
+  }
+  // True to magnetic with the local variation (or `v`), and back.
+  const toMag = (t, v = state.magVar) => wrap360(t - v);
+  const toTrue = (m, v = state.magVar) => wrap360(m + v);
+
   const state = {};
   // Flight planning (js/g1000-fms.js) keeps its part of the state in
   // state.fms.
   const fms = G1000_FMS.create({
-    state, bearingDist, waypoints: WAYPOINTS, note: (text) => note(text),
+    state, bearingDist, waypoints: WAYPOINTS, note: (text) => note(text), magVarAt,
   });
   // The MFD's page groups and the PFD's Nearest window
   // (js/g1000-pages.js), in state.mfd.
   const pages = G1000_PAGES.create({
     state, bearingDist, waypoints: WAYPOINTS, fms, note: (text) => note(text),
-    tas: () => tas(), fuelFlow: () => fuelFlow(),
+    tas: () => tas(), fuelFlow: () => fuelFlow(), toMag: (t) => toMag(t),
   });
   function reset() {
     Object.assign(state, {
@@ -109,6 +130,10 @@ window.G1000 = (function () {
       fms: fms.fresh(),
     });
     state.afcs.ref.alt = state.trueAlt;
+    // Northbound means 340° magnetic: the true heading carries the
+    // variation. (Bug and courses above are magnetic.)
+    state.magVar = magVarAt(state.lat, state.lon);
+    state.hdg = toTrue(340);
   }
   reset();
 
@@ -122,10 +147,11 @@ window.G1000 = (function () {
   function tunedStation(i) {
     return NAVAIDS.find((n) => Math.abs(n.freq - state.nav[i].act) < 0.001) ?? null;
   }
-  // { source, station, course, toFrom, dev (needle, -1..1 of full scale,
-  // + = needle right), xtk (NM, + = right of course), dist, capturable
-  // (close enough for NAV to capture) } or null when the source has no
-  // signal (GPS: no active leg).
+  // { source, station, course (magnetic, as shown), courseTrue (for the
+  // autopilot and the map), toFrom, dev (needle, -1..1 of full scale,
+  // + = needle right), xtk (NM, + = right of course), dist, bearingTo
+  // (magnetic), capturable (close enough for NAV to capture) } or null
+  // when the source has no signal (GPS: no active leg).
   function navSolution(src = state.cdi) {
     if (src === 'GPS') return fms.navSolution();
     const i = src === 'VOR1' ? 0 : 1;
@@ -133,12 +159,15 @@ window.G1000 = (function () {
     if (!st) return null;
     const { brg, dist } = bearingDist(st, state);
     if (dist > 60) return null;
+    // Radials and the selected course are magnetic by the station's own
+    // declared variation, which can differ from the local one by degrees.
+    const radial = toMag(brg, st.magVar);
     const crs = state.crs[i];
-    const from = Math.abs(diff(brg, crs)) <= 90;
-    const off = from ? diff(brg, crs) : -diff(brg, wrap360(crs + 180));
-    return { source: src, station: st, course: crs, toFrom: from ? 'FROM' : 'TO',
+    const from = Math.abs(diff(radial, crs)) <= 90;
+    const off = from ? diff(radial, crs) : -diff(radial, wrap360(crs + 180));
+    return { source: src, station: st, course: crs, courseTrue: toTrue(crs, st.magVar), toFrom: from ? 'FROM' : 'TO',
              dev: clamp(-off / 10, -1, 1), offDeg: off, xtk: dist * Math.sin(rad(off)), dist,
-             bearingTo: wrap360(brg + 180), capturable: Math.abs(off) < 7 };
+             bearingTo: wrap360(radial + 180), radial, capturable: Math.abs(off) < 7 };
   }
 
   // ---- The GFC 700 ----
@@ -385,7 +414,7 @@ window.G1000 = (function () {
       case 'com': state.comTune = 1 - state.comTune; return;
       case 'nav': state.navTune = 1 - state.navTune; return;
       // HDG SYNC: the bug to the current heading.
-      case 'hdg': state.hdgBug = Math.round(state.hdg); return;
+      case 'hdg': state.hdgBug = Math.round(toMag(state.hdg)) % 360; return;
       // CRS CTR: the course to center the needle with a TO flag.
       case 'crs_baro': {
         const nav = navSolution();
@@ -419,10 +448,11 @@ window.G1000 = (function () {
     // Lateral: a bank to fly.
     let rollCmd = state.roll;
     if (a.lat === 'ROL') rollCmd = a.ref.roll;
-    if (a.lat === 'HDG') rollCmd = clamp(diff(state.hdgBug, state.hdg) * 1.2, -22, 22);
+    // The bug is magnetic; the airplane's heading is true.
+    if (a.lat === 'HDG') rollCmd = clamp(diff(toTrue(state.hdgBug), state.hdg) * 1.2, -22, 22);
     if ((a.lat === 'NAV' || a.lat === 'APR') && nav) {
       // Intercept angle grows with the distance off course, up to 45°.
-      const track = wrap360(nav.course - clamp(nav.xtk * 40, -45, 45));
+      const track = wrap360(nav.courseTrue - clamp(nav.xtk * 40, -45, 45));
       rollCmd = clamp(diff(track, state.hdg) * 1.2, -22, 22);
     } else if ((a.lat === 'NAV' || a.lat === 'APR') && !nav) {
       setMode('lat', LAT_DEFAULT);
@@ -485,6 +515,7 @@ window.G1000 = (function () {
     const nm = (T / 3600) * dt;
     state.lat += (nm / 60) * Math.cos(rad(state.hdg));
     state.lon += (nm / 60) * Math.sin(rad(state.hdg)) / Math.cos(rad(state.lat));
+    state.magVar = magVarAt(state.lat, state.lon);
 
     fms.step();
     pages.step(dt);
@@ -525,7 +556,9 @@ window.G1000 = (function () {
   }
 
   return {
-    state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, WA_SOURCE: WA_NAV.source, SPEEDS, MENUS, LIVE, RANGES, fms, pages, fuelFlow,
+    state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, WA_SOURCE: WA_NAV.source, magVarAt, toMag, toTrue,
+    // The airplane's magnetic heading, as the HSI shows it.
+    magHeading: () => toMag(state.hdg), SPEEDS, MENUS, LIVE, RANGES, fms, pages, fuelFlow,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, tas, navModeName,
     tick(dt) {
       // Big gaps (a background tab) are skipped, small steps keep it stable.

@@ -101,7 +101,7 @@ window.G1000_DISPLAY = (function () {
     const m = identField(ctx, win, x + 20, y + 66, G, win.stage === 'ident');
     text(ctx, m ? m.name : 'No match', x + 20, y + 104, { size: 18, color: m ? C.white : C.yellow });
     if (m) {
-      const { brg, dist } = G.bearingDist(s, m);
+      const { brg: trueBrg, dist } = G.bearingDist(s, m), brg = G.toMag(trueBrg);
       text(ctx, `BRG ${pad3(brg)}°   DIS ${dist.toFixed(1)}NM`, x + 20, y + 138, { size: 20 });
     }
     const on = win.stage === 'activate';
@@ -212,6 +212,9 @@ window.G1000_DISPLAY = (function () {
 
   // Runway edge lights as the Chart Supplement writes them.
   const LIGHTS = { HIGH: 'HIRL', MED: 'MIRL', LOW: 'LIRL', NSTD: 'NSTD LGTS' };
+  // Magnetic variation as charts write it ("16°E"), with its epoch year.
+  const magVarText = (w) => (w.magVar == null ? 'unknown'
+    : `${Math.abs(w.magVar)}°${w.magVar >= 0 ? 'E' : 'W'}${w.magVarYear ? ` (${w.magVarYear})` : ''}`);
 
   // Airport Information (data/wa-nav.js, FAA NASR): details on the left,
   // frequencies on the right, runways along the bottom.
@@ -221,12 +224,12 @@ window.G1000_DISPLAY = (function () {
     const x = PAGE.x + 30, y = PAGE.y + 64;
     identLine(ctx, s, G, 'WPT:0', a.id, x, y);
     if (a.lid !== a.id) text(ctx, `(${a.lid})`, x + 110, y + 2, { size: 18, color: C.grey });
-    const { brg, dist } = G.bearingDist(s, a);
+    const { brg: trueBrg, dist } = G.bearingDist(s, a), brg = G.toMag(trueBrg);
     const pairs = [
       ['NAME', a.name], ['CITY', a.city], ['ELEV', `${a.elev}FT`],
       // NASR gives the pattern altitude above the field.
       ['TPA', a.tpa != null ? `${a.elev + a.tpa}FT MSL (${a.tpa} AGL)` : 'not published'],
-      ['TYPE', a.towered ? 'Towered' : 'Non-towered'], ['FUEL', a.fuel || 'none'],
+      ['TYPE', a.towered ? 'Towered' : 'Non-towered'], ['FUEL', a.fuel || 'none'], ['MAG VAR', magVarText(a)],
       ['POSITION', latLon(a.lat, a.lon)], ['FROM P.POS', `${pad3(brg)}°  ${dist.toFixed(1)}NM`],
     ];
     pairs.forEach(([k, v], i) => {
@@ -264,12 +267,12 @@ window.G1000_DISPLAY = (function () {
     const v = G.fms.byId[s.mfd.wpt.vor];
     const x = PAGE.x + 30, y = PAGE.y + 70;
     identLine(ctx, s, G, 'WPT:3', v.id, x, y);
-    const { brg, dist } = G.bearingDist(s, v);
+    const { brg: trueBrg, dist } = G.bearingDist(s, v), brg = G.toMag(trueBrg);
     rowsOf(ctx, [
       ['NAME', v.name], ['FREQUENCY', v.freq.toFixed(2), C.green], ['POSITION', latLon(v.lat, v.lon)],
       ['FROM P.POS', `${pad3(brg)}°  ${dist.toFixed(1)}NM`],
       // The radial the airplane is on: the bearing from the station.
-      ['RADIAL', `${pad3(brg + 180)}° FROM`],
+      ['RADIAL', `${pad3(G.toMag(trueBrg + 180, v.magVar))}° FROM`], ['MAG VAR', magVarText(v) + ' declared'],
     ], x, y + 60);
     hint(ctx, 'Push FMS to pick another station. Nearest VOR (NRST) loads frequencies.');
   }
@@ -670,7 +673,7 @@ window.G1000_DISPLAY = (function () {
 
     // The rose turns with the heading.
     ctx.save();
-    ctx.rotate(rad(-s.hdg));
+    ctx.rotate(rad(-G.magHeading()));
     ctx.strokeStyle = C.white;
     ctx.lineWidth = 2;
     for (let d = 0; d < 360; d += 5) {
@@ -722,7 +725,7 @@ window.G1000_DISPLAY = (function () {
     ctx.fillStyle = C.white;
     ctx.beginPath(); ctx.moveTo(0, -R + 2); ctx.lineTo(-10, -R - 12); ctx.lineTo(10, -R - 12); ctx.fill();
     box(ctx, -38, -R - 64, 76, 36, { fill: C.black, stroke: C.white });
-    text(ctx, pad3(s.hdg) + '°', 0, -R - 45, { size: 26, align: 'center' });
+    text(ctx, pad3(G.magHeading()) + '°', 0, -R - 45, { size: 26, align: 'center' });
     // Small airplane in the middle.
     ctx.strokeStyle = C.white;
     ctx.lineWidth = 4;
@@ -895,7 +898,7 @@ window.G1000_DISPLAY = (function () {
     const nav = G.navSolution();
     if (nav && nav.source !== 'GPS') {
       const [sx, sy] = toXY(nav.station);
-      const a = rad(nav.course - s.hdg);
+      const a = rad(nav.courseTrue - s.hdg);
       ctx.strokeStyle = C.green;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(sx - Math.sin(a) * 2000, sy + Math.cos(a) * 2000);
@@ -947,7 +950,7 @@ window.G1000_DISPLAY = (function () {
       ete = `${Math.floor(mins)}:${String(Math.floor((mins % 1) * 60)).padStart(2, '0')}`;
     }
     const fields = [['GS', `${Math.round(G.tas())}KT`], ['DTK', nav ? pad3(nav.course) + '°' : '___°'],
-      ['TRK', `${pad3(s.hdg)}°`], ['ETE', ete]];
+      ['TRK', `${pad3(G.magHeading())}°`], ['ETE', ete]];
     fields.forEach(([k, v], i) => {
       const x = 220 + i * 200;
       text(ctx, k, x, 88, { size: 18 });

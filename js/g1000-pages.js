@@ -22,7 +22,8 @@ window.G1000_PAGES = (function () {
   const LIVE = new Set(['MAP:0', 'WPT:0', 'WPT:3', 'AUX:0', 'AUX:1', 'FPL:0', 'NRST:0', 'NRST:3']);
   const FPL_PAGE = 'FPL:0';
 
-  function create({ state, note, bearingDist, waypoints, fms, tas, fuelFlow }) {
+  // toMag(true bearing): magnetic, by the local variation.
+  function create({ state, note, bearingDist, waypoints, fms, tas, fuelFlow, toMag }) {
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     const airports = waypoints.filter((w) => w.type === 'airport');
     const vors = waypoints.filter((w) => w.type === 'vor');
@@ -41,9 +42,11 @@ window.G1000_PAGES = (function () {
     const pageKey = () => GROUPS[P().group].id + ':' + P().last[P().group];
     const pageName = () => GROUPS[P().group].pages[P().last[P().group]];
 
-    // Nearest first, with bearing and distance from the airplane.
-    const nearest = (list, n = 15) => list.map((w) => ({ w, ...bearingDist(state, w) }))
-      .sort((a, b) => a.dist - b.dist).slice(0, n);
+    // Nearest first, with (magnetic) bearing and distance from the airplane.
+    const nearest = (list, n = 15) => list.map((w) => {
+      const { brg, dist } = bearingDist(state, w);
+      return { w, brg: toMag(brg), dist };
+    }).sort((a, b) => a.dist - b.dist).slice(0, n);
     const nearestAirports = () => nearest(airports);
     const nearestVors = () => nearest(vors);
     // The first identifier of the right kind starting with what was typed.
@@ -186,7 +189,7 @@ window.G1000_PAGES = (function () {
       const { brg, dist } = bearingDist(state, to);
       const hours = dist / Math.max(tas(), 30);
       const ff = fuelFlow();
-      return { to, dtk: brg, dist, hours, ff, required: ff * hours, onboard: state.fuel, after: state.fuel - ff * hours };
+      return { to, dtk: toMag(brg), dist, hours, ff, required: ff * hours, onboard: state.fuel, after: state.fuel - ff * hours };
     }
 
     return {

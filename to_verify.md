@@ -107,11 +107,23 @@ the GFC 700 AFMS:
     over the state line.
   - TPA is AGL in NASR. The page shows field elevation + TPA as MSL.
     Many towered fields publish none.
-  - The mock still flies true headings and true VOR radials. NASR has
-    each station's magnetic variation for when that changes.
+- **Magnetic**: everything the pilot sees or sets is magnetic: heading,
+  bug, HDG mode, DTK, TRK, and the bearings on every page.
+  - Local variation is an inverse-distance mean of the four nearest
+    airports with NASR variation from 2010 or later. About 16.3°E at the
+    start; 14°E at Spokane.
+  - 74 of the 117 airports still carry 1985 figures, about 20°E. Those
+    are stale and not used.
+  - VOR radials and courses use the station's declared variation:
+    PAE 20°E (1990), SEA 19°E (2000), and so on.
+  - So a VOR course and a GPS DTK to the same point differ by a few
+    degrees, as in a real airplane. Check this against a VOR receiver
+    check or the Chart Supplement.
+  - Not modelled: the variation's yearly drift, and the compass's own
+    errors.
 - **Simplified**:
   - The EIS numbers and the airplane's kinematics are made up.
-  - There is no wind, and headings are true (no magnetic variation).
+  - There is no wind.
 
 ## The engine model
 

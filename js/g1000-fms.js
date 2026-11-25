@@ -20,7 +20,10 @@ window.G1000_FMS = (function () {
   // A leg is done when the waypoint is this close ahead, or passed.
   const ARRIVE_NM = 0.1;
 
-  function create({ state, note, bearingDist, waypoints }) {
+  // magVarAt(lat, lon): local magnetic variation (js/g1000.js). Courses
+  // are worked out true and shown magnetic.
+  function create({ state, note, bearingDist, waypoints, magVarAt }) {
+    const toMagAt = (t, p) => ((t - magVarAt(p.lat, p.lon)) % 360 + 360) % 360;
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     const rad = (d) => (d * Math.PI) / 180;
     const byId = Object.fromEntries(waypoints.map((w) => [w.id, w]));
@@ -74,9 +77,12 @@ window.G1000_FMS = (function () {
       const p = legPosition(l);
       const scale = scaleName();
       const to = bearingDist(state, l.to);
+      // Desired track and bearing shown magnetic, by the variation where
+      // the airplane is.
       return {
-        source: 'GPS', station: l.to, course: Math.round(p.dtk * 10) / 10, toFrom: p.remaining > 0 ? 'TO' : 'FROM',
-        dev: clamp(-p.xtk / SCALE[scale], -1, 1), xtk: p.xtk, dist: to.dist, bearingTo: to.brg,
+        source: 'GPS', station: l.to, course: toMagAt(p.dtk, state), courseTrue: p.dtk,
+        toFrom: p.remaining > 0 ? 'TO' : 'FROM',
+        dev: clamp(-p.xtk / SCALE[scale], -1, 1), xtk: p.xtk, dist: to.dist, bearingTo: toMagAt(to.brg, state),
         capturable: Math.abs(p.xtk) < SCALE[scale], scale, remaining: p.remaining, leg: l,
       };
     }
@@ -254,15 +260,20 @@ window.G1000_FMS = (function () {
       win.cursor = win.cursor != null ? null : (f.dto?.index ?? f.active ?? f.wpts.length);
     }
 
-    // The plan as rows for the display: id, desired track and distance of
-    // the leg to it, cumulative distance, and whether it is flown to now.
+    // The plan as rows for the display: id, desired track (magnetic, by
+    // the variation at the leg's start) and distance of the leg to it,
+    // cumulative distance, and whether it is flown to now.
     function rows() {
       const f = F().fpl;
       let cum = 0;
       return f.wpts.map((id, i) => {
         const w = byId[id];
         let dtk = null, dis = null;
-        if (i > 0) ({ brg: dtk, dist: dis } = bearingDist(byId[f.wpts[i - 1]], w));
+        if (i > 0) {
+          const prev = byId[f.wpts[i - 1]];
+          ({ brg: dtk, dist: dis } = bearingDist(prev, w));
+          dtk = toMagAt(dtk, prev);
+        }
         cum += dis ?? 0;
         const active = f.dto ? f.dto.index === i : f.active === i;
         return { id, name: w.name, dtk, dis, cum, active };

@@ -94,6 +94,7 @@ def load(nasr):
             "lat": num(r["LAT_DECIMAL"], 5), "lon": num(r["LONG_DECIMAL"], 5),
             "elev": num(r["ELEV"], 0), "tpa": num(r["TPA"], 0),
             "magVar": None if mv is None else (mv if r["MAG_HEMIS"] == "E" else -mv),
+            "magVarYear": num(r["MAG_VARN_YEAR"], 0),
             "towered": r["TWR_TYPE_CODE"].startswith("ATCT"), "fuel": r["FUEL_TYPES"],
             "runways": sorted(runways.get(lid, []), key=lambda w: (-(w["len"] or 0), w["id"])),
             "freqs": sorted(freqs.get(lid, []), key=lambda e: (order[e["kind"]], e["freq"], e["note"])),
@@ -110,6 +111,7 @@ def load(nasr):
             "id": r["NAV_ID"], "name": r["NAME"], "kind": r["NAV_TYPE"], "freq": num(r["FREQ"], 2),
             "lat": num(r["LAT_DECIMAL"], 5), "lon": num(r["LONG_DECIMAL"], 5), "elev": num(r["ELEV"], 0),
             "magVar": None if mv is None else (mv if r["MAG_VARN_HEMIS"] == "E" else -mv),
+            "magVarYear": num(r["MAG_VARN_YEAR"], 0),
         })
     vors.sort(key=lambda v: v["id"])
 

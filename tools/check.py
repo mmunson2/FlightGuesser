@@ -290,7 +290,9 @@ G1000_CHECKS = r"""() => {
   G.reset();
   G.press('hdg'); G.press('ap');
   G.turn('hdg', '', 60);
-  expect(run(90, () => angle(s.hdg, s.hdgBug) < 1 && Math.abs(s.roll) < 1), `HDG: heading ${s.hdg.toFixed(1)} vs bug ${s.hdgBug}`);
+  // (The bug is magnetic, so the magnetic heading must reach it.)
+  expect(run(90, () => angle(G.magHeading(), s.hdgBug) < 1 && Math.abs(s.roll) < 1),
+    `HDG: magnetic heading ${G.magHeading().toFixed(1)} vs bug ${s.hdgBug}`);
   G.press('hdg');
   expect(a().lat === 'ROL', 'HDG pressed again should give ROL');
 
@@ -405,6 +407,31 @@ G1000_CHECKS = r"""() => {
   expect(G.AIRPORTS.every((x) => x.freqs.every((f) => f.freq >= 118 && f.freq < 137)), 'a non-VHF COM frequency');
   expect(G.NAVAIDS.length > 10 && G.NAVAIDS.every((v) => v.freq >= 108 && v.freq < 118), 'a VOR outside 108-118 MHz');
   expect(new Set(G.WAYPOINTS.map((w) => w.id)).size === G.WAYPOINTS.length, 'duplicate waypoint identifiers');
+
+  // Magnetic: local variation near Paine from current (2010+) figures;
+  // the airplane starts on 340° magnetic; HDG SYNC takes the magnetic
+  // heading.
+  G.reset();
+  expect(s.magVar > 14.5 && s.magVar < 17, `local variation at the start ${s.magVar.toFixed(2)}°E, expected about 16`);
+  expect(Math.abs(G.magHeading() - 340) < 0.01, `starting magnetic heading ${G.magHeading().toFixed(2)}`);
+  G.push('hdg');
+  expect(s.hdgBug === 340, `HDG SYNC gave ${s.hdgBug}`);
+  // VOR radials use the station's declared variation (PAE: 20°E, 1990).
+  // Due south of the station (true bearing from it 180°), the airplane is
+  // on the 160 radial, and CRS push gives 340 TO.
+  const paeVor = G.fms.byId.PAE;
+  s.lat = paeVor.lat - 0.2; s.lon = paeVor.lon;
+  G.press('softkey:5', 'pfd');
+  G.push('crs_baro');
+  nav = G.navSolution();
+  expect(paeVor.magVar === 20 && Math.abs(nav.radial - 160) < 0.5 && s.crs[0] === 340 && nav.toFrom === 'TO',
+    `PAE radial ${nav.radial.toFixed(1)} (expected 160), CRS ${s.crs[0]}`);
+  // GPS to the same point shows magnetic by the local variation instead:
+  // the station's 4° older variation is the difference.
+  G.fms.directTo('PAE');
+  const gps = G.navSolution('GPS');
+  expect(Math.abs(angle(gps.course, 360 - s.magVar)) < 0.5 && Math.abs(angle(gps.course, s.crs[0]) - (20 - s.magVar)) < 0.5,
+    `GPS DTK ${gps.course.toFixed(1)} vs VOR course ${s.crs[0]} (local var ${s.magVar.toFixed(1)})`);
 
   // MFD pages: the large FMS knob steps groups, the small one pages.
   G.reset();
