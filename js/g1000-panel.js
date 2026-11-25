@@ -1,7 +1,9 @@
 // The mock G1000 (js/g1000.js) on the 3D panel: live PFD and MFD screens
 // (js/g1000-display.js on canvas textures), live standby instrument faces
 // (js/g1000-standby.js), and, in Operate mode, the
-// bezel keys and knobs. js/viewer.js calls attach() once the model is
+// bezel keys and knobs and the panel's switches (js/g1000-switches.js).
+// A unit with no power (js/g1000-systems.js powered()) shows a dark screen
+// and ignores its keys. js/viewer.js calls attach() once the model is
 // built, tick() every frame and click() for left clicks while operating.
 //
 // The model has one part per kind of key or knob, covering both displays
@@ -231,6 +233,14 @@ window.G1000_PANEL = (function () {
       return { key, parent, led };
     });
 
+    // ---- The panel's switches ----
+    const SWX = G1000_SWITCHES.attach({ THREE, scene, meshById });
+    const SWITCH = G1000_SWITCHES.PARTS;
+    // Whether a control has power: a display's bezel, or the audio panel
+    // (avionics bus 2). The standby altimeter's knob needs none.
+    const hasPower = (c) => (c.pid === STBY ? true
+      : AUDIO.has(c.pid) || c.pid === BACKUP ? G.systems.buses().avn2 : G.systems.powered(c.display));
+
     const ray = new THREE.Raycaster();
     // The first visible, solid part under the pointer, if it is one the
     // mock operates: { pid, display, point, inner }.
@@ -245,6 +255,7 @@ window.G1000_PANEL = (function () {
         const k = centreOf(STBY, 'mfd');
         if (Math.hypot(hit.point.x - k.x, hit.point.y - k.y) > 0.008) return zoneAt(hit);
       }
+      if (SWITCH.has(pid)) return { pid, mesh: hit.object, display: null, point: hit.point, inner: false, sw: true };
       if (pid === AUDIO_KNOB && hit.point.y < AUDIO_KNOB_Y) {
         return { pid: BACKUP, mesh: hit.object, display: displayAt(hit.point.x), point: hit.point, inner: false };
       }
@@ -298,6 +309,12 @@ window.G1000_PANEL = (function () {
       if (turnedAt && performance.now() - turnedAt < 50) return lastSaid;
       const c = controlAt(e);
       if (!c) return null;
+      if (c.sw) {
+        const said = SWX.click(G, c.pid, c.point);
+        redraw(true);
+        return said;
+      }
+      if (!hasPower(c)) return name(c) + ' · no power';
       // Named before pressing: a softkey's label changes with its menu.
       const said = name(c) + (c.pid in KNOBS ? ' · push' : '');
       // The MFD's autopilot keys belong to another unit's layout (context
@@ -316,9 +333,18 @@ window.G1000_PANEL = (function () {
     renderer.domElement.parentElement.addEventListener('wheel', (e) => {
       if (!operating) return;
       const c = controlAt(e);
+      if (c?.sw) {
+        e.preventDefault();
+        e.stopPropagation();
+        const said = SWX.scroll(G, c.pid, c.point, e.deltaY < 0 ? 1 : -1);
+        redraw(true);
+        onTurn?.(said);
+        return;
+      }
       if (!c || !(c.pid in KNOBS)) return;
       e.preventDefault();
       e.stopPropagation();
+      if (!hasPower(c)) { onTurn?.(name(c) + ' · no power'); return; }
       // A mouse wheel notch (about 100 px) is one click of the knob;
       // trackpad deltas add up to one.
       const dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
@@ -471,7 +497,7 @@ window.G1000_PANEL = (function () {
     renderer.domElement.addEventListener('pointerdown', (e) => {
       if (!operating || e.button !== 0) return;
       const c = controlAt(e);
-      if (!c || !(c.pid in KNOBS)) return;
+      if (!c || !(c.pid in KNOBS) || !hasPower(c)) return;
       // OrbitControls listens on the same element: switch it off until the
       // drag ends, so the drag turns the knob instead of the camera.
       controls.enabled = false;
@@ -549,7 +575,8 @@ window.G1000_PANEL = (function () {
       if (!force && now - lastDraw < 66) return;
       lastDraw = now;
       for (const s of screens) {
-        (s.id === 'pfd' ? D.drawPFD : D.drawMFD)(s.ctx, G.state, G);
+        if (G.systems.powered(s.id)) (s.id === 'pfd' ? D.drawPFD : D.drawMFD)(s.ctx, G.state, G);
+        else { s.ctx.fillStyle = '#000'; s.ctx.fillRect(0, 0, s.canvas.width, s.canvas.height); }
         s.texture.needsUpdate = true;
       }
       for (const g of gauges) {
@@ -561,6 +588,7 @@ window.G1000_PANEL = (function () {
       const now = performance.now();
       G.tick((now - lastT) / 1000);
       lastT = now;
+      SWX.update(G.state.sys, G.systems.testLamp());
       // The screens follow their display's part: hidden, faded by the
       // quiz's x-ray.
       for (const s of screens) {

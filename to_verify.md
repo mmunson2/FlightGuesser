@@ -281,6 +281,24 @@ the GFC 700 AFMS:
     east or west (ANDS). Its swing (2.2 rad/s, damping 0.35) is made up;
     check it doesn't swing more than a real one. No deviation is modelled;
     the deviation card under it is FlightGear's (its numbers are theirs).
+- **Panel switches** (js/g1000-switches.js, js/g1000-systems.js), flipped
+  by clicking in Operate mode:
+  - MASTER ALT/BAT interlocked as a split rocker (ALT on pulls BAT on,
+    BAT off takes ALT off). ALT off: no alternator, the battery carries the
+    load. BAT and ALT off: the main bus is dead.
+  - STBY BATT: a click goes ARM ↔ OFF; scrolling down from OFF goes to
+    TEST, which springs back to OFF after 1.5 s and lights the green test
+    lamp if the standby battery is over half charged (threshold made up).
+    In OFF the standby battery doesn't take the essential bus.
+  - Which unit is on which bus is from the breaker panel's rows: PFD on
+    the essential bus or avionics bus 1; MFD, audio panel and autopilot on
+    avionics bus 2 (turning it off disconnects the AP). Check: with BUS 2
+    off, does the real PFD revert or stay as it is? Here it stays.
+  - Loads on the main bus (amps, made up): base 10, beacon 1.5, landing
+    7, taxi 7, nav 2, strobe 2, pitot heat 9. They only show with the
+    alternator off (the battery drains faster).
+  - Rocker angles: FlightGear's on (-37°), but off at -20° (FlightGear's
+    0° sticks out too far). The lights don't light the exterior lights.
 - **PFD Opt → ALT Units** (Meters, IN, HPA):
   - Meters adds metric boxes under the altitude readout and beside the
     selected altitude. The real overlay may sit elsewhere.

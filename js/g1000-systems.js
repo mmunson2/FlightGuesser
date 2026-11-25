@@ -25,6 +25,18 @@
 // cylinders' EGT and CHT, for the EIS's Lean page, and the fuel totalizer
 // (fuel remaining as the pilot set it, less what the fuel flow says was
 // burnt: it knows nothing of the tanks, so a leak shows as a mismatch).
+//
+// The panel's switches (state.sys.sw; js/g1000-switches.js flips them):
+// - MASTER, a split rocker: ALT can't be on with BAT off (turning ALT on
+//   turns BAT on, BAT off turns ALT off). ALT off: no alternator. BAT off:
+//   the battery is cut off; with no alternator either the main bus is dead.
+// - STBY BATT: ARM lets the standby battery take the essential bus when
+//   the main bus fails; OFF doesn't. TEST (spring-loaded, back to OFF)
+//   lights the test lamp if the standby battery is charged.
+// - AVIONICS BUS 1 and BUS 2 (from the main bus). The PFD runs on the
+//   essential bus or avionics bus 1, the MFD and the autopilot on avionics
+//   bus 2 (the breaker panel's rows).
+// - Lights and pitot heat: load on the main bus (their amps made up).
 window.G1000_SYSTEMS = (function () {
   const FAILURES = ['alternator', 'overvolt', 'oil', 'vacuum', 'leakL', 'co', 'trim', 'gps'];
   // Richness: the fuel-air ratio over the one that gives peak EGT (1).
@@ -40,7 +52,16 @@ window.G1000_SYSTEMS = (function () {
   // Main battery: usable charge, amp-hours; the load with the alternator
   // off, amps. About 35 minutes to the 20 V where the standby battery
   // takes the essential bus (made up; the POH says only "a short time").
-  const BATT_AH = 9, LOAD_A = 15;
+  const BATT_AH = 9, LOAD_A = 10;
+  // What each switch adds to the main bus, amps (made up).
+  const SWITCH_A = { beacon: 1.5, land: 7, taxi: 7, nav: 2, strobe: 2, pitot: 9 };
+  // Switch positions in flight, where the mock starts.
+  const SWITCHES = { bat: true, alt: true, avn1: true, avn2: true, stby: 'arm',
+                     beacon: true, land: false, taxi: false, nav: true, strobe: true, pitot: false };
+  // TEST springs back to OFF after this long (s), standing for a held press.
+  const TEST_S = 1.5;
+  // The test lamp lights with the standby battery over this charge (0-1).
+  const STBY_OK = 0.5;
   // The ACU trips the alternator this long after an overvoltage (s).
   const ACU_TRIP_S = 3;
 
@@ -61,6 +82,7 @@ window.G1000_SYSTEMS = (function () {
       tot: { rem: 48, used: 0 },
       // How long each delayed annunciation's condition has held (s).
       held: { fuelL: 0, fuelR: 0, stby: 0 },
+      sw: { ...SWITCHES }, testFor: 0,
       failed: Object.fromEntries(FAILURES.map((f) => [f, false])),
     });
 
@@ -139,23 +161,30 @@ window.G1000_SYSTEMS = (function () {
         s.overvoltFor += dt;
         if (s.overvoltFor > ACU_TRIP_S) s.acuTripped = true;
       }
-      const alt = s.running && !f.alternator && !s.acuTripped;
-      // The main battery's voltage falls from 24 V as it empties.
+      const sw = s.sw;
+      const alt = s.running && !f.alternator && !s.acuTripped && sw.alt;
+      // The main battery's voltage falls from 24 V as it empties; with BAT
+      // off it is out of the circuit (M BATT reads 0).
       const battV = 20 + (4 * s.batt) / BATT_AH;
-      if (alt && f.overvolt) { s.voltsM = 32.6; s.ampsM = 25; }
-      else if (alt && s.rpm >= 1000) { s.voltsM = 28.0; s.ampsM = s.batt < BATT_AH ? 8 : 1.0; s.batt = Math.min(BATT_AH, s.batt + (8 / 3600) * dt); }
-      else if (alt) { s.voltsM = 24.2; s.ampsM = -3; s.batt = Math.max(0, s.batt - (3 / 3600) * dt); }
-      else { s.ampsM = -LOAD_A; s.batt = Math.max(0, s.batt - (LOAD_A / 3600) * dt); s.voltsM = battV; }
+      const load = LOAD_A + Object.entries(SWITCH_A).reduce((a, [k, amps]) => a + (sw[k] ? amps : 0), 0);
+      const charge = (amps) => { if (sw.bat) s.batt = clamp(s.batt + (amps / 3600) * dt, 0, BATT_AH); };
+      if (alt && f.overvolt) { s.voltsM = 32.6; s.ampsM = sw.bat ? 25 : 0; }
+      else if (alt && s.rpm >= 1000) { s.voltsM = 28.0; s.ampsM = !sw.bat ? 0 : s.batt < BATT_AH ? 8 : 1.0; charge(8); }
+      else if (alt) { s.voltsM = 24.2; s.ampsM = sw.bat ? -3 : 0; charge(-3); }
+      else if (sw.bat) { s.ampsM = -load; charge(-load); s.voltsM = battV; }
+      else { s.ampsM = 0; s.voltsM = 0; }
       // Below 20 V on the main bus, the standby battery (ARM) feeds the
       // essential bus: it discharges, and the essential bus is its volts.
-      if (s.voltsM <= 20.05) {
+      if (s.voltsM <= 20.05 && sw.stby === 'arm' && s.stbyBatt > 0) {
         s.ampsS = -3.5;
         s.stbyBatt = Math.max(0, s.stbyBatt - dt / 1800);
         s.voltsE = 22 + 2 * s.stbyBatt;
       } else {
-        s.ampsS = alt && s.rpm >= 1000 ? 0.2 : 0;
+        s.ampsS = alt && s.rpm >= 1000 && sw.stby === 'arm' ? 0.2 : 0;
         s.voltsE = s.voltsM;
       }
+      // TEST springs back to OFF.
+      if (sw.stby === 'test' && (s.testFor -= dt) <= 0) sw.stby = 'off';
       // Cabin CO: an exhaust leak (with the cabin heat on) builds it up.
       s.coPpm += clamp((f.co ? 120 : 0) - s.coPpm, -4 * dt, 3 * dt);
 
@@ -202,7 +231,30 @@ window.G1000_SYSTEMS = (function () {
       if (what === 'Rst Used') t.used = 0;
     }
 
-    return { fresh, step, annunciations, fail, FAILURES, mixtureEffect, bestPowerMixture, richness, assist, totalizer };
+    // Flip a switch: a key of SWITCHES to true or false, or 'stby' to
+    // 'arm', 'off' or 'test'.
+    function setSwitch(key, value) {
+      const sw = S().sw;
+      sw[key] = value;
+      if (key === 'alt' && value) sw.bat = true;
+      if (key === 'bat' && !value) sw.alt = false;
+      if (key === 'stby' && value === 'test') S().testFor = TEST_S;
+    }
+    // Which buses have power: main, essential, avionics 1 and 2.
+    function buses() {
+      const s = S(), main = s.voltsM > 20.05;
+      return { main, ess: s.voltsE > 20.05, avn1: main && s.sw.avn1, avn2: main && s.sw.avn2 };
+    }
+    // Whether a display has power.
+    function powered(display) {
+      const b = buses();
+      return display === 'pfd' ? b.ess || b.avn1 : b.avn2;
+    }
+    // The lamp runs off the standby battery itself.
+    const testLamp = () => S().sw.stby === 'test' && S().stbyBatt > STBY_OK;
+
+    return { fresh, step, annunciations, fail, FAILURES, mixtureEffect, bestPowerMixture, richness, assist, totalizer,
+             setSwitch, buses, powered, testLamp };
   }
 
   return { create, FAILURES, FULL_USABLE };

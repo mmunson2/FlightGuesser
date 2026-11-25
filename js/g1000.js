@@ -483,7 +483,7 @@ window.G1000 = (function () {
         if (a.ap) apDisconnect();
         // PTRM: the POH says not to engage the autopilot again.
         else if (state.sys.failed.trim) note('PTRM: pitch trim failure. Do not engage the autopilot');
-        else { fdOn(); a.ap = true; }
+        else if (systems.buses().avn2) { fdOn(); a.ap = true; }
         return;
       case 'fd':
         // The FD can't go off while the AP flies.
@@ -836,6 +836,8 @@ window.G1000 = (function () {
     systems.step(dt, fuelFlow());
     // A pitch trim fault disconnects the autopilot (PTRM).
     if (state.sys.failed.trim && a.ap) apDisconnect();
+    // The autopilot runs on avionics bus 2.
+    if (a.ap && !systems.buses().avn2) apDisconnect();
     alerter();
   }
 
