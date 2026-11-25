@@ -144,16 +144,18 @@ window.G1000_FMS = (function () {
     const moveCursor = (e, steps) => { e.pos = clamp(e.pos + steps, 0, Math.min(e.ident.length, 5)); };
 
     // ---- Keys: return true when the FMS handled them ----
-    function press(key, display) {
+    // opts.dtoDefault: what the page on show offers for D→ (js/g1000-pages.js).
+    function press(key, display, opts = {}) {
       const w = F().win;
       const win = w[display];
       switch (key) {
         case 'direct_to': {
           if (win?.type === 'dto') { w[display] = null; return true; }
-          // Defaults to the waypoint flown to, or the one under the FPL cursor.
+          // Defaults to the page's selection, the waypoint under the FPL
+          // cursor, or the one flown to.
           const f = F().fpl;
           const fromCursor = win?.type === 'fpl' && win.cursor != null ? f.wpts[win.cursor] : null;
-          const def = fromCursor ?? leg()?.to.id ?? '';
+          const def = opts.dtoDefault ?? fromCursor ?? leg()?.to.id ?? '';
           w[display] = { type: 'dto', ident: def, pos: 0, stage: 'ident' };
           return true;
         }
@@ -267,7 +269,8 @@ window.G1000_FMS = (function () {
       });
     }
 
-    return { fresh, press, turn, push, step, navSolution, leg, rows, match, byId, SCALE, directTo, insert, remove, activateLeg };
+    return { fresh, press, turn, push, step, navSolution, leg, rows, match, byId, SCALE, directTo, insert, remove,
+      activateLeg, editChar, moveCursor };
   }
 
   return { create, CHARS };

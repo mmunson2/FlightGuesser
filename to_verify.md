@@ -70,6 +70,25 @@ the GFC 700 AFMS:
     it.
   - Legs sequence when the waypoint is passed. There's no turn
     anticipation.
+- **MFD page groups** (js/g1000-pages.js):
+  - With no cursor out, the large FMS knob picks the group (MAP, WPT,
+    AUX, FPL, NRST) and the small knob the page.
+  - Each group returns to its last page.
+  - The FPL key toggles the Active Flight Plan page and back.
+  - Page names follow the NXi's MFD in MSFS 2020.
+  - Working: Navigation Map, Airport Information, VOR Information, Trip
+    Planning, Utility, Active Flight Plan, Nearest Airports, Nearest VOR.
+    The other pages are placeholders.
+  - Airport Information has no runways, frequencies or elevation: the
+    mock's database doesn't hold them.
+  - ENT on Nearest Airports opens that airport's information page.
+  - ENT on Nearest VOR loads the frequency into the tuned NAV's standby.
+  - Check both ENT behaviours against the real unit, which may go through
+    a frequency field.
+- **PFD Nearest softkey**: opens a Nearest Airports window. Push FMS for
+  the cursor; D→ offers the selection.
+- **Fuel**: 48 gal usable at start, burning at a made-up fuel flow (from
+  power and altitude, not the POH). Trip Planning assumes no wind.
 - **GPS CDI scale**: ENR 2.0 NM full scale; TERM 1.0 NM within 31 NM of
   the plan's departure or destination airport. The 0.3 NM approach scale
   isn't modelled.

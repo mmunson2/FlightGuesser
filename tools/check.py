@@ -393,6 +393,78 @@ G1000_CHECKS = r"""() => {
   expect(run(1500, () => !f().dto && f().active === 2), `no sequencing past KAWO: ${JSON.stringify(f())}`);
   expect(leg()?.fromId === 'KAWO' && leg().to.id === 'KBVS', `after KAWO the leg is ${leg()?.fromId} → ${leg()?.to.id}`);
 
+  // MFD pages: the large FMS knob steps groups, the small one pages.
+  G.reset();
+  const P = G.pages, mt = (part, n) => G.turn('fms', part, n, 'mfd');
+  mt('outer', 4);
+  expect(P.pageKey() === 'NRST:0', `outer +4 from MAP gave ${P.pageKey()}`);
+  mt('outer', 1);
+  expect(P.pageKey() === 'MAP:0', `groups wrap: ${P.pageKey()}`);
+  mt('inner', 1);
+  expect(P.pageKey() === 'MAP:1', `inner +1 gave ${P.pageKey()}`);
+  mt('outer', 1); mt('outer', -1);
+  expect(P.pageKey() === 'MAP:1', `a group keeps its last page: ${P.pageKey()}`);
+
+  // NRST airports: cursor on the nearest, D→ offers it, ENT ENT flies it.
+  mt('outer', 4);
+  expect(P.pageKey() === 'NRST:0', `back to Nearest Airports (its last page): ${P.pageKey()}`);
+  const near = P.nearestAirports();
+  expect(near.every((r, i) => !i || near[i - 1].dist <= r.dist), 'Nearest Airports not sorted by distance');
+  G.push('fms', 'mfd');
+  G.press('direct_to', 'mfd');
+  expect(s.fms.win.mfd?.ident === near[0].w.id, `D→ from NRST offered ${s.fms.win.mfd?.ident}, nearest is ${near[0].w.id}`);
+  G.press('ent', 'mfd'); G.press('ent', 'mfd');
+  expect(leg()?.to.id === near[0].w.id, `D→ from NRST: leg to ${leg()?.to.id}`);
+
+  // NRST VOR: ENT puts the selected station's frequency in NAV standby.
+  // (With the cursor out the knobs move it, so CLR first.)
+  expect(P.cursorOn(), 'the NRST cursor should stay out after D→');
+  mt('inner', 1);
+  expect(s.mfd.cursor === 1 && P.pageKey() === 'NRST:0', `inner knob with the cursor out: row ${s.mfd.cursor}, ${P.pageKey()}`);
+  G.press('clr', 'mfd');
+  mt('inner', 3);
+  expect(P.pageKey() === 'NRST:3', `Nearest VOR: ${P.pageKey()}`);
+  s.nav[0].stby = 108.0;
+  G.push('fms', 'mfd'); G.press('ent', 'mfd');
+  expect(s.nav[0].stby === P.nearestVors()[0].w.freq, `NRST VOR ENT: NAV1 standby ${s.nav[0].stby}`);
+  G.press('clr', 'mfd');
+  expect(!P.cursorOn(), 'CLR should hide the page cursor');
+
+  // WPT Airport Information: push FMS, type over KPAE to KBL(I), ENT.
+  const over = (e, id) => [...id].forEach((c, i) => {
+    if (i) mt('outer', 1);
+    const cur = e().ident[e().pos];
+    mt('inner', CHARS.indexOf(c) - (cur ? CHARS.indexOf(cur) : -1));
+  });
+  mt('outer', -3); mt('inner', -P.GROUPS[1].pages.length);
+  expect(P.pageKey() === 'WPT:0', `Airport Information: ${P.pageKey()}`);
+  G.push('fms', 'mfd');
+  over(() => s.mfd.entry, 'KBL');
+  G.press('ent', 'mfd');
+  expect(s.mfd.wpt.airport === 'KBLI' && !P.cursorOn(), `WPT entry: ${s.mfd.wpt.airport}`);
+
+  // The MFD's FPL key: to the flight plan page and back.
+  G.press('fpl', 'mfd');
+  expect(P.pageKey() === 'FPL:0' && s.fms.win.mfd?.type === 'fpl', `FPL key: ${P.pageKey()}`);
+  G.press('fpl', 'mfd');
+  expect(P.pageKey() === 'WPT:0' && !s.fms.win.mfd, `FPL key again: ${P.pageKey()}`);
+
+  // PFD Nearest softkey: the window, its cursor, D→ to the second nearest.
+  G.reset();
+  G.press('softkey:10', 'pfd');
+  expect(s.fms.win.pfd?.type === 'nrst', 'Nearest softkey opened no window');
+  G.push('fms', 'pfd'); G.turn('fms', 'inner', 1, 'pfd');
+  G.press('direct_to', 'pfd');
+  expect(s.fms.win.pfd?.ident === P.nearestAirports()[1].w.id, `PFD NRST D→ offered ${s.fms.win.pfd?.ident}`);
+
+  // Fuel burns at the fuel flow; Trip Planning's fuel required agrees.
+  G.reset();
+  const ff = G.fuelFlow(), fuel0 = s.fuel;
+  run(600);
+  expect(Math.abs(fuel0 - s.fuel - ff / 6) < 0.3, `600 s at ${ff.toFixed(1)} GPH burned ${(fuel0 - s.fuel).toFixed(2)} gal`);
+  const tp = P.trip();
+  expect(Math.abs(tp.required - tp.ff * tp.hours) < 1e-9 && tp.after === tp.onboard - tp.required, 'Trip Planning fuel');
+
   // Transponder: XPDR, Code, four digits, back on the XPDR menu.
   G.reset();
   G.press('softkey:7', 'pfd'); G.press('softkey:7', 'pfd');

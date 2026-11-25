@@ -80,8 +80,8 @@ window.G1000_DISPLAY = (function () {
   // ---- FMS windows (js/g1000-fms.js): Direct-To and the flight plan ----
   // An identifier being typed: the characters so far, the cursor's
   // character in a cyan box, the rest completed from the database.
-  function identField(ctx, e, x, y, G, active) {
-    const m = G.fms.match(e.ident);
+  function identField(ctx, e, x, y, G, active, match = G.fms.match) {
+    const m = match(e.ident);
     const shown = (m ? m.id : e.ident).padEnd(5, '_').slice(0, 6);
     ctx.font = font(26);
     const cw = 22;
@@ -155,9 +155,177 @@ window.G1000_DISPLAY = (function () {
     if (!win) return;
     // PFD: the lower right corner, beside the HSI and under the CRS box.
     // MFD: the map's right half.
-    const [x, y, w, h] = display === 'pfd' ? [660, 548, 358, 228] : [600, 106, 418, H - 34 - 112];
+    // (Above the MFD's page group indicator.)
+    const [x, y, w, h] = display === 'pfd' ? [660, 548, 358, 228] : [600, 106, 418, H - 34 - 160];
     if (win.type === 'dto') dtoWindow(ctx, s, G, win, x, y, w, Math.min(h, 228));
+    else if (win.type === 'nrst') pfdNearest(ctx, s, G, win, x, y, w, h);
     else fplWindow(ctx, s, G, win, x, y, w, h);
+  }
+
+  // The PFD's Nearest Airports window: identifier, bearing, distance.
+  function pfdNearest(ctx, s, G, win, x, y, w, h) {
+    box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
+    text(ctx, 'NEAREST AIRPORTS', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    const list = G.pages.nearestAirports();
+    const rowH = 30, n = Math.floor((h - 70) / rowH);
+    const first = Math.max(0, Math.min((win.cursor ?? 0) - n + 1, list.length - n));
+    list.slice(first, first + n).forEach((r, k) => {
+      const i = first + k, ry = y + 52 + k * rowH, sel = win.cursor === i;
+      if (sel) box(ctx, x + 10, ry - 14, 76, 28, { fill: C.cyan, stroke: null });
+      text(ctx, r.w.id, x + 14, ry, { size: 21, color: sel ? C.black : C.white });
+      text(ctx, pad3(r.brg) + '°', x + 170, ry, { size: 20, align: 'right' });
+      text(ctx, r.dist.toFixed(1) + 'NM', x + 270, ry, { size: 20, align: 'right' });
+      text(ctx, r.w.towered ? 'TWR' : '', x + w - 12, ry, { size: 15, align: 'right', color: C.grey });
+    });
+    text(ctx, win.cursor == null ? 'Push FMS for the cursor' : 'D→ goes direct to the selection',
+      x + w / 2, y + h - 16, { size: 15, align: 'center', color: C.grey });
+  }
+
+  // ---- MFD pages (js/g1000-pages.js) ----
+  // The content area right of the EIS and below the nav data bar.
+  const PAGE = { x: 200, y: 106, w: W - 200, h: H - 34 - 106 };
+  const latLon = (lat, lon) => {
+    const f = (v, pos, neg, dw) => {
+      const a = Math.abs(v), d = Math.floor(a);
+      return `${v >= 0 ? pos : neg}${String(d).padStart(dw, '0')}°${((a - d) * 60).toFixed(2).padStart(5, '0')}'`;
+    };
+    return `${f(lat, 'N', 'S', 2)}  ${f(lon, 'E', 'W', 3)}`;
+  };
+  // A label and a value in two columns, from the top of the page down.
+  function rowsOf(ctx, pairs, x, y, gap = 40) {
+    pairs.forEach(([k, v, color = C.white], i) => {
+      text(ctx, k, x, y + i * gap, { size: 18, color: C.grey });
+      text(ctx, v, x + 230, y + i * gap, { size: 22, color });
+    });
+  }
+  function pageBackground(ctx) {
+    box(ctx, PAGE.x, PAGE.y, PAGE.w, PAGE.h, { fill: '#05070a', stroke: null });
+  }
+  function identLine(ctx, s, G, page, ident, x, y) {
+    const p = s.mfd;
+    if (p.cursor === 'ident') return identField(ctx, p.entry, x, y, G, true, G.pages.matchers[page]);
+    text(ctx, ident, x, y, { size: 28 });
+    return null;
+  }
+  const hint = (ctx, str) => text(ctx, str, PAGE.x + PAGE.w / 2, PAGE.y + PAGE.h - 70,
+    { size: 15, align: 'center', color: C.grey });
+
+  function airportInfo(ctx, s, G) {
+    pageBackground(ctx);
+    const a = G.fms.byId[s.mfd.wpt.airport];
+    const x = PAGE.x + 30, y = PAGE.y + 70;
+    identLine(ctx, s, G, 'WPT:0', a.id, x, y);
+    const { brg, dist } = G.bearingDist(s, a);
+    rowsOf(ctx, [
+      ['NAME', a.name], ['TYPE', a.towered ? 'Towered' : 'Non-towered'],
+      ['POSITION', latLon(a.lat, a.lon)], ['FROM P.POS', `${pad3(brg)}°  ${dist.toFixed(1)}NM`],
+    ], x, y + 60);
+    hint(ctx, 'Runways, frequencies and elevation are not in the mock database. Push FMS to pick another airport.');
+  }
+
+  function vorInfo(ctx, s, G) {
+    pageBackground(ctx);
+    const v = G.fms.byId[s.mfd.wpt.vor];
+    const x = PAGE.x + 30, y = PAGE.y + 70;
+    identLine(ctx, s, G, 'WPT:3', v.id, x, y);
+    const { brg, dist } = G.bearingDist(s, v);
+    rowsOf(ctx, [
+      ['NAME', v.name], ['FREQUENCY', v.freq.toFixed(2), C.green], ['POSITION', latLon(v.lat, v.lon)],
+      ['FROM P.POS', `${pad3(brg)}°  ${dist.toFixed(1)}NM`],
+      // The radial the airplane is on: the bearing from the station.
+      ['RADIAL', `${pad3(brg + 180)}° FROM`],
+    ], x, y + 60);
+    hint(ctx, 'Push FMS to pick another station. Nearest VOR (NRST) loads frequencies.');
+  }
+
+  function tripPlanning(ctx, s, G) {
+    pageBackground(ctx);
+    const x = PAGE.x + 30, y = PAGE.y + 70;
+    text(ctx, 'P.POS  →', x, y, { size: 24 });
+    identLine(ctx, s, G, 'AUX:0', s.mfd.tripTo, x + 130, y);
+    const t = G.pages.trip();
+    const hhmm = (h) => `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+    const eta = new Date(s.t * 1000 + t.hours * 3600000 + Date.UTC(2026, 0, 1, 17, 0, 0));
+    rowsOf(ctx, [
+      ['DTK', pad3(t.dtk) + '°', C.magenta], ['DIS', t.dist.toFixed(1) + 'NM'], ['ETE', hhmm(t.hours)],
+      ['ETA', `${String(eta.getUTCHours()).padStart(2, '0')}:${String(eta.getUTCMinutes()).padStart(2, '0')}`],
+      ['FUEL FLOW', t.ff.toFixed(1) + ' GPH'], ['FUEL REQ', t.required.toFixed(1) + ' GAL'],
+      ['FUEL ON BOARD', t.onboard.toFixed(1) + ' GAL'],
+      ['FUEL AT ARRIVAL', t.after.toFixed(1) + ' GAL', t.after < 8 ? C.yellow : C.white],
+    ], x, y + 55, 38);
+    hint(ctx, 'At the present ground speed and fuel flow (mock numbers), no wind. Push FMS to pick a waypoint.');
+  }
+
+  function utility(ctx, s, G) {
+    pageBackground(ctx);
+    const st = s.mfd.stats, hours = Math.max(s.t - st.t0, 1) / 3600;
+    const hms = (sec) => [sec / 3600, (sec / 60) % 60, sec % 60].map((v) => String(Math.floor(v)).padStart(2, '0')).join(':');
+    rowsOf(ctx, [
+      ['FLIGHT TIMER', hms(s.t - st.t0)], ['ODOMETER', st.odo.toFixed(1) + 'NM'],
+      ['AVG GS', Math.round(st.odo / hours) + 'KT'], ['MAX GS', Math.round(st.maxGs) + 'KT'],
+    ], PAGE.x + 30, PAGE.y + 70);
+    hint(ctx, 'Since Reset flight. The generic timer and minimums are not in the mock.');
+  }
+
+  // Nearest Airports / VOR: a list with the cursor.
+  function nearestList(ctx, s, G, vor) {
+    pageBackground(ctx);
+    const list = vor ? G.pages.nearestVors() : G.pages.nearestAirports();
+    const x = PAGE.x + 30, top = PAGE.y + 60, rowH = 40, cur = s.mfd.cursor;
+    text(ctx, 'BRG', x + 220, top - 4, { size: 15, align: 'right', color: C.grey });
+    text(ctx, 'DIS', x + 340, top - 4, { size: 15, align: 'right', color: C.grey });
+    text(ctx, vor ? 'FREQ' : 'NAME', x + 380, top - 4, { size: 15, color: C.grey });
+    list.slice(0, 15).forEach((r, i) => {
+      const ry = top + 34 + i * rowH;
+      if (ry > PAGE.y + PAGE.h - 90) return;
+      const sel = cur === i;
+      if (sel) box(ctx, x - 6, ry - 15, 90, 30, { fill: C.cyan, stroke: null });
+      text(ctx, r.w.id, x, ry, { size: 22, color: sel ? C.black : C.white });
+      text(ctx, pad3(r.brg) + '°', x + 220, ry, { size: 21, align: 'right' });
+      text(ctx, r.dist.toFixed(1) + 'NM', x + 340, ry, { size: 21, align: 'right' });
+      text(ctx, vor ? r.w.freq.toFixed(2) : r.w.name, x + 380, ry, { size: vor ? 21 : 17, color: vor ? C.green : C.white });
+    });
+    hint(ctx, cur == null ? 'Push FMS for the cursor'
+      : vor ? 'ENT: frequency to NAV standby · D→: direct to it' : 'ENT: airport information · D→: direct to it');
+  }
+
+  function placeholder(ctx, s, G) {
+    pageBackground(ctx);
+    text(ctx, G.pages.pageName(), PAGE.x + PAGE.w / 2, PAGE.y + PAGE.h / 2 - 20, { size: 26, align: 'center' });
+    text(ctx, 'Not in the mock yet', PAGE.x + PAGE.w / 2, PAGE.y + PAGE.h / 2 + 20, { size: 20, align: 'center', color: C.grey });
+  }
+
+  // Bottom right: the page groups, the shown one cyan, with a box per page
+  // in it (the shown page filled).
+  function pageGroups(ctx, s, G) {
+    const p = s.mfd, groups = G.pages.GROUPS;
+    const x0 = 560, y = H - 34 - 44, w = W - x0 - 6;
+    box(ctx, x0, y - 4, w, 46, { fill: C.black, stroke: C.grey });
+    const cell = w / groups.length;
+    groups.forEach((g, i) => {
+      const cx = x0 + cell * i + cell / 2, on = i === p.group;
+      text(ctx, g.id, cx, y + 10, { size: 17, align: 'center', color: on ? C.cyan : C.grey });
+      if (!on) return;
+      const n = g.pages.length, bw = 12, gap = 5, bx = x0 + w / 2 - (n * (bw + gap)) / 2;
+      for (let k = 0; k < n; k++) {
+        ctx.strokeStyle = C.cyan;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx + k * (bw + gap), y + 24, bw, 10);
+        if (k === p.last[p.group]) { ctx.fillStyle = C.cyan; ctx.fillRect(bx + k * (bw + gap), y + 24, bw, 10); }
+      }
+    });
+  }
+
+  function mfdPage(ctx, s, G) {
+    const key = G.pages.pageKey();
+    const draw = {
+      'MAP:0': navMap, 'FPL:0': navMap, 'WPT:0': airportInfo, 'WPT:3': vorInfo, 'AUX:0': tripPlanning,
+      'AUX:1': utility, 'NRST:0': (c, st, g) => nearestList(c, st, g, false), 'NRST:3': (c, st, g) => nearestList(c, st, g, true),
+    }[key] ?? placeholder;
+    draw(ctx, s, G);
+    const g = G.pages.GROUPS[s.mfd.group];
+    text(ctx, `${g.id} - ${G.pages.pageName().toUpperCase()}`, PAGE.x + PAGE.w / 2, PAGE.y + 18,
+      { size: 18, align: 'center', color: C.cyan });
   }
 
   function softkeys(ctx, s, G, display) {
@@ -588,11 +756,11 @@ window.G1000_DISPLAY = (function () {
     ctx.beginPath(); ctx.moveTo(px, by + 4); ctx.lineTo(px - 7, by - 9); ctx.lineTo(px + 7, by - 9); ctx.fill();
   }
 
-  function eis(ctx, s) {
+  function eis(ctx, s, G) {
     box(ctx, 0, 70, 200, H - 104, { fill: C.panel, stroke: null });
     // Plausible engine numbers from power and altitude.
     const rpm = Math.round(700 + 1800 * s.power);
-    const ff = +(2 + 9 * s.power * (1 - s.trueAlt / 30000)).toFixed(1);
+    const ff = +G.fuelFlow().toFixed(1);
     const x = 12, w = 176;
     if (s.eisPage === 'Lean') {
       text(ctx, 'LEAN', x, 100, { size: 18, color: C.cyan });
@@ -637,8 +805,8 @@ window.G1000_DISPLAY = (function () {
     gaugeBar(ctx, 'OIL TEMP', 190, 75, 245, [[75, 100, C.yellow], [100, 245, C.green]], x, 370, w, (v) => v.toFixed(0));
     gaugeBar(ctx, 'EGT', 1350, 1000, 1600, [[1000, 1600, '#555']], x, 420, w, () => '');
     gaugeBar(ctx, 'VAC', 5.0, 3, 7, [[3, 4.5, '#555'], [4.5, 5.5, C.green], [5.5, 7, '#555']], x, 470, w, (v) => v.toFixed(1));
-    gaugeBar(ctx, 'FUEL QTY L', 24, 0, 30, [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]], x, 530, w, (v) => v.toFixed(0));
-    gaugeBar(ctx, 'FUEL QTY R', 24, 0, 30, [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]], x, 580, w, (v) => v.toFixed(0));
+    gaugeBar(ctx, 'FUEL QTY L', s.fuel / 2, 0, 30, [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]], x, 530, w, (v) => v.toFixed(0));
+    gaugeBar(ctx, 'FUEL QTY R', s.fuel / 2, 0, 30, [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]], x, 580, w, (v) => v.toFixed(0));
     text(ctx, 'ENG 1,234.5 HRS', x, 640, { size: 15, color: C.grey });
   }
 
@@ -714,8 +882,7 @@ window.G1000_DISPLAY = (function () {
     ctx.restore();
     // Heading-up compass arc label and page title.
     text(ctx, 'HDG UP', x0 + 10, y0 + 18, { size: 16, color: C.grey });
-    text(ctx, 'MAP - NAVIGATION MAP', x0 + w / 2, y0 + 18, { size: 18, align: 'center', color: C.cyan });
-    text(ctx, 'Mock map: approximate positions, not for navigation', x0 + w / 2, y0 + h - 14, { size: 14, align: 'center', color: C.grey });
+    text(ctx, 'Mock map: approximate positions, not for navigation', x0 + 10, y0 + 40, { size: 14, color: C.grey });
   }
 
   function navDataBar(ctx, s, G) {
@@ -741,11 +908,12 @@ window.G1000_DISPLAY = (function () {
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = C.black;
     ctx.fillRect(0, 0, W, H);
-    navMap(ctx, s, G);
-    eis(ctx, s);
+    mfdPage(ctx, s, G);
+    eis(ctx, s, G);
     navDataBar(ctx, s, G);
     radios(ctx, s, G);
     fmsWindow(ctx, s, G, 'mfd');
+    pageGroups(ctx, s, G);
     softkeys(ctx, s, G, 'mfd');
     noteBar(ctx, s);
   }

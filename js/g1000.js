@@ -7,9 +7,10 @@
 // heading bug, course, baro, selected altitude and its alerter, the CDI
 // source, the transponder, the PFD's softkey menus, and the GFC 700's mode
 // logic (FD/AP, ROL PIT HDG ALT VS FLC NAV APR, ALTS capture, NOSE UP/DN),
-// and through js/g1000-fms.js the flight plan, Direct-To and GPS legs.
-// What it doesn't: VNAV, procedures and GPS approaches, LOC/GS, the MFD's
-// pages beyond the map and FPL, failures, wind, magnetic variation
+// through js/g1000-fms.js the flight plan, Direct-To and GPS legs, and
+// through js/g1000-pages.js the MFD's page groups and the PFD's Nearest
+// window. What it doesn't: VNAV, procedures and GPS approaches, LOC/GS,
+// the MFD's IFR and setup pages, failures, wind, magnetic variation
 // (headings are true). The airplane is a few lines of kinematics, not a
 // flight model.
 // Behaviour follows the G1000 NXi and GFC 700 pilot's guides as remembered;
@@ -72,7 +73,7 @@ window.G1000 = (function () {
   };
   // The softkeys that do something in the mock; the rest draw grey.
   const LIVE = {
-    pfd: [3, 5, 7, 8], 'pfd-opt': [9, 10], xpdr: [2, 3, 4, 6, 7, 8, 10],
+    pfd: [3, 5, 7, 8, 10], 'pfd-opt': [9, 10], xpdr: [2, 3, 4, 6, 7, 8, 10],
     'xpdr-code': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mfd: [0], engine: [0, 1, 2, 10],
   };
 
@@ -84,6 +85,12 @@ window.G1000 = (function () {
   // state.fms.
   const fms = G1000_FMS.create({
     state, bearingDist, waypoints: WAYPOINTS, note: (text) => note(text),
+  });
+  // The MFD's page groups and the PFD's Nearest window
+  // (js/g1000-pages.js), in state.mfd.
+  const pages = G1000_PAGES.create({
+    state, bearingDist, waypoints: WAYPOINTS, fms, note: (text) => note(text),
+    tas: () => tas(), fuelFlow: () => fuelFlow(),
   });
   function reset() {
     Object.assign(state, {
@@ -107,7 +114,9 @@ window.G1000 = (function () {
       // (within 200 ft), 'deviate' (off by more than 200 ft once reached).
       alt: { phase: 'far', flashUntil: 0 },
       menus: { pfd: ['pfd'], mfd: ['mfd'] },
-      mfdPage: 'map', eisPage: 'Engine', range: 6,
+      mfd: pages.fresh(), eisPage: 'Engine', range: 6,
+      // Usable fuel on board, gallons (both tanks).
+      fuel: 48,
       // A line of text for the last thing the mock can't do yet.
       note: null,
       fms: fms.fresh(),
@@ -118,6 +127,8 @@ window.G1000 = (function () {
 
   const indicatedAlt = () => state.trueAlt + (state.baro - ACTUAL_BARO) * 1000;
   const tas = () => state.ias * (1 + 0.02 * state.trueAlt / 1000);
+  // Fuel flow (GPH): made up from power and altitude, not the POH's tables.
+  const fuelFlow = () => 2 + 9 * state.power * (1 - state.trueAlt / 30000);
   const note = (text) => { state.note = { text, until: state.t + 4 }; };
 
   // ---- Navigation: the active CDI source's deviation ----
@@ -220,10 +231,22 @@ window.G1000 = (function () {
   };
 
   // ---- Keys, knobs and softkeys ----
+  // Keys for whatever has the display: the MFD's FPL key changes page;
+  // the PFD's Nearest window and the MFD's page cursors take ENT and CLR;
+  // the rest (D→, FPL, PROC, and ENT/CLR/MENU in an FMS window) go to
+  // js/g1000-fms.js, D→ offering what the page shows. True when handled.
+  function windowKey(key, display) {
+    const win = state.fms.win[display];
+    if (display === 'mfd' && key === 'fpl' && win?.type !== 'dto') { pages.fplKey(); return true; }
+    if (display === 'pfd' && win?.type === 'nrst' && (key === 'ent' || key === 'clr')) return pages.pfdInput(key);
+    if (display === 'mfd' && !win && pages.press(key)) return true;
+    const handled = fms.press(key, display, { dtoDefault: pages.selectedIdent(display) });
+    pages.sync();
+    return handled;
+  }
   function press(key, display = 'pfd') {
     const a = state.afcs;
-    // D→, FPL, PROC, and ENT/CLR/MENU in an open window are the FMS's.
-    if (fms.press(key, display)) return;
+    if (windowKey(key, display)) return;
     switch (key) {
       case 'ap':
         if (a.ap) apDisconnect();
@@ -280,6 +303,7 @@ window.G1000 = (function () {
     const x = state.xpdr;
     switch (menu + ':' + label) {
       case 'pfd:PFD Opt': stack.push('pfd-opt'); return;
+      case 'pfd:Nearest': pages.pfdNearest(); return;
       case 'pfd:CDI': {
         const order = ['GPS', 'VOR1', 'VOR2'];
         state.cdi = order[(order.indexOf(state.cdi) + 1) % 3];
@@ -355,7 +379,14 @@ window.G1000 = (function () {
         state.vol.show = { kind, i, until: state.t + 2 };
         return;
       }
-      case 'fms': return fms.turn(part, steps, display);
+      case 'fms': {
+        // The PFD's Nearest window; on the MFD with no FMS cursor out, the
+        // pages; else the open FMS window.
+        const win = state.fms.win[display];
+        if (display === 'pfd' && win?.type === 'nrst') return pages.pfdInput('turn', steps);
+        if (display === 'mfd' && (!win || (win.type === 'fpl' && win.cursor == null))) return pages.turn(part, steps);
+        return fms.turn(part, steps, display);
+      }
     }
   }
   const wrapInt = (v, n) => ((v % n) + n) % n;
@@ -377,7 +408,12 @@ window.G1000 = (function () {
       case 'com_volume': return note('COM squelch: not in the mock');
       case 'nav_volume': return note('NAV ID: not in the mock');
       case 'range': return note('Map pan: not in the mock yet');
-      case 'fms': return fms.push(display);
+      case 'fms': {
+        const win = state.fms.win[display];
+        if (display === 'pfd' && win?.type === 'nrst') return pages.pfdInput('push');
+        if (display === 'mfd' && !win) return pages.push();
+        return fms.push(display);
+      }
     }
   }
 
@@ -464,6 +500,8 @@ window.G1000 = (function () {
     state.lon += (nm / 60) * Math.sin(rad(state.hdg)) / Math.cos(rad(state.lat));
 
     fms.step();
+    pages.step(dt);
+    state.fuel = Math.max(0, state.fuel - (fuelFlow() / 3600) * dt);
     alerter();
   }
 
@@ -500,7 +538,7 @@ window.G1000 = (function () {
   }
 
   return {
-    state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, SPEEDS, MENUS, LIVE, RANGES, fms,
+    state, reset, NAVAIDS, AIRPORTS, WAYPOINTS, SPEEDS, MENUS, LIVE, RANGES, fms, pages, fuelFlow,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, tas, navModeName,
     tick(dt) {
       // Big gaps (a background tab) are skipped, small steps keep it stable.
