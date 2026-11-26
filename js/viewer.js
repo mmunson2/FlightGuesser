@@ -903,6 +903,17 @@
   // gone; clicks go through them from the moment the fade starts. True
   // while fading, so the viewer draws a frame.
   const yokes = meshById.control_wheels;
+  // While fading, a depth-only copy is drawn first, so only the yokes'
+  // nearest surface blends in: without it each piece shows through the
+  // others in draw order and they seem to fade at different rates. Both
+  // are in the transparent pass (after the panel behind), the copy first.
+  const yokeDepth = yokes && new THREE.Mesh(yokes.geometry,
+    new THREE.MeshBasicMaterial({ colorWrite: false, transparent: true, depthWrite: true, side: THREE.DoubleSide }));
+  if (yokes) {
+    yokeDepth.renderOrder = 1;
+    yokeDepth.raycast = () => {};
+    scene.add(yokeDepth);       // hidden once its shader is compiled, below
+  }
   const FADE_OUT = 0.12, FADE_IN = 0.2;   // seconds
   const meshRaycast = THREE.Mesh.prototype.raycast;
   const noRaycast = () => {};
@@ -944,6 +955,8 @@
     // Out of the way altogether once faded out.
     yokes.userData.faded = fade === 0;
     yokes.visible = !yokes.userData.hidden && fade > 0;
+    yokeDepth.visible = yokes.visible && fade < 1;
+    yokes.renderOrder = fade < 1 ? 1.5 : 0;
     const opacity = yokes.userData.baseOpacity * fade;
     for (const m of yokes.material) {
       const solid = opacity >= 1;
@@ -959,6 +972,7 @@
     const probe = new THREE.Mesh(meshes[0].geometry, twin);
     scene.add(probe);
     renderer.compile(scene, camera);
+    if (yokeDepth) yokeDepth.visible = false;
     scene.remove(probe);
     twin.forEach((m) => m.dispose());
   }
