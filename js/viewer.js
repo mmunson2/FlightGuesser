@@ -185,7 +185,10 @@
     if (selection.some((m) => !m.visible)) setSelection(selection.filter((m) => m.visible));
     undoBtn.disabled = unhideAllBtn.disabled = actions.length === 0;
   }
+  // Operating, nothing hides: right click, Delete and the panel do nothing
+  // (a box unticked by hand ticks back).
   function hide(list) {
+    if (avionics.operating) { sync(); return; }
     const fresh = list.filter((m) => !m.userData.hidden);
     if (!fresh.length) return;
     fresh.forEach((m) => { m.userData.hidden = true; });
@@ -254,6 +257,7 @@
     if (on) rig.setMode('seat'); else rig.leaveSeat();
     viewsEl.hidden = on || document.body.classList.contains('diagram-on');
     camModeEl.hidden = on;
+    for (const el of panel.querySelectorAll('input, button')) el.disabled = on;
     operateBtn.classList.toggle('on', on);
     operateBtn.setAttribute('aria-pressed', on);
     resetBtn.hidden = !on;

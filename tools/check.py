@@ -269,6 +269,13 @@ def play_camera(browser):
         page.mouse.move(5, 5)
         if not hidden or not wait(page, shown):
             problems.append("camera: pointing at a yoke didn't hide the yokes, or they didn't come back")
+    # Nothing hides while operating: right click, Delete or a system box.
+    hidden_count = "FLIGHT_DEBUG.meshes().filter((m) => m.userData.hidden).length"
+    page.mouse.click(700, 450, button="right")
+    page.keyboard.press("Delete")
+    page.evaluate("FLIGHT_DEBUG.hide(['control_wheels'])")
+    if page.evaluate(hidden_count) or not page.is_disabled("#systems input"):
+        problems.append("camera: geometry could be hidden in Operate mode")
     page.click("#operate")
     if page.evaluate("FLIGHT_DEBUG.rig.mode") != "orbit":
         problems.append("camera: leaving Operate didn't go back to the camera mode before it")
