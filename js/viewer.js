@@ -52,8 +52,12 @@
   scene.add(fill);
 
   const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 200);
-  const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
+  // First person by default, orbit as an option, the pilot's seat in
+  // Operate mode (js/camera.js). Movement keys are off while typing or
+  // with a dialog open.
+  const rig = CAMERA_RIG.create({ THREE, camera, dom: renderer.domElement,
+    ignoreKeys: (e) => e.target.matches('input, select, textarea')
+      || !!document.querySelector('.modal:not([hidden])') });
 
   function decode(b64, Type) {
     const s = atob(b64), bytes = new Uint8Array(s.length);
@@ -144,7 +148,7 @@
   // the keys and knobs work. A pressed key lights for a moment, a turning
   // knob while it turns.
   const avionics = G1000_PANEL.attach({
-    THREE, scene, camera, renderer, controls, meshes, meshById, highlight: HIGHLIGHT,
+    THREE, scene, camera, renderer, controls: rig, meshes, meshById, highlight: HIGHLIGHT,
   });
   // Parts made of several (GROUPS in build/aircraft.py): both ailerons, the
   // three nav lights. A group id works wherever a part id does in a question.
@@ -154,9 +158,7 @@
   // Camera presets (VIEWS in build/build_model.py).
   function goView(name) {
     const v = SCENE_DATA.views[name];
-    camera.position.set(...v.position);
-    controls.target.set(...v.target);
-    controls.update();
+    rig.goTo(v.position, v.target);
   }
 
   // Hiding. Right click hides the part under the cursor; the Hide button and
@@ -173,7 +175,7 @@
   hideBtn.addEventListener('click', () => hide(selection));
 
   function sync() {
-    for (const m of meshes) m.visible = !m.userData.hidden;
+    for (const m of meshes) m.visible = !m.userData.hidden && !m.userData.faded;
     for (const [sys, box] of Object.entries(boxes)) {
       const own = meshes.filter((m) => m.userData.part.system === sys);
       const shown = own.filter((m) => m.visible).length;
@@ -183,7 +185,10 @@
     if (selection.some((m) => !m.visible)) setSelection(selection.filter((m) => m.visible));
     undoBtn.disabled = unhideAllBtn.disabled = actions.length === 0;
   }
+  // Operating, nothing hides: right click, Delete and the panel do nothing
+  // (a box unticked by hand ticks back).
   function hide(list) {
+    if (avionics.operating) { sync(); return; }
     const fresh = list.filter((m) => !m.userData.hidden);
     if (!fresh.length) return;
     fresh.forEach((m) => { m.userData.hidden = true; });
@@ -248,6 +253,11 @@
   const resetBtn = document.getElementById('g1000-reset');
   function setOperate(on) {
     avionics.setOperate(on);
+    // In the seat: look and zoom only, so the presets and modes go away.
+    if (on) rig.setMode('seat'); else rig.leaveSeat();
+    viewsEl.hidden = on || document.body.classList.contains('diagram-on');
+    camModeEl.hidden = on;
+    for (const el of panel.querySelectorAll('input, button')) el.disabled = on;
     operateBtn.classList.toggle('on', on);
     operateBtn.setAttribute('aria-pressed', on);
     resetBtn.hidden = !on;
@@ -258,10 +268,7 @@
   }
   operateBtn.addEventListener('click', () => {
     setOperate(!avionics.operating);
-    if (avionics.operating) {
-      goView('panel');
-      picked.textContent = t('operate.hint');
-    }
+    if (avionics.operating) picked.textContent = t('operate.hint');
   });
   // Failures (js/g1000-systems.js): choosing one fails that system, or
   // fixes it if it has failed (ticked); the last entry fixes everything.
@@ -315,6 +322,9 @@
   // Click to pick (only targets: context and glass let clicks through).
   const ray = new THREE.Raycaster();
   const picked = document.getElementById('picked');
+  // The header is one line: the whole text shows on hover.
+  new MutationObserver(() => { picked.title = picked.textContent; })
+    .observe(picked, { childList: true, characterData: true, subtree: true });
   const partName = (mesh) => t('part.' + mesh.userData.part.id);
   // In the header, a part of a group says which: "Left aileron (ailerons)".
   const pickedName = (mesh) => {
@@ -350,7 +360,9 @@
 
   renderer.domElement.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
   renderer.domElement.addEventListener('pointerup', (e) => {
-    // Ignore drags: they rotate (left) or pan (right) the camera.
+    // Ignore drags: they look around, or rotate (left) and pan (right) an
+    // orbit.
+    if (rig.consumeDrag()) return;
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
     if (e.button === 2) {
       const mesh = meshAt(e, (p) => !p.glass);
@@ -746,6 +758,16 @@
   const diagramEl = document.getElementById('diagram');
   sceneToggle.append(...['aircraft', 'diagram'].map((id) => choice('scene', id, t('scene.' + id), id === 'aircraft')));
   sceneToggle.addEventListener('change', (e) => showDiagram(e.target.value === 'diagram'));
+  // First person or orbit, remembered between visits.
+  const camModeEl = document.getElementById('cam-mode');
+  let camMode = 'fly';
+  try { if (localStorage.getItem('flightguesser.camera') === 'orbit') camMode = 'orbit'; } catch (err) { /* private window */ }
+  rig.setMode(camMode);
+  camModeEl.append(...['fly', 'orbit'].map((id) => choice('cam-mode', id, t('camera.' + id), id === camMode, t('camera.' + id + 'Tip'))));
+  camModeEl.addEventListener('change', (e) => {
+    rig.setMode(e.target.value);
+    try { localStorage.setItem('flightguesser.camera', e.target.value); } catch (err) { /* private window */ }
+  });
   viewsEl.append(...Object.keys(SCENE_DATA.views).map((name) => {
     const b = Object.assign(document.createElement('button'), { type: 'button', textContent: t('view.' + name) });
     // A view with `solo` (the engine, under the cowling) shows those
@@ -763,7 +785,8 @@
   function showDiagram(on) {
     sceneToggle.querySelector(`input[value="${on ? 'diagram' : 'aircraft'}"]`).checked = true;
     diagramEl.hidden = !on;
-    viewsEl.hidden = on;
+    viewsEl.hidden = on || avionics.operating;
+    camModeEl.hidden = on || avionics.operating;
     document.body.classList.toggle('diagram-on', on);
     if (on) DIAGRAM.show();
   }
@@ -878,6 +901,97 @@
   resize();
 
   goView(Object.keys(SCENE_DATA.views)[0]);
+  // In the seat the yokes are in the way of the lower panel: while the
+  // pointer is on or near one, both fade out, as if reaching past them, and fade
+  // back once it leaves. The ray tests the yokes' shape even while they're
+  // gone; clicks go through them from the moment the fade starts. True
+  // while fading, so the viewer draws a frame.
+  const yokes = meshById.control_wheels;
+  // While fading, a depth-only copy is drawn first, so only the yokes'
+  // nearest surface blends in: without it each piece shows through the
+  // others in draw order and they seem to fade at different rates. Both
+  // are in the transparent pass (after the panel behind), the copy first.
+  const yokeDepth = yokes && new THREE.Mesh(yokes.geometry,
+    new THREE.MeshBasicMaterial({ colorWrite: false, transparent: true, depthWrite: true, side: THREE.DoubleSide }));
+  if (yokes) {
+    yokeDepth.renderOrder = 1;
+    yokeDepth.raycast = () => {};
+    scene.add(yokeDepth);       // hidden once its shader is compiled, below
+  }
+  const FADE_OUT = 0.12, FADE_IN = 0.2;   // seconds
+  // Within REACH of a yoke starts the fade; once faded the yokes stay away
+  // while the pointer is within STAY of them (the switches and lights just
+  // beside and behind them), and LINGER after it leaves. Pixels at an
+  // 830 px tall view, scaled with it.
+  const REACH = 20, STAY = 70, LINGER = 400;
+  let leftAt = 0;
+  const meshRaycast = THREE.Mesh.prototype.raycast;
+  const noRaycast = () => {};
+  let hoverAt = null, fade = 1, fadeT = performance.now();
+  // The ray is cast only when the pointer or the view changed since.
+  let testedAt = null;
+  const testedView = new THREE.Matrix4(), view = new THREE.Matrix4();
+  renderer.domElement.addEventListener('pointermove', (e) => { hoverAt = e; });
+  renderer.domElement.addEventListener('pointerleave', () => { hoverAt = null; });
+  function viewChanged() {
+    camera.updateMatrixWorld();
+    view.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    if (view.equals(testedView)) return false;
+    testedView.copy(view);
+    return true;
+  }
+  // A yoke under the pointer or within `radius` pixels of it: rays at the
+  // pointer and on two rings around it.
+  const hits = [];
+  function yokeNear(e, radius) {
+    const r = renderer.domElement.getBoundingClientRect(), k = r.height / 830;
+    const rings = [0, radius / 2, radius];
+    for (const d of rings) {
+      for (let i = 0; i < (d ? 8 : 1); i++) {
+        const a = (i * Math.PI) / 4, x = e.clientX + Math.cos(a) * d * k, y = e.clientY + Math.sin(a) * d * k;
+        ray.setFromCamera({ x: ((x - r.left) / r.width) * 2 - 1, y: -((y - r.top) / r.height) * 2 + 1 }, camera);
+        hits.length = 0;
+        meshRaycast.call(yokes, ray, hits);
+        if (hits.length) return true;
+      }
+    }
+    return false;
+  }
+  function reachPastYokes() {
+    if (!yokes) return false;
+    const now = performance.now(), dt = Math.min(0.1, (now - fadeT) / 1000);
+    fadeT = now;
+    let reaching = !!yokes.userData.reaching;
+    if (rig.mode !== 'seat' || !hoverAt) reaching = false;
+    // Not mid-drag: a knob turned behind the yoke keeps it out of the way.
+    else if (hoverAt.buttons === 0 && (hoverAt !== testedAt || viewChanged())) {
+      testedAt = hoverAt;
+      const near = yokeNear(hoverAt, reaching ? STAY : REACH);
+      if (near) leftAt = 0;
+      else if (reaching && !leftAt) leftAt = now;
+      reaching = near || (reaching && now - leftAt < LINGER);
+      // Check again once the linger is up, though nothing moved.
+      if (!near && reaching) testedAt = null;
+    }
+    yokes.userData.reaching = reaching;
+    // Picking (here, js/g1000-panel.js) skips the yokes while reaching.
+    yokes.raycast = reaching ? noRaycast : meshRaycast;
+    const was = fade;
+    fade = reaching ? Math.max(0, fade - dt / FADE_OUT) : Math.min(1, fade + dt / FADE_IN);
+    if (fade === was) return false;
+    // Out of the way altogether once faded out.
+    yokes.userData.faded = fade === 0;
+    yokes.visible = !yokes.userData.hidden && fade > 0;
+    yokeDepth.visible = yokes.visible && fade < 1;
+    yokes.renderOrder = fade < 1 ? 1.5 : 0;
+    const opacity = yokes.userData.baseOpacity * fade;
+    for (const m of yokes.material) {
+      const solid = opacity >= 1;
+      if (m.transparent === solid) { m.transparent = !solid; m.depthWrite = solid; m.needsUpdate = true; }
+      m.opacity = opacity;
+    }
+    return true;
+  }
   // Compile the shaders now, the faded (transparent) one too, which the
   // glass and the quiz's x-ray use: compiled on first use it stalls a frame.
   {
@@ -885,6 +999,7 @@
     const probe = new THREE.Mesh(meshes[0].geometry, twin);
     scene.add(probe);
     renderer.compile(scene, camera);
+    if (yokeDepth) yokeDepth.visible = false;
     scene.remove(probe);
     twin.forEach((m) => m.dispose());
   }
@@ -894,19 +1009,20 @@
   const INPUTS = ['pointerdown', 'pointerup', 'wheel', 'keydown', 'click', 'change', 'input'];
   INPUTS.forEach((type) => window.addEventListener(type, () => invalidate(), { capture: true, passive: true }));
   window.addEventListener('pointermove', (e) => { if (e.buttons) invalidate(); }, { capture: true, passive: true });
-  controls.addEventListener('change', () => invalidate());
+  rig.orbit.addEventListener('change', () => invalidate());
   invalidate(2000);
   renderer.setAnimationLoop(() => {
-    const moved = controls.update();
+    const moved = rig.update();
+    const faded = reachPastYokes();
     const changed = avionics.tick();
-    if (moved || changed || avionics.operating || performance.now() < renderUntil) renderer.render(scene, camera);
+    if (moved || faded || changed || avionics.operating || performance.now() < renderUntil) renderer.render(scene, camera);
   });
   showStart();
 
   // For tools/check.py and tools/shot.py, which drive the page headless.
   // Not used by the app itself.
   window.FLIGHT_DEBUG = Object.fromEntries(Object.entries({
-    THREE, renderer, camera, controls, nameKey, nameMatches, GRADE, namePromptKey, settings,
+    THREE, renderer, camera, controls: rig.orbit, rig, nameKey, nameMatches, GRADE, namePromptKey, settings,
     meshes: () => meshes, meshById: () => meshById, meshesOf, GROUPS, askable,
     showDiagram, goView, explore, question: () => question, avionics, setOperate,
     select: (id) => setSelection(meshesOf(id)),

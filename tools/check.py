@@ -188,6 +188,101 @@ def play_diagram(page):
     return problems
 
 
+def wait(page, js, timeout=5000):
+    """True once js is truthy, False if it isn't within the timeout."""
+    try:
+        page.wait_for_function(js, timeout=timeout)
+        return True
+    except Exception:
+        return False
+
+
+def play_camera(browser):
+    """The camera (js/camera.js) in its own page, drawing: first person
+    moves on W and looks on a drag without selecting; a click still
+    selects; Operate puts the head in the seat, where keys don't move it,
+    and pointing at a yoke hides the yokes until the pointer leaves."""
+    problems = []
+    # Wide enough for the side-by-side layout, so the whole canvas is on screen.
+    page = browser.new_page(viewport={"width": 1400, "height": 900})
+    page.on("pageerror", lambda e: problems.append(f"camera: page error: {e}"))
+    page.goto(INDEX_HTML.as_uri())
+    page.wait_for_function("window.FLIGHT_DEBUG", timeout=60000)
+    page.evaluate("localStorage.removeItem('flightguesser.camera')")
+    page.click("#start-explore")
+    pos = "FLIGHT_DEBUG.camera.position.toArray()"
+    quat = "FLIGHT_DEBUG.camera.quaternion.toArray()"
+    if page.evaluate("FLIGHT_DEBUG.rig.mode") != "fly":
+        problems.append("camera: first person isn't the default")
+    page.evaluate("FLIGHT_DEBUG.goView('cockpit')")
+    a = page.evaluate(pos)
+    # Software rendering: frames are slow, so wait for one rather than a time.
+    page.mouse.move(600, 400)
+    page.keyboard.down("KeyW")
+    try:
+        page.wait_for_function(f"(a) => {pos}.some((v, i) => v !== a[i])", arg=a, timeout=5000)
+    except Exception:
+        pass
+    page.keyboard.up("KeyW")
+    if page.evaluate(pos) == a:
+        problems.append("camera: W didn't move the first person camera")
+    q = page.evaluate(quat)
+    page.mouse.down()
+    page.mouse.move(680, 380, steps=8)
+    page.mouse.up()
+    if page.evaluate(quat) == q or page.is_visible("#hide-selected"):
+        problems.append("camera: a drag didn't look around, or it selected a part")
+    page.evaluate("FLIGHT_DEBUG.goView('panel')")
+    page.mouse.click(600, 330)
+    if page.is_hidden("#hide-selected"):
+        problems.append("camera: a click in first person didn't select a part")
+    page.click('input[name=cam-mode][value="orbit"] + span')
+    if page.evaluate("FLIGHT_DEBUG.rig.mode") != "orbit" or not page.evaluate("FLIGHT_DEBUG.controls.enabled"):
+        problems.append("camera: the Orbit toggle didn't switch to orbit")
+    page.click("#operate")
+    seat = page.evaluate(pos)
+    page.keyboard.down("KeyW")
+    page.wait_for_timeout(300)
+    page.keyboard.up("KeyW")
+    if page.evaluate("FLIGHT_DEBUG.rig.mode") != "seat" or page.evaluate(pos) != seat or page.is_visible("#cam-mode"):
+        problems.append("camera: Operate didn't seat the pilot, or W moved them, or the mode toggle shows")
+    # A whole pixel on the yokes (a vertex on their outline can miss by a
+    # fraction of one).
+    at = page.evaluate("""() => {
+      const D = FLIGHT_DEBUG, y = D.meshById().control_wheels;
+      D.camera.updateMatrixWorld();   // the seat may not have been drawn yet
+      const r = D.renderer.domElement.getBoundingClientRect(), ray = new D.THREE.Raycaster();
+      for (let py = Math.ceil(r.top) + 5; py < r.bottom; py += 10) {
+        for (let px = Math.ceil(r.left) + 5; px < r.right; px += 10) {
+          ray.setFromCamera({ x: ((px - r.left) / r.width) * 2 - 1, y: -((py - r.top) / r.height) * 2 + 1 }, D.camera);
+          if (ray.intersectObject(y, false).length) return [px, py];
+        }
+      }
+      return null;
+    }""")
+    shown = "FLIGHT_DEBUG.meshById().control_wheels.visible"
+    if not at:
+        problems.append("camera: no yoke in view from the seat")
+    else:
+        page.mouse.move(*at)
+        hidden = wait(page, f"!{shown}")
+        page.mouse.move(5, 5)
+        if not hidden or not wait(page, shown):
+            problems.append("camera: pointing at a yoke didn't hide the yokes, or they didn't come back")
+    # Nothing hides while operating: right click, Delete or a system box.
+    hidden_count = "FLIGHT_DEBUG.meshes().filter((m) => m.userData.hidden).length"
+    page.mouse.click(700, 450, button="right")
+    page.keyboard.press("Delete")
+    page.evaluate("FLIGHT_DEBUG.hide(['control_wheels'])")
+    if page.evaluate(hidden_count) or not page.is_disabled("#systems input"):
+        problems.append("camera: geometry could be hidden in Operate mode")
+    page.click("#operate")
+    if page.evaluate("FLIGHT_DEBUG.rig.mode") != "orbit":
+        problems.append("camera: leaving Operate didn't go back to the camera mode before it")
+    page.close()
+    return problems
+
+
 def play_focused(page, cat):
     """Focus one question, then the Focused category must ask just it."""
     problems = []
@@ -1271,7 +1366,8 @@ def main(gaps):
         result = page.evaluate(CHECKS)
         result["errors"] += page.evaluate(G1000_CHECKS)
         en = page.evaluate("Object.keys(I18N)")
-        problems = play(page) + play_cards(page.context.browser) + play_tests(page.context.browser)
+        problems = (play(page) + play_camera(page.context.browser) + play_cards(page.context.browser)
+                    + play_tests(page.context.browser))
         errors = page.errors + result["errors"] + problems
     errors += [f"no {key} in en.js (used in a page or its script)"
                for key in sorted(static_keys() - set(en))]
