@@ -65,6 +65,42 @@ MM puts the rear door post at FS 65.33 (mm 112).
 | Stall horn | A trumpet into the cabin | A small reed horn inside the wing root, out of sight | mm 513; the student | High |
 | Static port | FS 14 | FS 20, just ahead of the door post | mm 692 | Low |
 
+## Added on 2026-11-25 (second pass)
+
+| Part | Where | Source | Conf. |
+|---|---|---|---|
+| PFD and MFD housings (GDU 1040) | Behind each bezel, 3.77 in deep; housing inset 0.5 in from the bezel | Garmin part listings (11.80 × 7.70 × 3.77 in); poh 200 (arm 16.4); mm 751 | High (depth), Low (inset) |
+| Audio panel unit (GMA 1347) | Rack 1.325 × 6.30 in, 7.79 in deep, between the displays | GMA 1347D installation manual; poh 197 (arm 16.3); mm 344 | High (size) |
+| Panel cooling fans | Under the PFD, under the MFD, under the glareshield on the right | mm 301 (Fig. 202, G1000) | Low (spots, sizes) |
+| Standby battery, GEA 71 | Battery 1.2 in further forward (aft of the PFD housing), now centred on its arm 11.2; GEA lowered under the MFD housing | poh 197, 199 | Med |
+| Flap drive pulleys and push-pull rods | WS 63, just aft of the rear spar | mm 518–520; access panels 510EB/610EB "flap controls" read on mm 123 | Med (WS), Low (pulley size) |
+| Flap motor and actuator | Right wing, transmission at WS 76, jack screw inboard to the pulley, motor beside it | mm 518, 520; panel 610GB "flap actuator" (mm 123, 125) | Med |
+| Flap cables | Pulley to pulley along the rear spar and across the cabin top behind the aileron carry-thru, a turnbuckle in each | mm 518–519 | Med (topology), Low (heights) |
+| Flap follow-up control | Bellcrank on the direct cable above the headliner; cable to the flap lever | mm 526 | Low: the route between is not drawn; drawn down the right forward door post |
+| Flap supports and rollers | At each flap's inboard and outboard end | mm 521 (Details F, H) | Med (spots), Low (shape) |
+| Cabin heat valve | Firewall forward face, below the CABIN HT knob, above the brake cylinders | mm 305–306; poh 265 (Fig. 7-8) | Low-Med |
+| Heater hose | Shroud outlet to the valve, under the engine | mm 306 (Detail A) | Med (topology) |
+| Cabin heat plenum, floor outlets | Behind the panel against the firewall; an outlet at each end, outboard of the pedals | poh 265; mm 305 | Low-Med |
+| Defroster hoses and outlets | Plenum up to two outlets under the glareshield, ±6.7 in off the centreline | mm 306 (Detail B); poh 265 | Low (spots) |
+| Ventilating air door | Right side skin between the firewall and the forward door post, duct into the plenum | mm 295, 298 (Detail C) | Med |
+| Fresh air ducts | Wing-root inlet; down the forward door post's hollow to the mid-torso outlet; aft in the gap over the headliner to the rear seat's overhead outlet. Drawn 0.9 in (post) and 1.6 in (roof) across, thinner than Cessna's, to fit inside FlightGear's trim | mm 295, 297 (Detail A); poh 265 | Low (routes, sizes) |
+| GDL 69A datalink | On edge in the tailcone rack, outboard of the GTX; 1.05 × 6.15 × 7.20 in, centred on its arm 112.8 | mm 744 (34-54-00 Fig. 201); poh 200; Garmin GDL 69/69A installation manual | High (size, arm), Med (spot in the rack) |
+| XM antenna (CI 420-10) | Cabin top, centreline, FS 44.1 (nose), a teardrop 4.6 × 3.0 × 0.8 in | poh 197 (arm 43.5), poh 7-74 ("top of the cabin"); Comant datasheet (shape, no size) | Med (FS), Low (side, size) |
+
+### Hidden runs (2026-11-25, third pass)
+
+Runs that showed through FlightGear's trim or skin were moved into the
+space the seats and the outside can't see (checked by casting rays from
+the four seats' eye points and along each axis): the fresh air ducts, the
+forward fuel lines and the reservoir vent (down the forward door posts'
+hollow, `POST_HOLLOW`; the vent across the cabin top moved aft to FS 36.4,
+out of view through the windshield, and its floor run under the carpet),
+the aft fuel lines (FS 63 → 64.5, inside the rear door post's trim, then
+inboard of the skin's turn under the floor), the flap cables and pulleys
+(y 0.44 → 0.425, under the roof skin), and the flap follow-up cable (over
+the headliner, down the right post's hollow, behind the kick panel and the
+panel to the lever).
+
 ## Still open
 
 - **Cable diameter.** Cables are drawn at 0.2 in; the real ones are 1/8 in,

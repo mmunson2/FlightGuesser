@@ -131,6 +131,39 @@ drawings; sizes the MM doesn't give are estimates (to_verify.md).
   (propeller end) lower left side of the engine"; MM 37-10-00 Fig. 201:
   vacuum pump on the accessory housing; Lycoming IPC PC-IO-360-L2A Fig. 20:
   spin-on oil filter pointing aft from the accessory housing).
+- Behind the instrument panel (MM 34-60-10 Fig. 201, 23-50-00 Fig. 201,
+  21-21-00 Fig. 202): the PFD's and MFD's GDU 1040 housings (11.80 x 7.70
+  in bezel, 3.77 in deep with the connector, from Garmin part listings;
+  POH arm 16.4), the GMA 1347's rack (1.325 x 6.30 in, 7.79 in deep: the
+  GMA 1347D installation manual; POH arm 16.3), and the three avionics
+  cooling fans (one under each display, the deck skin fan under the
+  glareshield on the right). The housings' inset from the bezel and the
+  fans' sizes and spots are estimates.
+- Flaps (MM 27-50-00 Figs. 201, 202; 27-51-00 Fig. 201; access panels
+  6-20-02 Fig. 3 and Table 3): a drive pulley in each wing just aft of the
+  rear spar (panels 510EB/610EB "flap controls", WS ~63 read from the
+  bottom view) with its push-pull rod aft to the flap's bracket; the motor
+  and transmission in the right wing (panel 610GB "flap actuator", WS ~76),
+  outboard of the pulley, its actuating tube and jack screw inboard to the
+  pulley (the schematic, "view looking down"), the motor beside the jack
+  screw (Detail D); the direct and retract cables from pulley to pulley
+  across the cabin top, a turnbuckle in each; the follow-up control from a
+  bellcrank on the direct cable above the headliner to the flap lever
+  (its route between them is not drawn: here down the right forward door
+  post); the flap supports with rollers at each flap's ends (Details F, H).
+- Cabin heat and ventilation (MM 21-20-00 Fig. 201, 21-40-00 Fig. 201; POH
+  Fig. 7-8): the heater hose from the heat shroud's outlet to the shutoff
+  valve on the firewall's forward face, worked by the CABIN HT knob's
+  cable (straight through the panel and firewall, 21-40-00); the plenum on
+  the cabin side behind it with a floor outlet at each end and two hoses
+  up to the adjustable defroster outlets under the glareshield; the
+  ventilating air door on the right side between the firewall and the
+  forward door post with its duct into the plenum and the CABIN AIR
+  cable; each wing root's second inlet with its ducts down the forward
+  door post to the mid-torso outlet and aft along the cabin top to the
+  rear seat's overhead outlet (FlightGear has the leading-edge scoop and
+  the upper vent at FS 23.69). Duct routes, the plenum's size and the
+  outlets' spots are read from the figures: estimates.
 """
 
 from pathlib import Path
@@ -159,6 +192,7 @@ COLORS = {
     "aux_fuel_pump": 0x3c3f44, "fuel_lines": 0x6fa0c8, "stall_warning": 0xd0d2d4,
     "integrated_avionics_units": 0x26282b, "transponder": 0x303236, "ahrs": 0x2c2e31,
     "air_data_computer": 0x34363a, "engine_airframe_unit": 0x2a2c2f, "magnetometer": 0x3a3d41,
+    "datalink": 0x2e3034, "xm_antenna": 0xf2f2f0,
     "avionics_shelf": 0xa6aaae, "oil_cooler": 0x2f3133, "starter": 0x3a3c3f, "vacuum_pump": 0x4a4d52,
     "oil_filter": 0x1f4f9a, "starter_ring_gear": 0x6a6d72, "control_column": 0x4a4d52, "aileron_cables": 0xb8bcc0,
     "aileron_bellcranks": 0x8a8f96, "elevator_cables": 0xb8bcc0, "elevator_bellcranks": 0x8a8f96,
@@ -167,6 +201,10 @@ COLORS = {
     "nose_steering_tubes": 0x9a9ea3, "nose_gear_strut": 0xc4c8cc, "induction_air_filter": 0xd9c58f, "induction_air_box": 0x55585d,
     "induction_air_duct": 0x2c2d30, "alternate_air_door": 0x7d8187, "oil_filler_cap": 0x8c8f93, "fuel_tanks": 0x7fb2e0, "fuel_quantity_senders": 0x8a8f96,
     "static_wicks": 0x2b2b2b, "oat_probe": 0xc8ccd0,
+    "pfd_unit": 0x2a2c2f, "mfd_unit": 0x2a2c2f, "audio_panel_unit": 0x303236, "avionics_fans": 0x1f2022,
+    "flap_motor": 0x4a4d52, "flap_drive_pulleys": 0x8a8f96, "flap_cables": 0xb8bcc0, "flap_follow_up": 0x2b2c2e,
+    "flap_tracks": 0x9aa0a6, "cabin_heat_valve": 0xa6aaae, "heater_hose": 0x3b3c3e, "cabin_heat_plenum": 0x8f9398,
+    "defroster_ducts": 0x3b3c3e, "cabin_air_door": 0x9ea2a7, "fresh_air_ducts": 0x3b3c3e,
     # Pieces within a part.
     "tray": 0x8c8f93, "cover": 0x404247, "vent": 0xd8d8d0, "hose": 0x1e1f21,
 }
@@ -183,8 +221,9 @@ MOUNT_R = 0.011
 BATTERY_X, BATTERY_Y, BATTERY_DEPTH = (0.255, 0.475), (-0.33, -0.14), 0.16    # clear of the harness
 JUNCTION_BOX = ((0.33, 0.47), (-0.10, 0.06), 0.07)
 # Standby battery: (x, y, z) ranges behind the PFD (MM 24-30-10: "installed
-# behind the Primary Flight Display"; POH Fig. 6-9 arm 11.2).
-STANDBY_BATTERY = ((0.10, 0.27), (0.04, 0.13), (0.43, 0.52))
+# behind the Primary Flight Display"; POH Fig. 6-9 arm 11.2), aft of the
+# PFD's housing.
+STANDBY_BATTERY = ((0.10, 0.27), (0.04, 0.13), (0.46, 0.55))
 # Exhaust: the CAD cylinders' exhaust ports (measured from its own pipes),
 # the muffler's axis (x from -L to L at y, z) and radii.
 PORTS = {1: [(0.34, -0.166, 1.233), (0.34, -0.166, 1.364)],
@@ -241,6 +280,20 @@ def post_z(y):
     return z0 + (np.clip(y, y0, y1) - y0) * (z1 - z0) / (y1 - y0)
 
 
+# FlightGear's forward door post trim is a hollow about 4 cm square: (x,
+# [(y, z)]) down its middle, found by casting rays from the seats. Its top
+# opens aft (z -0.09) into the door frame and the wing root, the only way
+# in that the cabin can't see. The fresh air duct, the forward fuel line
+# and (right side) the flap follow-up cable share it, side by side in z.
+POST_HOLLOW = (0.50, [(0.38, -0.09), (0.34, -0.07), (0.31, -0.04), (0.26, -0.019), (0.20, 0.006), (0.14, 0.035),
+                      (0.08, 0.06)])
+
+
+def post_hollow(side, dx=0.0, dz=0.0, below=None):
+    x, pts = POST_HOLLOW
+    return [(side * (x + dx), y, z + dz) for y, z in pts if below is None or y > below]
+
+
 UNDER_FLOOR = -0.735
 RESERVOIR = ((-0.26, -0.16), (-0.775, -0.705), (0.42, 0.62))    # under the carpet, above the belly (Fig. 204: about 2:1:1)
 SELECTOR_VALVE = (0.0, UNDER_FLOOR, 0.25)
@@ -248,9 +301,10 @@ AUX_PUMP = ((-0.21, -0.09), UNDER_FLOOR, 0.705, 0.032)       # x range, y, z, ra
 SHUTOFF_VALVE = (-0.05, UNDER_FLOOR, 0.75)                  # by the copilot's pedals (MM 28-20-00: its rigging)
 # Each tank's two outlets at the bay's inboard rib (Fig. 201): the forward
 # one's line runs down the front door post, the aft one's down the rear
-# door post (FS) and forward under the floor at AFT_LINE_X.
-OUTLET_FS, AFT_POST_FS, AFT_LINE_X = (35.5, 58.0), 63.0, 0.24
-VENT_LINE = (0.50, -0.05)                                    # y, z: across the cabin top
+# door post (FS: inside the post's trim, which the MM puts at FS 65.33) and
+# forward under the floor at AFT_LINE_X.
+OUTLET_FS, AFT_POST_FS, AFT_LINE_X = (35.5, 58.0), 64.5, 0.24
+VENT_LINE = (0.495, -0.14)                                   # y, z: across the cabin top, aft of the windshield's view
 FUEL_LINE_R, VENT_R = 0.006, 0.004
 # Stall warning: the scoop's wing station; the horn at the upper left door post.
 STALL_WS = 91.0
@@ -271,8 +325,19 @@ RACK_UNITS = [("integrated_avionics_units", 0.025, 0.093), ("integrated_avionics
 AHRS = ((-0.10, -0.005), (-0.255, -0.195), (128.0, 136.0))   # x, y, FS ranges
 AIR_DATA = ((0.005, 0.09), (-0.255, -0.20), (128.0, 135.0))
 FAN = (0.15, -0.155, 0.04, 109.0)                            # x, y, radius, FS of its face
-# GEA 71 under the MFD (x -0.28 to -0.02 at the panel, z 0.35), lying flat.
-GEA = ((-0.23, -0.07), (-0.055, 0.01), (0.40, 0.64))       # behind the standby instruments, above the column
+# GDL 69A XM datalink (POH Fig. 6-9 34-11-S: arm 112.8, 1.9 lb): on edge in
+# the rack, outboard of the GTX (MM 34-54-00 Fig. 201). Garmin's GDL 69/69A
+# installation manual: 1.05 in wide, 6.15 in high, 7.20 in deep, 1.86 lb.
+DATALINK = ((-0.092 - 1.05 * 0.0254, -0.092), 6.15, 7.20, 112.8)   # x range, height, depth (in), FS of its centre
+# Its antenna, a Comant CI 420-10 (POH Fig. 6-9: arm 43.5) on the cabin top
+# (POH p. 7-74; the side isn't given: on the centreline). The datasheet
+# shows a four-screw teardrop but gives no size: length, width, height in
+# inches are those of the common GA teardrop, an estimate. Its nose sits
+# 0.6 in aft of the arm, clear of the OAT probe (its middle within an inch of the arm).
+XM_ANTENNA = (43.5 + 0.6, 4.6, 3.0, 0.8)
+# GEA 71 under the MFD (x -0.28 to -0.02 at the panel, z 0.35), lying flat
+# below the MFD's housing, inboard of the copilot's column arm.
+GEA = ((-0.215, -0.06), (-0.115, -0.05), (0.40, 0.62))     # behind the standby instruments, above the column
 # GMU 44: wing station (access plate 520HB, MM 6-20-00 Fig. 3) and FS (POH
 # Fig. 6-9 arm 52.7).
 GMU_WS, GMU_FS = 122.0, 52.7
@@ -336,6 +401,72 @@ OIL_FILTER = (-0.025, 0.02, (0.90, 1.01), 0.046)
 # FlightGear's spinner (scene z range; radius held to the spinner's, which
 # is smaller than a real 172's).
 RING_GEAR = ((1.678, 1.725), 0.118, 0.06)                   # z range, ring radius, hub radius
+# Behind the instrument panel (its face is at z PANEL_FACE). The GDU 1040s
+# (11.80 x 7.70 in bezel, 3.77 in deep with the connector: Garmin part
+# listings; POH Fig. 6-9 arm 16.4) behind FlightGear's PFD and MFD bezels,
+# their housings inset HOUSING_INSET from the bezel (an estimate). The GMA
+# 1347 (Garmin GMA 1347D installation manual: rack 1.325 x 6.30 in, 7.79 in
+# deep behind the panel with its connectors; POH arm 16.3) between them.
+PANEL_FACE = 0.364                     # m: aft of the audio panel's keys
+GDU_DEPTH, HOUSING_INSET = 3.77 * IN, 0.012
+GDU_BEZELS = {"pfd_unit": (0.066, 0.334), "mfd_unit": (-0.285, -0.016)}    # x ranges; y from BEZEL_Y
+BEZEL_Y = (-0.046, 0.149)
+GMA_RACK = ((0.004, 0.038), (-0.028, 0.132), 7.79 * IN)              # x, y ranges, depth
+# Avionics cooling fans (MM 21-21-00 Fig. 202, G1000): one under each
+# display blowing up into it, and the deck skin fan under the glareshield
+# on the right. (x, y, z) of each fan's centre, radius, thickness (sizes
+# and spots read from the figure: estimates).
+PANEL_FANS = [((0.29, -0.07, 0.42), 0.025), ((-0.03, -0.07, 0.42), 0.025), ((-0.30, 0.155, 0.48), 0.04)]
+FAN_T = 0.025
+# Flaps (MM 27-50-00 Figs. 201, 202; access panels 6-20-02 Fig. 3, read
+# by WS from the bottom view): a drive pulley in each wing just aft of the
+# rear spar (panel 610EB/510EB "flap controls", WS ~63), a push-pull rod
+# aft to the flap's bracket; the motor and transmission in the right wing
+# outboard of its pulley (panel 610GB "flap actuator", WS ~76), its
+# actuating tube (jack screw) inboard to the pulley; the direct and
+# retract cables from pulley to pulley across the cabin top, with a
+# turnbuckle in each; the flap supports with their rollers at each flap's
+# inboard and outboard ends (Fig. 202 details F, H).
+FLAP_PULLEY = (63.0, -0.83, 0.055)                   # WS, z, radius
+FLAP_CABLE_Z = (-0.82, -0.87)                        # across the cabin top (clear of the aileron carry-thru)
+FLAP_CABLE_Y, FLAP_CABLE_DY = 0.425, 0.01           # in the hidden gap over the headliner (pulleys too)
+FLAP_MOTOR_WS = 76.0
+FLAP_TRACK_X = (0.56, 2.50)
+# Flap follow-up control (MM 27-51-00 Fig. 201): a sheathed cable from a
+# bellcrank clamped to the direct cable above the headliner to the flap
+# lever's switch arm behind the panel; its route between them (here down
+# the right forward door post) is not drawn in the MM.
+FOLLOW_UP_X = -0.12
+FLAP_LEVER_BACK = (-0.175, -0.22, 0.40)
+# Cabin heat (MM 21-40-00 Fig. 201; POH Fig. 7-8): the heat shroud's outlet
+# hose to the shutoff valve riveted to the firewall's forward face, the
+# plenum on the cabin side behind it, floor outlets at its two ends, two
+# hoses up to the adjustable defroster outlets at the windshield's foot;
+# fresh air from the right-hand ventilating door (21-20-00 Fig. 201 detail
+# C: "on the right side of the fuselage, between the firewall and the
+# forward door post") into the plenum. The CABIN HT and CABIN AIR knobs'
+# cables run straight forward from the panel (21-40-00: "through hole in
+# instrument panel and through hole in firewall"). Sizes are estimates.
+HEAT_VALVE = ((-0.15, -0.05), (-0.53, -0.45), 0.06)           # x, y ranges, depth forward of the firewall
+PLENUM = ((-0.28, 0.28), (-0.50, -0.40), (0.668, 0.705))       # above the brake master cylinders
+FLOOR_OUTLET = (0.42, -0.60, 0.67)                    # outboard of the rudder pedals
+DEFROST_X, DEFROST_Z = 0.17, 0.56
+HEAT_KNOB, AIR_KNOB = (-0.263, -0.203, 0.46), (-0.263, -0.242, 0.46)
+AIR_DOOR = ((-0.48, -0.42), (0.57, 0.67))                     # y, z ranges on the right side skin
+DUCT_R = 0.022
+# Fresh air from the wing roots (21-20-00 Fig. 201; POH Fig. 7-8): the
+# leading-edge scoop feeds FlightGear's upper vent at FS 23.69 (detail B);
+# a second inlet in each wing root feeds a duct down the forward door post
+# to the mid-torso outlet and one aft above the headliner to the rear
+# seat's overhead outlet (detail A). The inlet's and outlets' spots are
+# read from the figures: estimates. The ducts keep inside FlightGear's
+# trim: down the door post's hollow (POST_HOLLOW), and in the 5 cm gap over
+# the headliner (ROOF_DUCT_X stays inboard of the roof's curve,
+# ROOF_DUCT_GAP above the headliner), so they are thinner than Cessna's.
+ROOT_INLET = (0.57, 0.47, 0.045)
+POST_DUCT_R, ROOF_DUCT_R = 0.011, 0.02
+ROOF_DUCT_X, ROOF_DUCT_GAP = 0.30, 0.025
+REAR_OUTLET_Z = -1.05
 
 
 def rgb_of(c, n):
@@ -664,17 +795,19 @@ def fuel_system(parts):
         fwd, aft = [(ox, hits(wing, ox, fs(st)).min() + 0.02, fs(st)) for st in OUTLET_FS]
         # Down the forward door post, following its rake.
         # Inboard inside the wing, just above its bottom skin, until within
-        # the fuselage's side, then down the post (no corner out in the air).
+        # the fuselage's side, then down the post (no corner out in the air):
+        # in its hollow (POST_HOLLOW) behind the fresh air duct, below it
+        # in the trim.
         def root(z):
             y = hits(wing, side * 0.55, z).min() + 0.03
             return [(side * 0.55, y, z), (side * POST_X, y, z)]
-        zt = post_z(0.38)
-        post = [(side * POST_X, y, post_z(y)) for y in (0.30, 0.0, -0.40)]
+        zt = POST_HOLLOW[1][0][1] - 0.01
+        post = post_hollow(side, 0.008, -0.016) + [(side * 0.508, y, post_z(y)) for y in (0.0, -0.40)]
         lines.append(tube([fwd, *root(zt), *post, (side * POST_X, UNDER_FLOOR, POST_Z), (side * 0.12, UNDER_FLOOR, sz),
                            (side * 0.03, sy, sz)], FUEL_LINE_R, 8))
         az, lx_ = fs(AFT_POST_FS), side * AFT_LINE_X
-        lines.append(tube([aft, *root(az), (side * POST_X, 0.28, az),
-                           (side * POST_X, low_y(parts, side * POST_X, az, UNDER_FLOOR, 0.01), az),
+        lines.append(tube([aft, *root(az), (side * POST_X, 0.28, az), (side * POST_X, -0.56, az),   # in from the skin's
+                           (side * 0.46, low_y(parts, side * 0.46, az, UNDER_FLOOR, 0.01), az),           # turn under the floor
                            (lx_, low_y(parts, lx_, az, UNDER_FLOOR, 0.01), az),
                            (lx_, low_y(parts, lx_, sz - 0.10, UNDER_FLOOR, 0.01), sz - 0.10),
                            (side * 0.03, sy - 0.012, sz - 0.03)], FUEL_LINE_R, 8))
@@ -698,10 +831,11 @@ def fuel_system(parts):
     vy_, vz_ = VENT_LINE
     lines.append(tube([(POST_X + 0.06, vy_ - 0.06, vz_), (POST_X, vy_, vz_), (-POST_X, vy_, vz_),
                        (-POST_X - 0.06, vy_ - 0.06, vz_)], VENT_R, 6))
-    lines.append(tube([(stack[0], y1 + 0.02, stack[2]), (stack[0], y1 + 0.03, stack[2] - 0.05),
-                       (-POST_X, y1 + 0.03, POST_Z - 0.03),
-                       *[(-POST_X, y, post_z(y) - 0.03) for y in (-0.40, 0.0, 0.38)],
-                       (-POST_X, vy_, vz_)], VENT_R, 6))                         # reservoir vent, up the right post
+    lines.append(tube([(stack[0], y1 + 0.02, stack[2]), (stack[0], y1 + 0.012, stack[2] - 0.05),
+                       (-0.47, y1 + 0.012, POST_Z - 0.03), (-0.50, -0.60, post_z(-0.60) - 0.012),
+                       *[(-0.508, y, post_z(y) - 0.012) for y in (-0.40, 0.0)],
+                       *post_hollow(-1, dz=-0.025)[::-1],
+                       (-POST_X, vy_, vz_)], VENT_R, 6))                         # reservoir vent: under the carpet, up the right post
     return reservoir, valve, pump, shutoff, lines, reservoir_drain, selector_drain
 
 
@@ -839,17 +973,42 @@ def stall_warning(parts):
             cylinder((hx - 0.02, hy, hz), (hx - 0.035, hy, hz), 0.022, 16)]
 
 
+def teardrop(nose, y, length, width, height, n=24):
+    """A teardrop antenna on a skin at height y: its round nose (centre x,
+    z) forward, tapering aft; rings drawn in, rising to a flat top."""
+    r = width / 2
+    a = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    # Outline: the nose circle, pulled out aft into a point (hull of circle + tip).
+    ring = hull(np.vstack([np.c_[r * np.cos(a), r * np.sin(a)], [[0.0, -(length - r)]]]))
+    rings = [(y + height * t, 1 - 0.45 * t ** 2) for t in np.linspace(0, 1, 5)]
+    verts, tris, m = [], [], len(ring)
+    for k, (ry, sc) in enumerate(rings):
+        cz = -(length - r) * 0.35 * (1 - sc)                     # shrink toward the body's middle
+        verts += [(nose[0] + px * sc, ry, nose[1] + cz + pz * sc) for px, pz in ring]
+        if k:
+            b0, b1 = (k - 1) * m, k * m
+            for i in range(m):
+                j = (i + 1) % m
+                tris += [(b0 + i, b0 + j, b1 + j), (b0 + i, b1 + j, b1 + i)]
+    top = len(verts)
+    verts.append((nose[0], rings[-1][0], np.mean([v[2] for v in verts[-m:]])))
+    tris += [((len(rings) - 1) * m + i, (len(rings) - 1) * m + (i + 1) % m, top) for i in range(m)]
+    return np.array(verts, dtype=np.float64), np.array(tris)[:, ::-1]      # outward faces
+
+
 def avionics(parts):
     """-> {part id: pieces} for the G1000 units."""
     out = {k: [] for k in ("integrated_avionics_units", "transponder", "ahrs", "air_data_computer",
-                           "avionics_shelf", "engine_airframe_unit", "magnetometer")}
+                           "avionics_shelf", "engine_airframe_unit", "magnetometer", "datalink")}
     za, zb = fs(SHELF_FS[1]), fs(SHELF_FS[0])        # aft, forward
     ra, rb = fs(RACK_FS[1]), fs(RACK_FS[0])
     y0, y1 = RACK_Y
     for pid, x0, x1 in RACK_UNITS:
         out[pid].append(box((x0, y0, ra), (x1, y1, rb)))
-    out["avionics_shelf"] += [box((-0.11, y0 - 0.006, za), (0.20, y0, zb)),
-                              box((-0.11, y1 + 0.004, ra), (0.11, y1 + 0.01, rb))]       # the rack's top
+    (dx0, dx1), dh, dd, dfs = DATALINK
+    out["datalink"].append(box((dx0, y0, fs(dfs) - dd * IN / 2), (dx1, y0 + dh * IN, fs(dfs) + dd * IN / 2)))
+    out["avionics_shelf"] += [box((-0.13, y0 - 0.006, za), (0.20, y0, zb)),
+                              box((-0.125, y1 + 0.004, ra), (0.11, y1 + 0.01, rb))]      # the rack's top
     for pid, ((x0, x1), (ay0, ay1), (f0, f1)) in (("ahrs", AHRS), ("air_data_computer", AIR_DATA)):
         out[pid].append(box((x0, ay0, fs(f1)), (x1, ay1, fs(f0))))
     fx, fy, fr, ffs = FAN
@@ -1102,6 +1261,146 @@ def flight_controls(parts):
     return out
 
 
+def panel_avionics():
+    """-> {part id: pieces}: the display units' and the audio panel's
+    housings behind the panel, and the cooling fans."""
+    out = {k: [] for k in ("pfd_unit", "mfd_unit", "audio_panel_unit", "avionics_fans")}
+    y0, y1 = BEZEL_Y
+    i = HOUSING_INSET
+    for pid, (x0, x1) in GDU_BEZELS.items():
+        out[pid] += [box((x0 + i, y0 + i, PANEL_FACE), (x1 - i, y1 - i, PANEL_FACE + GDU_DEPTH - 0.02)),
+                     ("tray", box((x0 + 0.05, y0 + 0.04, PANEL_FACE + GDU_DEPTH - 0.02),
+                                  (x0 + 0.12, y0 + 0.07, PANEL_FACE + GDU_DEPTH)))]        # connector
+    (x0, x1), (gy0, gy1), d = GMA_RACK
+    out["audio_panel_unit"] += [box((x0, gy0, PANEL_FACE), (x1, gy1, PANEL_FACE + d - 0.02)),
+                                ("tray", box((x0 + 0.004, gy0 + 0.03, PANEL_FACE + d - 0.02),
+                                             (x1 - 0.004, gy1 - 0.03, PANEL_FACE + d)))]
+    for (x, y, z), r in PANEL_FANS:
+        out["avionics_fans"] += [box((x - r - 0.004, y - FAN_T / 2, z - r - 0.004), (x + r + 0.004, y + FAN_T / 2, z + r + 0.004)),
+                                 ("hose", cylinder((x, y - FAN_T / 2 - 0.001, z), (x, y + FAN_T / 2 + 0.001, z), r * 0.9, 16))]
+    return out
+
+
+def flaps(parts):
+    """-> {part id: pieces} for the flap drive."""
+    out = {k: [] for k in ("flap_motor", "flap_drive_pulleys", "flap_cables", "flap_follow_up", "flap_tracks")}
+    ws, pz, pr = FLAP_PULLEY
+    flap = tris_of(parts, "flaps")
+    tangents = {}
+    for side in (1, -1):
+        px = side * ws * IN
+        py = wing_mid_y(parts, px, pz)
+        c = np.array([px, py, pz])
+        # The drive pulley: a disc on a vertical bolt, with its arm.
+        out["flap_drive_pulleys"] += [cylinder(c - (0, 0.008, 0), c + (0, 0.008, 0), pr, 20),
+                                      cylinder(c - (0, 0.03, 0), c + (0, 0.03, 0), 0.006, 8)]
+        # The push-pull rod from the pulley's aft edge to the flap's bracket.
+        le = section(flap, 0, px + side * 0.02)
+        le = le[le[:, 0] * side > 0]
+        top = le[le[:, 2].argmax()]
+        out["flap_drive_pulleys"].append(tube([c + (side * 0.02, 0.012, -pr * 0.8),
+                                               (top[0], top[1] + 0.012, top[2] - 0.03)], 0.006, 8))
+        out["flap_drive_pulleys"].append(box((top[0] - 0.015, top[1], top[2] - 0.06), (top[0] + 0.015, top[1] + 0.02, top[2] - 0.01)))
+        tangents[side] = [c + (0, 0, pr), c - (0, 0, pr)]
+        # The flap supports: a track plate on each end of the flap, a roller on the flap.
+        for tx in FLAP_TRACK_X:
+            x = side * tx
+            s = section(flap, 0, x)
+            s = s[s[:, 0] * side > 0]
+            f = s[s[:, 2].argmax()]
+            wy = hits(wing_skin(parts, side), x, -0.85)
+            out["flap_tracks"] += [box((x - 0.003, wy.min() - 0.03, f[2] + 0.005), (x + 0.003, wy.max() - 0.012, FLAP_CABLE_Z[1] - 0.012)),
+                                   ("hose", cylinder((x - side * 0.004, f[1] + 0.02, f[2] - 0.03),
+                                                     (x - side * 0.016, f[1] + 0.02, f[2] - 0.03), 0.013, 12))]
+    # Motor, transmission and actuating tube in the right wing.
+    c = np.array([-ws * IN, wing_mid_y(parts, -ws * IN, pz), pz])
+    tx = -FLAP_MOTOR_WS * IN
+    arm = c + (-pr * 0.7, 0, pr * 0.7)
+    ty = arm[1]
+    out["flap_motor"] += [tube([arm, (tx, ty, arm[2])], 0.011, 10),                        # actuating tube and jack screw
+                          box((tx - 0.035, ty - 0.035, arm[2] - 0.065), (tx + 0.02, ty + 0.035, arm[2] + 0.025)),   # transmission
+                          cylinder((tx - 0.03, ty, arm[2] - 0.08), (tx + 0.10, ty, arm[2] - 0.08), 0.034, 16),     # motor
+                          tube([(tx + 0.02, ty, arm[2] + 0.02), (arm[0] - 0.04, ty, arm[2] + 0.02)], 0.004, 6)]   # limit switch support
+    # Direct and retract cables, pulley to pulley across the cabin top.
+    for k, cz in enumerate(FLAP_CABLE_Z):
+        run = []
+        for side in (1, -1):
+            t = tangents[side][k]
+            pts = [t, (side * (ws * IN - 0.12), t[1], cz), (side * 0.555, wing_mid_y(parts, side * 0.555, cz) + 0.012 * k, cz),
+                   (side * 0.40, FLAP_CABLE_Y - FLAP_CABLE_DY * k, cz)]
+            run = pts if side > 0 else run + pts[::-1]
+        out["flap_cables"] += cable(run)
+        for tx_ in (0.15, -0.15):
+            out["flap_cables"].append(("tray", cylinder((tx_ - 0.03, FLAP_CABLE_Y - FLAP_CABLE_DY * k, cz),
+                                                        (tx_ + 0.03, FLAP_CABLE_Y - FLAP_CABLE_DY * k, cz), 0.006, 8)))  # turnbuckle
+    # Follow-up control: the bellcrank on the cabin top, clamped to the
+    # direct cable, and the sheathed cable to the flap lever.
+    b = np.array([FOLLOW_UP_X, FLAP_CABLE_Y + 0.02, FLAP_CABLE_Z[0] + 0.03])
+    # Forward over the headliner, then down the right door post's hollow.
+    liner = tris_of(parts, "cabin_interior")
+    roof = [(-0.38, hits(liner, -0.38, z).max() + 0.02, z) for z in (-0.70, -0.50, -0.30, -0.18)]
+    out["flap_follow_up"] += [box(b - (0.03, 0.004, 0.02), b + (0.03, 0.004, 0.02)),
+                              tube([b + (0, 0, 0.02), *roof, (-0.50, 0.44, -0.10), *post_hollow(-1, -0.008, -0.016),
+                                    *[(-0.508, y, post_z(y) + 0.03) for y in (0.0, -0.28)],
+                                    (-0.51, -0.28, 0.40), (-0.25, -0.24, 0.41), FLAP_LEVER_BACK], 0.005, 8)]  # behind the kick panel and the panel
+    return out
+
+
+def cabin_heat(parts):
+    """-> {part id: pieces} for the cabin heat and ventilating air system."""
+    out = {k: [] for k in ("cabin_heat_valve", "heater_hose", "cabin_heat_plenum", "defroster_ducts",
+                           "cabin_air_door", "fresh_air_ducts")}
+    (x0, x1), (y0, y1), d = HEAT_VALVE
+    xm, ym = (x0 + x1) / 2, (y0 + y1) / 2
+    z0 = FIREWALL_Z + 0.002
+    out["cabin_heat_valve"] += [box((x0, y0, z0), (x1, y1, z0 + d)),
+                                cylinder((xm, ym, z0 + d - 0.005), (xm, ym, z0 + d + 0.03), 0.03, 16),   # inlet
+                                ("tray", box((x1, y1 - 0.03, z0 + 0.02), (x1 + 0.03, y1 - 0.02, z0 + 0.045))),  # control arm
+                                ("hose", tube([HEAT_KNOB, (-0.24, -0.30, 0.62), (-0.10, -0.40, FIREWALL_Z - 0.06),
+                                               (x1 + 0.02, y1 - 0.025, FIREWALL_Z - 0.01),
+                                               (x1 + 0.02, y1 - 0.025, z0 + 0.03)], 0.004, 6))]
+    _, my, mz = E((0, MUFFLER_Y, MUFFLER_Z))
+    out["heater_hose"].append(tube([(0.05, my, mz - SHROUD_R - 0.03), (0.0, -0.47, 1.15), (xm, -0.50, 0.95),
+                                    (xm, ym, z0 + d + 0.02)], 0.026, 12))
+    (px0, px1), (py0, py1), (pz0, pz1) = PLENUM
+    pm, pzm = (py0 + py1) / 2, (pz0 + pz1) / 2
+    out["cabin_heat_plenum"].append(box((px0, py0, pz0), (px1, py1, pz1)))
+    fx, fy, fz = FLOOR_OUTLET
+    for side in (1, -1):
+        out["cabin_heat_plenum"] += [tube([(side * (px1 - 0.03), py0 + 0.01, pzm), (side * fx, fy + 0.05, fz + 0.01),
+                                           (side * fx, fy + 0.01, fz)], DUCT_R, 12),
+                                     box((side * fx - 0.05, fy - 0.025, fz - 0.06), (side * fx + 0.05, fy + 0.02, fz + 0.02))]
+        x = side * DEFROST_X
+        deck = hits(tris_of(parts, "instrument_panel"), x, DEFROST_Z).min()
+        out["defroster_ducts"] += [tube([(x, py1 - 0.01, pzm), (x, py1 + 0.05, 0.685), (x, 0.08, 0.685),
+                                         (x, deck - 0.04, DEFROST_Z + 0.02), (x, deck - 0.03, DEFROST_Z)], DUCT_R, 12),
+                                   ("tray", box((x - 0.06, deck - 0.03, DEFROST_Z - 0.025), (x + 0.06, deck - 0.002, DEFROST_Z + 0.025)))]
+    (dy0, dy1), (dz0, dz1) = AIR_DOOR
+    skin = -0.528
+    out["cabin_air_door"] += [box((skin - 0.004, dy0, dz0), (skin + 0.004, dy1, dz1)),
+                              ("tray", box((skin + 0.004, dy0 - 0.01, dz0 - 0.01), (skin + 0.04, dy1 + 0.01, dz1 + 0.01))),  # inlet
+                              ("hose", tube([AIR_KNOB, (-0.30, -0.33, 0.58), (-0.47, -0.41, 0.60), (skin + 0.045, -0.42, 0.60)],
+                                            0.004, 6))]
+    out["fresh_air_ducts"].append(tube([(skin + 0.04, (dy0 + dy1) / 2, (dz0 + dz1) / 2), (-0.40, pm, (dz0 + dz1) / 2),
+                                        (px0 + 0.01, pm, pzm)], DUCT_R, 12))
+    liner = tris_of(parts, "cabin_interior")
+    roof = [(z, hits(liner, ROOF_DUCT_X, z).max() + ROOF_DUCT_GAP) for z in np.arange(-0.20, REAR_OUTLET_Z, -0.05)]
+    roof.append((REAR_OUTLET_Z, hits(liner, ROOF_DUCT_X, REAR_OUTLET_Z).max() + ROOF_DUCT_GAP))
+    for side in (1, -1):
+        inlet = np.array([side * ROOT_INLET[0], ROOT_INLET[1], ROOT_INLET[2]])
+        post = post_hollow(side, dz=0.008)
+        (px, oy, oz), (ry, rz) = post[-1], (roof[-1][1], REAR_OUTLET_Z)
+        out["fresh_air_ducts"] += [("cabin_air_door", box(inlet - (0.025, 0.02, 0.025), inlet + (0.025, 0.02, 0.025))),
+                                   tube([inlet + (0, -0.01, -0.02), (side * 0.55, 0.45, -0.10), (side * 0.50, 0.40, -0.10)]
+                                        + post, POST_DUCT_R, 10),
+                                   ("cabin_air_door", cylinder((px, oy, oz), (side * 0.455, oy, oz), 0.018, 16)),
+                                   tube([inlet + (0, 0, -0.02), (side * 0.55, 0.48, -0.14), (side * 0.42, 0.487, -0.20)]
+                                        + [(side * ROOF_DUCT_X, y, z) for z, y in roof], ROOF_DUCT_R, 12),
+                                   ("cabin_air_door", cylinder((side * ROOF_DUCT_X, ry, rz),
+                                                               (side * ROOF_DUCT_X, ry - ROOF_DUCT_GAP - 0.01, rz), 0.03, 16))]
+    return out
+
+
 def load(parts):
     """-> parts to add to the aircraft and engine's."""
     risers, muffler, shroud = exhaust()
@@ -1118,7 +1417,14 @@ def load(parts):
     oat = part("oat_probe", "pitot_static", oat_probe(parts))
     stall = part("stall_warning", "flight_controls", stall_warning(parts))
     units = [part(pid, "avionics", pieces) for pid, pieces in avionics(parts).items()]
+    afs, al, aw, ah = XM_ANTENNA
+    az = fs(afs)
+    roof = hits(tris_of(parts, "fuselage"), 0.0, az).max()
+    units.append(part("xm_antenna", "antennas", [teardrop((0.0, az), roof - 0.002, al * IN, aw * IN, ah * IN)]))
     controls = [part(pid, "flight_controls", pieces) for pid, pieces in flight_controls(parts).items()]
+    controls += [part(pid, "flight_controls", pieces) for pid, pieces in flaps(parts).items()]
+    units += [part(pid, "avionics", pieces) for pid, pieces in panel_avionics().items()]
+    heat = [part(pid, "cabin", pieces) for pid, pieces in cabin_heat(parts).items()]
     cooler, starter, vacuum, oil_filter = engine_accessories()
     engine_parts = [part("oil_cooler", "engine", cooler, ask=True), part("starter", "engine", starter, ask=True),
                     part("vacuum_pump", "engine", vacuum, ask=True),
@@ -1143,4 +1449,4 @@ def load(parts):
             part("brake_lines", "landing_gear", lines),
             part("fuel_sump_drains", "fuel", sump_drains(parts)),
             part("static_port", "pitot_static", static_port(parts)),
-            *fuel, stall, wicks, oat, *units, *controls, *engine_parts, placards(parts)]
+            *fuel, stall, wicks, oat, *units, *controls, *heat, *engine_parts, placards(parts)]

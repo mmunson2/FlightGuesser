@@ -691,6 +691,28 @@ not most sizes, so check against your airplane:
   actuator in the right stabilizer. Rudder cables run beside the
   centreline to FlightGear's stubs at the tail. Cables are drawn about
   twice their real 1/8 in so they can be seen.
+- **Behind the panel** (2026-11-25): the PFD and MFD housings and the
+  audio panel's rack use Garmin's published sizes; the three cooling fans'
+  spots come from a manual drawing of an older panel. The standby battery
+  moved an inch forward to clear the PFD housing, and the GEA 71 now lies
+  just below the MFD housing.
+- **Flaps** (2026-11-25): the motor is in the right wing (the manual's
+  schematic and access panel 610GB), at about WS 76, with the drive
+  pulleys at about WS 63; both stations are read off the manual's access
+  panel drawing. The cables cross the cabin top above the headliner. The
+  follow-up cable's route from the headliner to the flap lever is my
+  guess (down the right forward door post).
+- **XM antenna** (2026-11-25): the POH gives its arm (43.5) and "top of the
+  cabin", not its side or size. It's drawn on the centreline just aft of
+  the OAT probe: where is the white teardrop on your airplane's roof?
+- **Cabin heat and air** (2026-11-25): the shutoff valve on the engine
+  side of the firewall, the plenum behind the panel, floor outlets at its
+  ends, defroster outlets under the glareshield, the fresh air door on the
+  right side ahead of the door, and ducts from each wing root to a
+  mid-torso outlet and a rear overhead outlet. The manual shows what
+  connects to what, not where: check the outlets' spots in your airplane
+  (where are the floor heat outlets, the defroster slots, and the vents
+  for the front and rear seats?).
 - **Engine fuel parts from the CAD model**: the fuel manifold (spider) on
   top, the four injector lines, the servo under the engine and the lines
   between them were fused into the crankcase and servo solids; they are
