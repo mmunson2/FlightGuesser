@@ -898,7 +898,7 @@
 
   goView(Object.keys(SCENE_DATA.views)[0]);
   // In the seat the yokes are in the way of the lower panel: while the
-  // pointer is over one, both fade out, as if reaching past them, and fade
+  // pointer is on or near one, both fade out, as if reaching past them, and fade
   // back once it leaves. The ray tests the yokes' shape even while they're
   // gone; clicks go through them from the moment the fade starts. True
   // while fading, so the viewer draws a frame.
@@ -915,6 +915,12 @@
     scene.add(yokeDepth);       // hidden once its shader is compiled, below
   }
   const FADE_OUT = 0.12, FADE_IN = 0.2;   // seconds
+  // Within REACH of a yoke starts the fade; once faded the yokes stay away
+  // while the pointer is within STAY of them (the switches and lights just
+  // beside and behind them), and LINGER after it leaves. Pixels at an
+  // 830 px tall view, scaled with it.
+  const REACH = 20, STAY = 70, LINGER = 400;
+  let leftAt = 0;
   const meshRaycast = THREE.Mesh.prototype.raycast;
   const noRaycast = () => {};
   let hoverAt = null, fade = 1, fadeT = performance.now();
@@ -930,6 +936,23 @@
     testedView.copy(view);
     return true;
   }
+  // A yoke under the pointer or within `radius` pixels of it: rays at the
+  // pointer and on two rings around it.
+  const hits = [];
+  function yokeNear(e, radius) {
+    const r = renderer.domElement.getBoundingClientRect(), k = r.height / 830;
+    const rings = [0, radius / 2, radius];
+    for (const d of rings) {
+      for (let i = 0; i < (d ? 8 : 1); i++) {
+        const a = (i * Math.PI) / 4, x = e.clientX + Math.cos(a) * d * k, y = e.clientY + Math.sin(a) * d * k;
+        ray.setFromCamera({ x: ((x - r.left) / r.width) * 2 - 1, y: -((y - r.top) / r.height) * 2 + 1 }, camera);
+        hits.length = 0;
+        meshRaycast.call(yokes, ray, hits);
+        if (hits.length) return true;
+      }
+    }
+    return false;
+  }
   function reachPastYokes() {
     if (!yokes) return false;
     const now = performance.now(), dt = Math.min(0.1, (now - fadeT) / 1000);
@@ -939,12 +962,12 @@
     // Not mid-drag: a knob turned behind the yoke keeps it out of the way.
     else if (hoverAt.buttons === 0 && (hoverAt !== testedAt || viewChanged())) {
       testedAt = hoverAt;
-      const r = renderer.domElement.getBoundingClientRect();
-      ray.setFromCamera({ x: ((hoverAt.clientX - r.left) / r.width) * 2 - 1,
-                          y: -((hoverAt.clientY - r.top) / r.height) * 2 + 1 }, camera);
-      const hits = [];
-      meshRaycast.call(yokes, ray, hits);
-      reaching = hits.length > 0;
+      const near = yokeNear(hoverAt, reaching ? STAY : REACH);
+      if (near) leftAt = 0;
+      else if (reaching && !leftAt) leftAt = now;
+      reaching = near || (reaching && now - leftAt < LINGER);
+      // Check again once the linger is up, though nothing moved.
+      if (!near && reaching) testedAt = null;
     }
     yokes.userData.reaching = reaching;
     // Picking (here, js/g1000-panel.js) skips the yokes while reaching.
