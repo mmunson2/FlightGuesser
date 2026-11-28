@@ -309,6 +309,9 @@ window.G1000 = (function () {
     return best?.w ?? null;
   }
   const panPage = () => ['MAP:0', 'FPL:0'].includes(pages.pageKey());
+  // A one-off help note (why a key did nothing, what the mock leaves out).
+  // Not drawn on the displays, which the real unit wouldn't show: kept
+  // for a separate help UI.
   const note = (text) => { state.note = { text, until: state.t + 4 }; };
 
   // ---- Navigation: the active CDI source's deviation ----

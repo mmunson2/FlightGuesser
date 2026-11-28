@@ -21,7 +21,15 @@ left edge. Still open:
 ## The G1000 mock (js/g1000.js)
 
 The live PFD/MFD and Operate mode follow the G1000 NXi and GFC 700 as I
-remember the pilot's guides. Softkey labels and the radio boxes' layout
+remember the pilot's guides.
+
+**No help on the screens** (2026-11-27): the displays show only what the
+real unit would. Key hints, "not in the mock" notes and disclaimers are
+not drawn. Where this file says a note or a hint shows, it is now kept
+as data for a separate help UI: one-off notes in `state.note`, and each
+frame's page and window hints in `G1000_DISPLAY.help('pfd' | 'mfd')`.
+That includes the MINIMUMS note, why a greyed menu option doesn't work,
+and the airspace name under an alert message. Softkey labels and the radio boxes' layout
 were checked against the NXi in MSFS 2020. Check the rest against
 Garmin's *G1000 NXi Pilot's Guide for the Cessna 172* (190-02520-xx) and
 the GFC 700 AFMS:

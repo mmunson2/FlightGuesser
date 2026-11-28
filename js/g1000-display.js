@@ -19,6 +19,14 @@ window.G1000_DISPLAY = (function () {
   // Blinks at 2 Hz while `until` is ahead.
   const blinkOn = (s, until) => !(s.t < until && Math.floor(s.t * 4) % 2 === 0);
 
+  // Help (which key does what, what the mock leaves out, disclaimers) is
+  // never drawn: the real displays have none. Each frame's lines are kept
+  // per display for a separate help UI (help(display)); js/g1000.js keeps
+  // the latest one-off note in state.note the same way.
+  const helpLines = { pfd: [], mfd: [] };
+  let helpFor = 'mfd';
+  const hint = (ctx, str) => { helpLines[helpFor].push(str); };
+
   function text(ctx, str, x, y, { size = 26, color = C.white, align = 'left', base = 'middle', bold = true } = {}) {
     ctx.font = font(size, bold);
     ctx.fillStyle = color;
@@ -170,9 +178,9 @@ window.G1000_DISPLAY = (function () {
     }
     if (win.prompt) {
       box(ctx, x + 10, y + h - 46, w - 20, 36, { fill: C.cyan, stroke: null });
-      text(ctx, win.prompt.text + '  ENT / CLR', x + w / 2, y + h - 27, { size: 18, align: 'center', color: C.black });
+      text(ctx, win.prompt.text, x + w / 2, y + h - 27, { size: 18, align: 'center', color: C.black });
     } else if (win.cursor == null) {
-      text(ctx, 'Push FMS for the cursor', x + w / 2, y + h - 20, { size: 15, align: 'center', color: C.grey });
+      hint(ctx, 'Push FMS for the cursor');
     }
   }
 
@@ -227,7 +235,7 @@ window.G1000_DISPLAY = (function () {
       text(ctx, m.confirm.text, x + w / 2, y + h - 62, { size: 18, align: 'center' });
       box(ctx, x + w / 2 - 50, y + h - 46, 100, 28, { fill: C.cyan, stroke: null });
       text(ctx, 'OK', x + w / 2, y + h - 31, { size: 18, align: 'center', color: C.black });
-      text(ctx, 'CLR: cancel', x + w - 20, y + h - 31, { size: 14, align: 'right', color: C.grey });
+      hint(ctx, 'ENT: OK · CLR: cancel');
     } else {
       text(ctx, 'Press the FMS CRSR knob to return to base page', x + w / 2, y + h - 20,
         { size: 14, align: 'center', color: C.grey });
@@ -243,9 +251,9 @@ window.G1000_DISPLAY = (function () {
     if (r && r.lat != null) {
       text(ctx, `BRG ${pad3(r.brg)}°  DIS ${r.dist.toFixed(1)}NM`, x + 18, y + 128, { size: 19 });
       text(ctx, `on the leg ${s.fms.fpl.wpts[r.after]} → ${s.fms.fpl.wpts[r.after + 1]}`, x + 18, y + 156, { size: 16, color: C.grey });
-      text(ctx, 'ENT: save as a user waypoint · CLR: back', x + w / 2, y + h - 16, { size: 14, align: 'center', color: C.grey });
+      hint(ctx, 'ENT: save as a user waypoint · CLR: back');
     } else {
-      text(ctx, 'Small knob: character · ENT: find the point', x + w / 2, y + h - 16, { size: 14, align: 'center', color: C.grey });
+      hint(ctx, 'Small knob: character · ENT: find the point');
     }
   }
   // A setup window (Map Setup, PFD Map Setup, Change Fields): the GROUP
@@ -265,7 +273,7 @@ window.G1000_DISPLAY = (function () {
     ctx.strokeStyle = C.grey; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(x + 10, y + 80); ctx.lineTo(x + w - 10, y + 80); ctx.stroke();
     view.rows.forEach((r, i) => line(r.label, fmt(r.value), y + 100 + i * rowH, m.cursor === i));
-    text(ctx, 'Large knob: setting · small knob: change · CLR: done', x + w / 2, y + h - 16, { size: 14, align: 'center', color: C.grey });
+    hint(ctx, 'Large knob: setting · small knob: change · CLR: done');
   }
 
   // The PFD's Timer/References window (js/g1000-timer.js): the timer, the
@@ -301,8 +309,7 @@ window.G1000_DISPLAY = (function () {
     field(r.mins.mode, x + 210, rowY(6), r.mins.mode === 'OFF' ? C.grey : C.cyan);
     field(`${r.mins.ft}FT`, x + w - 12, rowY(6));
     console.assert(n === F.length, 'timer window fields');
-    text(ctx, 'Large knob: field · small knob: change · ENT: timer', x + w / 2, y + h - 16,
-      { size: 14, align: 'center', color: C.grey });
+    hint(ctx, 'Large knob: field · small knob: change · ENT: timer');
   }
 
   // The PFD's Nearest Airports window: identifier, bearing, distance.
@@ -320,8 +327,7 @@ window.G1000_DISPLAY = (function () {
       text(ctx, r.dist.toFixed(1) + 'NM', x + 270, ry, { size: 20, align: 'right' });
       text(ctx, r.w.towered ? 'TWR' : '', x + w - 12, ry, { size: 15, align: 'right', color: C.grey });
     });
-    text(ctx, win.cursor == null ? 'Push FMS for the cursor' : 'D→ goes direct to the selection',
-      x + w / 2, y + h - 16, { size: 15, align: 'center', color: C.grey });
+    hint(ctx, win.cursor == null ? 'Push FMS for the cursor' : 'D→ goes direct to the selection');
   }
 
   // ---- MFD pages (js/g1000-pages.js) ----
@@ -350,8 +356,6 @@ window.G1000_DISPLAY = (function () {
     text(ctx, ident, x, y, { size: 28 });
     return null;
   }
-  const hint = (ctx, str) => text(ctx, str, PAGE.x + PAGE.w / 2, PAGE.y + PAGE.h - 70,
-    { size: 15, align: 'center', color: C.grey });
 
   // Runway edge lights as the Chart Supplement writes them.
   const LIGHTS = { HIGH: 'HIRL', MED: 'MIRL', LOW: 'LIRL', NSTD: 'NSTD LGTS' };
@@ -682,7 +686,7 @@ window.G1000_DISPLAY = (function () {
       ctx.fillRect(bx, by - h, bw, h);
       text(ctx, String(sat.prn), bx + bw / 2, by + 14, { size: 13, align: 'center', color: C.grey });
     });
-    text(ctx, 'Made-up constellation, for the look of the page', PAGE.x + PAGE.w - 20, PAGE.y + 50, { size: 13, align: 'right', color: C.grey });
+    hint(ctx, 'Made-up constellation, for the look of the page');
   }
 
   // A string cut at a word to fit `room` pixels in `f`, with an ellipsis.
@@ -736,13 +740,13 @@ window.G1000_DISPLAY = (function () {
       text(ctx, resp, x + w - 8, ry, { size: 16, align: 'right', color, bold: false });
     }
     hint(ctx, 'Large knob: cursor · small knob: group, checklist · ENT: check · CLR: uncheck');
-    text(ctx, 'From the C172S POH (2007). Not for flight.', PAGE.x + PAGE.w - 20, PAGE.y + PAGE.h - 94, { size: 12, align: 'right', color: C.grey });
+    hint(ctx, 'From the C172S POH (2007). Not for flight.');
   }
 
   function placeholder(ctx, s, G) {
     pageBackground(ctx);
     text(ctx, G.pages.pageName(), PAGE.x + PAGE.w / 2, PAGE.y + PAGE.h / 2 - 20, { size: 26, align: 'center' });
-    text(ctx, 'Not in the mock yet', PAGE.x + PAGE.w / 2, PAGE.y + PAGE.h / 2 + 20, { size: 20, align: 'center', color: C.grey });
+    hint(ctx, 'Not in the mock yet');
   }
 
   // Bottom right: the page groups, the shown one cyan, with a box per page
@@ -853,22 +857,14 @@ window.G1000_DISPLAY = (function () {
     text(ctx, 'ALERTS', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
     const msgs = s.alerts.messages;
     if (!msgs.length) text(ctx, 'No messages', x + w / 2, y + 70, { size: 18, align: 'center', color: C.grey });
-    const rowH = 58, n = Math.floor((h - 60) / rowH);
+    const rowH = 44, n = Math.floor((h - 60) / rowH);
     msgs.slice(win.first, win.first + n).forEach((m, k) => {
       const ry = y + 52 + k * rowH;
       text(ctx, m.title, x + 12, ry, { size: 17, color: C.white });
       text(ctx, m.text, x + 12, ry + 20, { size: 14, color: C.white, bold: false });
-      text(ctx, m.about.replace(/ CLASS ([BCD])\d*$/, ' ($1)').slice(0, 40), x + 12, ry + 38, { size: 13, color: C.grey });
+      if (m.about) hint(ctx, `${m.title}: ${m.about}`);
     });
     if (win.first + n < msgs.length) text(ctx, '▼', x + w - 16, y + h - 14, { size: 14, color: C.grey });
-  }
-
-  function noteBar(ctx, s) {
-    if (!s.note || s.t > s.note.until) return;
-    ctx.font = font(20);
-    const w = ctx.measureText(s.note.text).width + 30;
-    box(ctx, (W - w) / 2, H - 80, w, 36, { fill: '#2a2d33', stroke: C.yellow });
-    text(ctx, s.note.text, W / 2, H - 62, { size: 20, align: 'center', color: C.yellow });
   }
 
   // ---- PFD ----
@@ -1424,6 +1420,7 @@ window.G1000_DISPLAY = (function () {
   }
 
   function drawPFD(ctx, s, G, whole = false) {
+    helpFor = 'pfd'; helpLines.pfd = [];
     if (s.reversion && !whole) return reversionary(ctx, s, G);
     ctx.clearRect(0, 0, W, H);
     attitude(ctx, s);
@@ -1444,7 +1441,6 @@ window.G1000_DISPLAY = (function () {
     fmsWindow(ctx, s, G, 'pfd');
     pageMenuWindow(ctx, s, G, 'pfd');
     softkeys(ctx, s, G, 'pfd');
-    noteBar(ctx, s);
     last.pfd = { t: s.t, ias: s.ias, trend: last.pfd?.trend };
   }
 
@@ -1780,7 +1776,7 @@ window.G1000_DISPLAY = (function () {
     // The orientation, top left.
     text(ctx, { 'Heading Up': 'HDG UP', 'Track Up': 'TRK UP', 'North Up': 'NORTH UP' }[s.mapSet.orient], x0 + 10, y0 + 18, { size: 16, color: C.grey });
     if (pan) panInfo(ctx, s, G, { x0, y0, w, h, ox, oy, ppn: ringR / range });
-    else text(ctx, 'Mock map: not for navigation', x0 + 10, y0 + h - 60, { size: 13, color: C.grey });
+    else hint(ctx, 'Mock map: not for navigation');
   }
   // The pan pointer (an arrow at the map's middle), the measuring line
   // from where measuring started, and a box at the top: what the pointer
@@ -1841,6 +1837,7 @@ window.G1000_DISPLAY = (function () {
   }
 
   function drawMFD(ctx, s, G) {
+    helpFor = 'mfd'; helpLines.mfd = [];
     if (s.reversion) return reversionary(ctx, s, G);
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = C.black;
@@ -1853,8 +1850,7 @@ window.G1000_DISPLAY = (function () {
     pageMenuWindow(ctx, s, G, 'mfd');
     pageGroups(ctx, s, G);
     softkeys(ctx, s, G, 'mfd');
-    noteBar(ctx, s);
   }
 
-  return { W, H, drawPFD, drawMFD };
+  return { W, H, drawPFD, drawMFD, help: (display) => helpLines[display] };
 })();
