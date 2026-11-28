@@ -149,17 +149,33 @@ window.G1000_DISPLAY = (function () {
   function fplWindow(ctx, s, G, win, x, y, w, h) {
     box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
     text(ctx, 'ACTIVE FLIGHT PLAN', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    const rows = G.fms.rows();
+    // The plan's first and last waypoints.
+    if (rows.length) text(ctx, `${rows[0].id} / ${rows[rows.length - 1].id}`, x + w / 2, y + 44, { size: 17, align: 'center' });
     const cols = [x + 40, x + w * 0.45, x + w * 0.7, x + w - 12];
     // The three data columns (Change Fields).
     const fields = [s.fms.fields.f1, s.fms.fields.f2, s.fms.fields.f3];
-    fields.forEach((fd, k) => text(ctx, fd, cols[k + 1], y + 48, { size: 15, align: 'right', color: C.grey }));
-    if (s.fms.insertAfter) text(ctx, 'INSERT AFTER', x + 10, y + 48, { size: 12, color: C.grey });
-    const rows = G.fms.rows();
-    const rowH = 30, top = y + 76;
-    const maxRows = Math.floor((h - 90 - (win.prompt ? 40 : 0)) / rowH);
+    fields.forEach((fd, k) => text(ctx, fd, cols[k + 1], y + 68, { size: 15, align: 'right', color: C.grey }));
+    if (s.fms.insertAfter) text(ctx, 'INSERT AFTER', x + 10, y + 68, { size: 12, color: C.grey });
+    const rowH = 30, top = y + 94;
+    const maxRows = Math.floor((h - 108 - (win.prompt ? 40 : 0)) / rowH);
     // Keep the cursor in view.
     const first = Math.max(0, Math.min((win.cursor ?? 0) - maxRows + 2, rows.length + 1 - maxRows));
     const all = [...rows, null];
+    // The active leg: a magenta bracket from the FROM row down to the TO
+    // row (an arrow into it); a Direct-To, D→ on the TO row.
+    const at = rows.findIndex((r) => r.active);
+    if (at >= 0 && !s.fms.fpl.dto) {
+      const yRow = (i) => top + (i - first) * rowH;
+      const yTo = yRow(at), yFrom = Math.max(top - 12, yRow(at - 1));
+      if (at - first >= 0 && at - first < maxRows) {
+        ctx.strokeStyle = C.magenta; ctx.fillStyle = C.magenta; ctx.lineWidth = 3;
+        ctx.beginPath();
+        if (at > 0) { ctx.moveTo(x + 26, yFrom); ctx.lineTo(x + 12, yFrom); ctx.lineTo(x + 12, yTo); } else ctx.moveTo(x + 12, yTo);
+        ctx.lineTo(x + 24, yTo); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + 34, yTo); ctx.lineTo(x + 24, yTo - 7); ctx.lineTo(x + 24, yTo + 7); ctx.fill();
+      }
+    }
     for (let k = 0; k < maxRows && first + k < all.length; k++) {
       const i = first + k, r = all[i], ry = top + k * rowH;
       const sel = win.cursor === i;
@@ -171,7 +187,7 @@ window.G1000_DISPLAY = (function () {
       }
       if (!r) { text(ctx, '_____', cols[0], ry, { size: 22, color: sel ? C.black : C.cyan }); continue; }
       const color = sel ? C.black : r.active ? C.magenta : C.white;
-      if (r.active) text(ctx, s.fms.fpl.dto ? 'D→' : '➔', x + 6, ry, { size: 15, color: C.magenta });
+      if (r.active && s.fms.fpl.dto) text(ctx, 'D→', x + 6, ry, { size: 15, color: C.magenta });
       text(ctx, r.id, cols[0], ry, { size: 22, color });
       const c = r.active ? C.magenta : C.white;
       fields.forEach((fd, k) => text(ctx, fplField(fd, r, s, G), cols[k + 1], ry, { size: 20, align: 'right', color: c }));
@@ -317,17 +333,31 @@ window.G1000_DISPLAY = (function () {
     box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
     text(ctx, 'NEAREST AIRPORTS', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
     const list = G.pages.nearestAirports();
-    const rowH = 30, n = Math.floor((h - 70) / rowH);
+    // Two lines each: identifier, bearing, distance; then the frequency
+    // and the longest runway.
+    const rowH = 56, n = Math.floor((h - 50) / rowH);
     const first = Math.max(0, Math.min((win.cursor ?? 0) - n + 1, list.length - n));
     list.slice(first, first + n).forEach((r, k) => {
-      const i = first + k, ry = y + 52 + k * rowH, sel = win.cursor === i;
-      if (sel) box(ctx, x + 10, ry - 14, 76, 28, { fill: C.cyan, stroke: null });
-      text(ctx, r.w.id, x + 14, ry, { size: 21, color: sel ? C.black : C.white });
+      const i = first + k, ry = y + 50 + k * rowH, sel = win.cursor === i;
+      const selId = sel && win.field !== 'freq', selF = sel && win.field === 'freq';
+      if (selId) box(ctx, x + 10, ry - 14, 76, 28, { fill: C.cyan, stroke: null });
+      text(ctx, r.w.id, x + 14, ry, { size: 21, color: selId ? C.black : C.white });
       text(ctx, pad3(r.brg) + '°', x + 170, ry, { size: 20, align: 'right' });
       text(ctx, r.dist.toFixed(1) + 'NM', x + 270, ry, { size: 20, align: 'right' });
-      text(ctx, r.w.towered ? 'TWR' : '', x + w - 12, ry, { size: 15, align: 'right', color: C.grey });
+      const f = G.pages.airportFreq(r.w), fy = ry + 24;
+      if (f) {
+        text(ctx, f.kind, x + 14, fy, { size: 15, color: C.grey });
+        const ft = f.freq.toFixed(3);
+        ctx.font = font(19);
+        const tw = ctx.measureText(ft).width;
+        if (selF) box(ctx, x + 72, fy - 13, tw + 12, 26, { fill: C.cyan, stroke: null });
+        text(ctx, ft, x + 78, fy, { size: 19, color: selF ? C.black : C.cyan });
+      }
+      const rwy = Math.max(0, ...(r.w.runways ?? []).map((rw) => rw.len ?? 0));
+      if (rwy) text(ctx, `${rwy}FT`, x + w - 12, fy, { size: 16, align: 'right', color: C.grey });
     });
-    hint(ctx, win.cursor == null ? 'Push FMS for the cursor' : 'D→ goes direct to the selection');
+    hint(ctx, win.cursor == null ? 'Push FMS for the cursor'
+      : win.field === 'freq' ? 'ENT: to COM standby' : 'D→ goes direct to the selection');
   }
 
   // ---- MFD pages (js/g1000-pages.js) ----
@@ -463,9 +493,12 @@ window.G1000_DISPLAY = (function () {
     const x = PAGE.x + 30, set = s.alertSet, cur = s.mfd.cursor;
     text(ctx, 'AIRSPACE ALERTS', x, PAGE.y + 64, { size: 17, color: C.cyan });
     const rows = [['ALTITUDE BUFFER', `${set.buffer}FT`], ['CLASS B/TMA', set.B ? 'ON' : 'OFF'],
-      ['CLASS C/TCA', set.C ? 'ON' : 'OFF'], ['CLASS D', set.D ? 'ON' : 'OFF']];
+      ['CLASS C/TCA', set.C ? 'ON' : 'OFF'], ['CLASS D', set.D ? 'ON' : 'OFF'],
+      ['GPS CDI', s.cdiScale === 'AUTO' ? 'AUTO' : `${s.cdiScale}NM`]];
     rows.forEach(([k, v], i) => {
-      const ry = PAGE.y + 110 + i * 40, sel = cur === i;
+      // The CDI row under its own heading.
+      const ry = PAGE.y + 110 + i * 40 + (i >= 4 ? 50 : 0), sel = cur === i;
+      if (i === 4) text(ctx, 'NAVIGATION', x, ry - 44, { size: 17, color: C.cyan });
       text(ctx, k, x, ry, { size: 18, color: C.grey });
       ctx.font = font(21);
       const tw = ctx.measureText(v).width;
@@ -473,7 +506,7 @@ window.G1000_DISPLAY = (function () {
       text(ctx, v, x + 330, ry, { size: 21, align: 'right', color: sel ? C.black : C.cyan });
     });
     // The Flight ID: sent with the transponder's replies (ADS-B).
-    const fy = PAGE.y + 110 + rows.length * 40 + 70;
+    const fy = PAGE.y + 110 + rows.length * 40 + 120;
     text(ctx, 'TRANSPONDER', x, fy - 44, { size: 17, color: C.cyan });
     text(ctx, 'FLIGHT ID', x, fy, { size: 18, color: C.grey });
     if (cur === 'ident') identField(ctx, s.mfd.entry, x + 200, fy, G, true, G.pages.matchers['AUX:3']);
@@ -1000,6 +1033,13 @@ window.G1000_DISPLAY = (function () {
       }
     }
     ctx.restore();
+    // FLC: a cyan bug on the tape's right edge at the reference speed
+    // (at the tape's end when the speed is off it).
+    if (s.afcs.vert === 'FLC') {
+      const yb = Math.min(bot - 8, Math.max(top + 8, yOf(s.afcs.ref.ias)));
+      ctx.fillStyle = C.cyan;
+      ctx.fillRect(x + w - 9, yb - 16, 9, 32);
+    }
     // V-speed references that are on (Tmr/Ref): a cyan tag outside the
     // tape's right edge at the speed, when it is on the tape.
     for (const v of G1000_TIMER.VSPEEDS) {
@@ -1111,6 +1151,9 @@ window.G1000_DISPLAY = (function () {
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (f % 1000 ? 8 : 16), y); ctx.stroke();
       if (f && f % 1000 === 0) text(ctx, String(Math.abs(f / 1000)), x + 22, y, { size: 18 });
     }
+    // The notch on the right edge at 0 ft/min (POH 7-20).
+    ctx.fillStyle = C.white;
+    ctx.beginPath(); ctx.moveTo(x + w, cy - 9); ctx.lineTo(x + w - 12, cy); ctx.lineTo(x + w, cy + 9); ctx.fill();
     // VS reference bug in VS mode.
     if (s.afcs.vert === 'VS') {
       ctx.fillStyle = C.cyan;
@@ -1311,6 +1354,10 @@ window.G1000_DISPLAY = (function () {
     // warning.
     // GPS integrity lost: LOI, amber, and no deviation.
     if (s.cdi === 'GPS' && s.sys.failed.gps) text(ctx, 'LOI', 0, 40, { size: 22, align: 'center', color: C.yellow });
+    // GPS past full scale: the cross-track error.
+    else if (s.cdi === 'GPS' && nav && Math.abs(nav.xtk) > nav.full) {
+      text(ctx, `XTK ${Math.abs(nav.xtk).toFixed(2)}NM`, 0, 40, { size: 18, align: 'center', color: srcColor });
+    }
     ctx.restore();
 
     // Selected heading and course boxes either side of the rose's top.

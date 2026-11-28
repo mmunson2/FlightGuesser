@@ -137,6 +137,9 @@ window.G1000_FMS = (function () {
       if (!l || state.sys?.failed.gps) return null;
       const p = legPosition(l);
       const scale = scaleName();
+      // The selected scale (AUX - System Setup) when tighter than the
+      // flight phase's.
+      const sel = Number(state.cdiScale), full = sel && sel < SCALE[scale] ? sel : SCALE[scale];
       const to = bearingDist(state, l.to);
       // Desired track and bearing shown magnetic, by the variation where
       // the airplane is.
@@ -145,8 +148,8 @@ window.G1000_FMS = (function () {
       return {
         source: 'GPS', station: l.to, course, courseTrue: p.dtk, obs: !!F().obs,
         toFrom: p.remaining > 0 ? 'TO' : 'FROM',
-        dev: clamp(-p.xtk / SCALE[scale], -1, 1), xtk: p.xtk, dist: to.dist, bearingTo: toMagAt(to.brg, state),
-        capturable: Math.abs(p.xtk) < SCALE[scale], scale, remaining: p.remaining, leg: l,
+        dev: clamp(-p.xtk / full, -1, 1), xtk: p.xtk, dist: to.dist, bearingTo: toMagAt(to.brg, state),
+        capturable: Math.abs(p.xtk) < full, scale, full, remaining: p.remaining, leg: l,
       };
     }
 

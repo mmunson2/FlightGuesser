@@ -48,7 +48,7 @@ the GFC 700 AFMS:
     changed) flashes the lost mode in yellow in its slot for 10 seconds,
     then ROL shows in green.
 - **NOSE UP/DN steps**: 0.5° in PIT, 100 fpm in VS, 1 kt in FLC (where
-  nose up means slower). In ALT the keys do nothing in the mock.
+  nose up means slower), 10 ft in ALT (the reference moves).
 - **Limits in the mock**: bank 22° in HDG and NAV, pitch −10° to +15°,
   VS ±1,500 fpm, FLC 55–120 KIAS. All are guesses.
 - **ALTS**:
@@ -656,6 +656,32 @@ From memory (check):
 - WPT ARRIVAL's text names the waypoint: "Arriving at waypoint -[KAWO]".
 - PTRM and MAXSPD boxes moved right of centre, off the now-fixed roll
   pointer. Where the real ones show is still open (see MAXSPD above).
+
+### Small additions (2026-11-27, branch g1000-quick-features)
+
+From the POH: the VSI's notch on its right edge at 0 ft/min.
+
+From memory (check):
+
+- FLC puts a cyan bug on the airspeed tape at the reference speed (at
+  the tape's end when off it), as well as the speed above the tape.
+- GPS past full scale: "XTK n.nnNM" in the HSI under the airplane, in
+  magenta. Check the colour and place.
+- Flight plan window: the origin / destination line under the title;
+  the active leg as a magenta bracket from the FROM waypoint to the TO
+  waypoint, ending in an arrow. A Direct-To still shows D→.
+- XPDR code by the FMS knobs (with the Code softkeys out): the small knob
+  sets the first two digits, the large knob the last two (each pair
+  00–77), ENT sends it. A digit softkey after that starts over.
+- PFD Nearest Airports: two lines per airport. The second has the
+  frequency (TWR if towered, else CTAF, else UNICOM) and the longest
+  runway. The cursor stops on the identifier (D→ offers it) and then the
+  frequency (ENT puts it in the tuned COM's standby). Check which
+  frequency the real window lists and what else is on the row.
+- AUX - System Setup, NAVIGATION, GPS CDI: AUTO, 2.0, 1.0 or 0.3 NM. A
+  selected scale is used when it is tighter than the flight phase's
+  (ENR 2.0, TERM 1.0); the HSI still shows ENR or TERM. Check what the
+  HSI shows with a selected scale.
 
 ## The engine model
 

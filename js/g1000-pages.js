@@ -247,10 +247,13 @@ window.G1000_PAGES = (function () {
     // Flight ID. With the cursor out, the large knob picks the row, the
     // small knob changes it; ENT on the Flight ID edits it like an
     // identifier (small knob: character, large knob: position, ENT).
-    const SETUP_ROWS = ['buffer', 'B', 'C', 'D', 'flightId'];
+    // Also the GPS CDI's selected full scale.
+    const SETUP_ROWS = ['buffer', 'B', 'C', 'D', 'cdi', 'flightId'];
+    const CDI_SCALES = ['AUTO', '2.0', '1.0', '0.3'];
     function setupChange(row, steps) {
       const set = state.alertSet, k = SETUP_ROWS[row];
       if (k === 'flightId') note('Press ENT to edit the Flight ID');
+      else if (k === 'cdi') state.cdiScale = CDI_SCALES[clamp(CDI_SCALES.indexOf(state.cdiScale) + steps, 0, CDI_SCALES.length - 1)];
       else if (k === 'buffer') set.buffer = clamp(set.buffer + steps * 50, 0, 1000);
       else set[k] = !set[k];
     }
@@ -363,21 +366,41 @@ window.G1000_PAGES = (function () {
     }
 
     // ---- The PFD's Nearest Airports window ----
+    // Each airport has two cursor stops: its identifier (D→ offers it) and
+    // its frequency (tower if towered, else CTAF or UNICOM), which ENT
+    // puts in the tuned COM's standby. win.field: 'ident' or 'freq'.
     function pfdNearest() {
       const w = state.fms.win;
-      w.pfd = w.pfd?.type === 'nrst' ? null : { type: 'nrst', cursor: null };
+      w.pfd = w.pfd?.type === 'nrst' ? null : { type: 'nrst', cursor: null, field: 'ident' };
+    }
+    const FREQ_ORDER = ['TOWER', 'CTAF', 'UNICOM'];
+    function airportFreq(w) {
+      for (const kind of FREQ_ORDER) {
+        const f = (w.freqs ?? []).find((x) => x.kind === kind);
+        if (f) return { kind: kind === 'TOWER' ? 'TWR' : kind, freq: f.freq };
+      }
+      return null;
     }
     // FMS knob and keys in that window; true when handled.
     function pfdInput(kind, arg) {
       const win = state.fms.win.pfd;
       if (win?.type !== 'nrst') return false;
-      if (kind === 'push') win.cursor = win.cursor == null ? 0 : null;
+      if (kind === 'push') { win.cursor = win.cursor == null ? 0 : null; win.field = 'ident'; }
       else if (kind === 'turn') {
-        if (win.cursor == null) note('Push the FMS knob for the cursor');
-        else win.cursor = clamp(win.cursor + arg, 0, nearestAirports().length - 1);
+        if (win.cursor == null) { note('Push the FMS knob for the cursor'); return true; }
+        // Through the stops in order: ident, frequency, next ident...
+        const list = nearestAirports();
+        const has = (i) => !!airportFreq(list[i].w);
+        const stops = list.flatMap((r, i) => (has(i) ? [[i, 'ident'], [i, 'freq']] : [[i, 'ident']]));
+        const at = stops.findIndex(([i, f]) => i === win.cursor && f === win.field);
+        [win.cursor, win.field] = stops[clamp(at + arg, 0, stops.length - 1)];
       } else if (kind === 'clr') {
         if (win.cursor != null) win.cursor = null; else state.fms.win.pfd = null;
-      } else if (kind !== 'ent') return false;
+      } else if (kind === 'ent') {
+        const r = win.cursor != null && win.field === 'freq' ? nearestAirports()[win.cursor] : null;
+        const f = r && airportFreq(r.w);
+        if (f) state.com[state.comTune].stby = f.freq;
+      } else return false;
       return true;
     }
 
@@ -400,7 +423,7 @@ window.G1000_PAGES = (function () {
 
     return {
       GROUPS, LIVE, fresh, sync, goPage, fplKey, pageKey, pageName, selectedIdent, turn, push, press,
-      pfdNearest, pfdInput, step, trip, nearestAirports, nearestVors, nearestUser, nearestFreqs, nearestAirspaces, catalogRows, matchers,
+      pfdNearest, pfdInput, airportFreq, CDI_SCALES, step, trip, nearestAirports, nearestVors, nearestUser, nearestFreqs, nearestAirspaces, catalogRows, matchers,
       shownUser, gpsStatus, USER_ROWS,
       cursorOn: () => P().cursor != null,
       isFplPage: () => pageKey() === FPL_PAGE,

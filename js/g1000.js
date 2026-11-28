@@ -195,8 +195,13 @@ window.G1000 = (function () {
       altUnits: { meters: false, baro: 'IN' },
       hdgBug: 340, crs: [340, 340], altSel: 5500,
       cdi: 'GPS',
+      // The GPS CDI's full scale (AUX - System Setup): 'AUTO' (by flight
+      // phase), or '2.0', '1.0', '0.3' NM, used when tighter than AUTO's.
+      cdiScale: 'AUTO',
       // flightId: sent with the transponder's replies (AUX - System Setup).
-      xpdr: { code: '1200', mode: 'ALT', identUntil: 0, entry: null, flightId: 'N172SP' },
+      // entry: a code being entered (Code softkey), by the digit softkeys
+      // or, knob true, by the FMS knobs.
+      xpdr: { code: '1200', mode: 'ALT', identUntil: 0, entry: null, knob: false, flightId: 'N172SP' },
       afcs: { ap: false, fd: false, lat: null, latArmed: null, vert: null, vertArmed: null,
               ref: { pitch: 0, roll: 0, vs: 0, ias: 0, alt: 0 }, changed: {}, apOffAt: -99,
               // apAbnormal: the last disconnect wasn't the pilot's (AP red and
@@ -498,6 +503,12 @@ window.G1000 = (function () {
     if (key.startsWith('gma:')) return gma.press(key.slice(4));
     if (key === 'display_backup') return displayBackup();
     display = pfdIfReverted(display);
+    // Code entry by the FMS knobs: ENT sends it.
+    if (key === 'ent' && display === 'pfd' && xpdrKnobEntry()) {
+      const x = state.xpdr;
+      if (x.entry.length === 4) { x.code = x.entry; x.entry = null; x.knob = false; state.menus.pfd.pop(); }
+      return;
+    }
     if (windowKey(key, display)) return;
     switch (key) {
       case 'ap':
@@ -549,6 +560,21 @@ window.G1000 = (function () {
     else if (a.vert === 'VS') r.vs = clamp(r.vs + 100 * dir, -1500, 1500);
     // FLC: nose up is slower.
     else if (a.vert === 'FLC') r.ias = clamp(r.ias - dir, 55, 120);
+    // ALT: the reference 10 ft a press.
+    else if (a.vert === 'ALT') r.alt += 10 * dir;
+  }
+  // The XPDR Code softkeys are out with no PFD window open: the FMS knobs
+  // enter the code too.
+  const xpdrKnobEntry = () => menu('pfd') === 'xpdr-code' && !state.fms.win.pfd && state.xpdr.entry !== null;
+  // Small knob: the first two digits; large knob: the last two (each pair
+  // 00-77, octal). ENT sends the code.
+  function xpdrKnob(part, steps) {
+    const x = state.xpdr;
+    if (!x.knob) { x.entry = x.code; x.knob = true; }
+    const pairs = [x.entry.slice(0, 2), x.entry.slice(2, 4)].map((p) => parseInt(p.padEnd(2, '0'), 8));
+    const i = part === 'inner' ? 0 : 1;
+    pairs[i] = wrapInt(pairs[i] + steps, 64);
+    x.entry = pairs.map((p) => p.toString(8).padStart(2, '0')).join('');
   }
 
   function softkey(display, i) {
@@ -617,11 +643,11 @@ window.G1000 = (function () {
       case 'xpdr:On': x.mode = 'ON'; return;
       case 'xpdr:Alt': x.mode = 'ALT'; return;
       case 'xpdr:VFR': x.code = '1200'; return;
-      case 'xpdr:Code': x.entry = ''; stack.push('xpdr-code'); return;
+      case 'xpdr:Code': x.entry = ''; x.knob = false; stack.push('xpdr-code'); return;
       case 'xpdr-code:BKSP': x.entry = x.entry.slice(0, -1); return;
       case 'pfd-opt:Back': case 'xpdr:Back': case 'engine:Back': case 'map-hsi:Back': case 'map-layout:Back': case 'alt-units:Back':
         stack.pop(); return;
-      case 'xpdr-code:Back': x.entry = null; stack.pop(); return;
+      case 'xpdr-code:Back': x.entry = null; x.knob = false; stack.pop(); return;
       case 'mfd:Engine': case 'pfd:Engine': stack.push('engine'); return;
       case 'mfd:Checklist': checklist.open(); stack.push('checklist'); return;
       case 'checklist:Exit': checklist.close(); stack.pop(); return;
@@ -641,6 +667,8 @@ window.G1000 = (function () {
       case 'lean:Back': case 'system:Back': state.eisPage = 'Engine'; stack.pop(); return;
     }
     if (menu === 'xpdr-code' && /^[0-7]$/.test(label)) {
+      // A digit softkey after knob entry starts the code over.
+      if (x.knob) { x.entry = ''; x.knob = false; }
       x.entry += label;
       // Four digits entered: the code takes effect, back to the XPDR menu.
       if (x.entry.length === 4) { x.code = x.entry; x.entry = null; stack.pop(); }
@@ -713,6 +741,7 @@ window.G1000 = (function () {
         // An open Page Menu or Map Setup; the PFD's Nearest window; on the MFD with no FMS cursor out, the
         // pages; else the open FMS window.
         if (menus.turn(part, steps, display)) return;
+        if (display === 'pfd' && xpdrKnobEntry()) return xpdrKnob(part, steps);
         if (display === 'mfd' && checklist.isOpen() && !state.fms.win.mfd) return checklist.turn(part, steps);
         const win = state.fms.win[display];
         if (display === 'pfd' && win?.type === 'nrst') return pages.pfdInput('turn', steps);

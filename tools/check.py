@@ -613,7 +613,8 @@ G1000_CHECKS = r"""() => {
   G.reset();
   G.press('softkey:10', 'pfd');
   expect(s.fms.win.pfd?.type === 'nrst', 'Nearest softkey opened no window');
-  G.push('fms', 'pfd'); G.turn('fms', 'inner', 1, 'pfd');
+  G.push('fms', 'pfd');
+  G.turn('fms', 'inner', P.airportFreq(P.nearestAirports()[0].w) ? 2 : 1, 'pfd');
   G.press('direct_to', 'pfd');
   expect(s.fms.win.pfd?.ident === P.nearestAirports()[1].w.id, `PFD NRST D→ offered ${s.fms.win.pfd?.ident}`);
 
@@ -933,11 +934,20 @@ G1000_CHECKS = r"""() => {
 
   // Flight ID (System Setup): ENT on it, type N12, ENT.
   mt('outer', 2 - s.mfd.group); mt('inner', 3 - s.mfd.last[2]);
-  G.push('fms', 'mfd'); mt('outer', 4); G.press('ent', 'mfd');
+  G.push('fms', 'mfd'); mt('outer', 5); G.press('ent', 'mfd');
   expect(s.mfd.cursor === 'ident', `Flight ID entry: ${s.mfd.cursor}`);
   over(() => s.mfd.entry, 'N12');
   G.press('ent', 'mfd');
   expect(s.xpdr.flightId === 'N12', `Flight ID ${s.xpdr.flightId}`);
+  // GPS CDI (System Setup): a selected scale applies when tighter than the
+  // flight phase's (TERM, 1 NM, near Paine).
+  s.mfd.cursor = s.mfd.entry = null;
+  G.push('fms', 'mfd'); mt('outer', -9); mt('outer', 4); mt('inner', 3);
+  G.fms.activatePlan(['KPAE', 'KAWO']);
+  expect(s.cdiScale === '0.3' && G.navSolution().full === 0.3, `CDI 0.3: ${s.cdiScale}, full ${G.navSolution().full}`);
+  mt('inner', -2);
+  expect(s.cdiScale === '2.0' && G.navSolution().full === 1, `CDI 2.0 in TERM: full ${G.navSolution().full}`);
+  s.cdiScale = 'AUTO';
 
   // PFD Map Settings: the PFD's own (orientation, text), not the MFD's.
   G.reset();
@@ -1006,6 +1016,27 @@ G1000_CHECKS = r"""() => {
   G.press('softkey:7', 'pfd'); G.press('softkey:7', 'pfd');
   for (const d of [7, 7, 0, 0]) G.press('softkey:' + d, 'pfd');
   expect(s.xpdr.code === '7700' && G.menu('pfd') === 'xpdr', `XPDR code ${s.xpdr.code}, menu ${G.menu('pfd')}`);
+  // By the FMS knobs: small knob the first two digits, large the last two.
+  G.press('softkey:7', 'pfd');
+  G.turn('fms', 'inner', -14, 'pfd');  // 77 -> 61
+  G.turn('fms', 'outer', 2, 'pfd');    // 00 -> 02
+  expect(s.xpdr.entry === '6102' && s.xpdr.code === '7700', `knob entry ${s.xpdr.entry}`);
+  G.press('ent', 'pfd');
+  expect(s.xpdr.code === '6102' && G.menu('pfd') === 'xpdr', `knob code ${s.xpdr.code}, menu ${G.menu('pfd')}`);
+
+  // PFD Nearest: the frequency is a cursor stop; ENT puts it in COM standby.
+  G.reset();
+  G.press('softkey:10', 'pfd'); G.push('fms', 'pfd'); G.turn('fms', 'inner', 1, 'pfd');
+  const nf = P.airportFreq(P.nearestAirports()[0].w);
+  G.press('ent', 'pfd');
+  expect(s.fms.win.pfd.field === 'freq' && s.com[0].stby === nf.freq, `PFD NRST freq: ${s.fms.win.pfd.field}, COM1 stby ${s.com[0].stby} vs ${nf?.freq}`);
+
+  // ALT: NOSE UP/DN moves the reference 10 ft a press.
+  G.reset();
+  G.press('ap'); G.press('alt');
+  const alt0 = s.afcs.ref.alt;
+  G.press('nose_up'); G.press('nose_up');
+  expect(s.afcs.ref.alt === alt0 + 20, `ALT ref ${s.afcs.ref.alt} after 2 NOSE UP from ${alt0}`);
 
   // ---- Section 2: wind, bearings, DME, pan, FPL geometry, user
   // waypoints, GPS status, lean and totalizer, checklists, aural alerts ----
