@@ -683,6 +683,66 @@ From memory (check):
   (ENR 2.0, TERM 1.0); the HSI still shows ENR or TERM. Check what the
   HSI shows with a selected scale.
 
+### The M group (2026-11-27, branch g1000-m-group)
+
+From the POH: the red X's (ADC, AHRS and the EIS sensors) and "the next
+hottest EGT" when a cylinder's probe fails; CWS, the Go-Around button and
+A/P TRIM DISC exist.
+
+From memory (check):
+
+- **Press and hold**: COM transfer held 2 s puts 121.500 in the tuned
+  COM's active frequency (the standby is kept). CLR held 1 s on the MFD
+  closes windows and goes to the Navigation Map. Check the hold times and
+  whether the old active frequency moves to standby.
+- **Failures** (Operate mode list): ADC (red X on airspeed, altitude and
+  VSI tapes, TAS and OAT; selected altitude and baro stay), AHRS (red X on
+  the attitude on black, and on the HSI's card; no heading readout), the
+  tachometer, fuel flow and oil pressure sensors, and cylinder 3's EGT
+  probe. An ADC or AHRS failure disconnects the autopilot (red/white AP)
+  and the flight director, and neither engages again. Check what else the
+  real unit takes away (the MFD map's heading up, the wind window, CAS
+  messages such as AHRS or ADC failure text).
+- **GA** (G key): AP off, FD in GA on both axes (wings level, 7° pitch
+  up), ALTS armed. No missed approach (no procedures). Check the pitch
+  for a 172 and whether GA disconnects the AP on this installation.
+- **CWS** (hold C): CWS in white where AP shows; the pilot flies; let go,
+  ROL/PIT/VS/FLC/ALT references sync to the attitude then.
+- **A/P TRIM DISC** (D) disconnects normally (yellow AP) and acknowledges
+  a red one. **Manual electric trim** ([ and ]) disconnects the AP; hand
+  flying it nudges the pitch.
+- **MFD softkeys by page**: Navigation Map (Engine, Map Opt, Detail,
+  Charts, Checklist), Active Flight Plan (New WPT, View, VNV Prof, Cncl
+  VNV, VNV Direct, ATK Ofst, ACT Leg), Nearest Airports (APT, RNWY, FREQ,
+  APR, LD APR), Airport Information (Info-1, DP, STAR, APR, WX), other map
+  pages (Map Opt, Charts), the rest Engine and Checklist only. Check each
+  page's real labels and positions.
+- **Map Opt**: Traffic, Inset, Topo, Terrain, Airways, NEXRAD, METAR,
+  Legend, Back (all grey but Back: no data for them).
+- **Detail**: All, -1 (no text), -2 (also no airspace, small and medium
+  airports, user waypoints), -3 (no airports or VORs). Check what each
+  real level removes and the label.
+- **View**: Narrow (the three Change Fields columns) or Wide (all six,
+  across the map). **ACT Leg** asks "Activate leg to X?".
+- **WPT and NRST pages**: a north-up map of the shown or selected
+  waypoint on the right, at the MFD's range. Nearest Airports has
+  INFORMATION, RUNWAYS (one at a time, RNWY then the small knob) and
+  FREQUENCIES (FREQ, ENT to COM standby); no APPROACHES box (no
+  procedure data).
+- **Direct-To window**: city beside the identifier, VNV altitude and
+  offset (blank: no VNAV), COURSE (large knob back from ACTIVATE?; small
+  knob sets it; CLR goes back to straight there). A course makes the leg
+  that course into the waypoint. The small knob turned back before
+  typing opens the FPL / NRST (five airports) / RECENT / USER list.
+- **MFD top bar**: GS and DTK, TRK and ETE in two rows between the NAV and
+  COM radios. Check the real layout (one row of four?).
+- **Map airports**: a line through the ring along the longest hard
+  runway (soft fields a plain ring), four notches for fuel.
+- **Temperature** (Operate mode list): ISA ±; OAT, density altitude
+  (120 ft per °C) and TAS follow.
+- **Standby altimeter**: triangle on the 10,000 ft hand, striped flag
+  below 10,000 ft.
+
 ## The engine model
 
 The engine is a generic four-cylinder CAD model, not a true IO-360. The 15
