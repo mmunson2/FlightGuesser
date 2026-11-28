@@ -1036,6 +1036,13 @@ window.G1000_DISPLAY = (function () {
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (ft % 100 ? 10 : 20), y); ctx.stroke();
       if (ft % 100 === 0) text(ctx, String(ft), x + 26, y, { size: 20 });
     }
+    // Altitude trend: a magenta line from the pointer to where the
+    // altitude will be in 6 seconds at the present vertical speed.
+    const trend = s.vs / 10;
+    if (Math.abs(trend) > 10) {
+      ctx.fillStyle = C.magenta;
+      ctx.fillRect(x + 1, Math.min(cy, yOf(alt + trend)), 5, Math.abs(trend * ppf));
+    }
     // Selected altitude bug, cyan, on the tape's left edge.
     const yb = Math.min(bot - 8, Math.max(top + 8, yOf(s.altSel)));
     ctx.fillStyle = C.cyan;
@@ -1267,6 +1274,13 @@ window.G1000_DISPLAY = (function () {
     // Lubber line and heading readout box.
     ctx.fillStyle = C.white;
     ctx.beginPath(); ctx.moveTo(0, -R + 2); ctx.lineTo(-10, -R - 12); ctx.lineTo(10, -R - 12); ctx.fill();
+    // Fixed reference marks every 45° round the card (the POH).
+    ctx.strokeStyle = C.white; ctx.lineWidth = 3;
+    for (let a = 45; a < 360; a += 45) {
+      ctx.save(); ctx.rotate(rad(a));
+      ctx.beginPath(); ctx.moveTo(0, -R - 5); ctx.lineTo(0, -R - 17); ctx.stroke();
+      ctx.restore();
+    }
     box(ctx, -38, -R - 64, 76, 36, { fill: C.black, stroke: C.white });
     text(ctx, pad3(G.magHeading()) + '°', 0, -R - 45, { size: 26, align: 'center' });
     // Small airplane in the middle.
@@ -1405,7 +1419,7 @@ window.G1000_DISPLAY = (function () {
     ctx.drawImage(revCanvas, crop, top, W - crop, bottom - top, strip, top, W - strip, bottom - top);
     ctx.drawImage(revCanvas, 0, bottom, W, H - bottom, 0, bottom, W, H - bottom);
     eis(ctx, s, G);
-    text(ctx, `OAT ${Math.round(15 - 2 * s.trueAlt / 1000)}°C`, 12, bottom - 44, { size: 18 });
+    text(ctx, `OAT ${Math.round(15 - 2 * s.trueAlt / 1000)}°C`, 12, 688, { size: 18 });
     text(ctx, 'REVERSIONARY', strip / 2, bottom - 14, { size: 13, align: 'center', color: C.yellow });
   }
 
@@ -1435,116 +1449,185 @@ window.G1000_DISPLAY = (function () {
   }
 
   // ---- MFD: engine strip (EIS) on the left, the navigation map ----
-  // color: the value's colour (red or amber when out of limits).
-  function gaugeBar(ctx, label, value, lo, hi, zones, x, y, w, fmt, color = C.white) {
-    text(ctx, label, x, y, { size: 16, color: color === C.white ? C.white : color });
-    text(ctx, fmt(value), x + w, y, { size: 18, align: 'right', color });
-    const by = y + 14, bw = w;
-    for (const [a, b, color] of zones) {
-      ctx.fillStyle = color;
-      ctx.fillRect(x + ((a - lo) / (hi - lo)) * bw, by, ((b - a) / (hi - lo)) * bw, 6);
-    }
-    const px = x + Math.max(0, Math.min(1, (value - lo) / (hi - lo))) * bw;
-    ctx.fillStyle = C.white;
-    ctx.beginPath(); ctx.moveTo(px, by + 4); ctx.lineTo(px - 7, by - 9); ctx.lineTo(px + 7, by - 9); ctx.fill();
+  // The C172S POH, section 7 ("Engine Instruments", "Fuel Indicating
+  // System", "Electrical System Monitoring"), describes the strip: the
+  // tachometer at the top and the bus volts and battery amps at the bottom
+  // of every page; between them the ENGINE page's indicators (pointers
+  // only, no numbers), the LEAN page's cylinders, or the SYSTEM page's
+  // numbers. Ranges and bands are the POH's.
+  const EIS = { x: 12, w: 176 };
+  // Flashes at 1 Hz (an exceedance's label and value).
+  const flash1 = (s) => Math.floor(s.t * 2) % 2 === 0;
+
+  // A horizontal indicator: its label, a scale with coloured bands and
+  // ticks, and a white pointer above it (an inverted triangle, `mark` in
+  // it: the EGT's hottest cylinder). color: the label's and pointer's
+  // (red or amber outside the limits).
+  function indicator(ctx, { label, value, lo, hi, zones = [], ticks = [], y, color = C.white, mark }) {
+    const { x, w } = EIS, by = y + 24;
+    const px = (v) => x + Math.max(0, Math.min(1, (v - lo) / (hi - lo))) * w;
+    text(ctx, label, x + w / 2, y, { size: 15, align: 'center', color });
+    ctx.fillStyle = '#4a4e55';
+    ctx.fillRect(x, by, w, 6);
+    for (const [a, b, c] of zones) { ctx.fillStyle = c; ctx.fillRect(px(a), by, Math.max(2, px(b) - px(a)), 6); }
+    ctx.strokeStyle = C.white; ctx.lineWidth = 1.5;
+    for (const t of ticks) { ctx.beginPath(); ctx.moveTo(px(t), by + 6); ctx.lineTo(px(t), by + 11); ctx.stroke(); }
+    if (value == null) return;
+    const p = px(value), big = mark != null;
+    ctx.fillStyle = color === C.white ? C.white : color;
+    ctx.beginPath(); ctx.moveTo(p, by + 2); ctx.lineTo(p - (big ? 9 : 7), by - (big ? 17 : 12)); ctx.lineTo(p + (big ? 9 : 7), by - (big ? 17 : 12)); ctx.fill();
+    if (big) text(ctx, String(mark), p, by - 11, { size: 11, align: 'center', color: C.black });
   }
+
+  // FUEL QTY GAL: one scale, the left tank's pointer above it (L) and the
+  // right's below (R). Red line at 0 (1.5 gal unusable left), yellow 0-5,
+  // green 5-24: the sensors read no higher than 24 gal, so a fuller tank
+  // still shows 24. Under 5 gal a pointer and the label turn amber; at
+  // empty, flashing red.
+  const FUEL_SENSOR_MAX = 24;
+  function fuelQty(ctx, s, y) {
+    const { x, w } = EIS, lo = 0, hi = 25, by = y + 30;
+    const px = (v) => x + 6 + (Math.max(lo, Math.min(FUEL_SENSOR_MAX, v)) / hi) * (w - 12);
+    const colorOf = (g) => (g <= 0.05 ? (flash1(s) ? C.red : C.black) : g < 5 ? C.yellow : C.white);
+    const worst = Math.min(s.fuelL, s.fuelR);
+    const labelColor = worst <= 0.05 ? (flash1(s) ? C.red : C.white) : worst < 5 ? C.yellow : C.white;
+    text(ctx, 'FUEL QTY GAL', x + w / 2, y, { size: 15, align: 'center', color: labelColor });
+    ctx.fillStyle = '#4a4e55'; ctx.fillRect(px(0), by, px(FUEL_SENSOR_MAX) - px(0), 6);
+    ctx.fillStyle = C.yellow; ctx.fillRect(px(0), by, px(5) - px(0), 6);
+    ctx.fillStyle = C.green; ctx.fillRect(px(5), by, px(FUEL_SENSOR_MAX) - px(5), 6);
+    ctx.fillStyle = C.red; ctx.fillRect(px(0) - 2, by - 4, 4, 14);
+    [['0', 0], ['10', 10], ['20', 20], ['F', FUEL_SENSOR_MAX]].forEach(([t, v]) => text(ctx, t, px(v), by + 34, { size: 12, align: 'center', color: C.grey }));
+    // L above, pointing down; R below, pointing up.
+    [[s.fuelL, 'L', -1], [s.fuelR, 'R', 1]].forEach(([g, tag, side]) => {
+      const p = px(g), tip = side < 0 ? by - 1 : by + 7, base = tip + side * 17;
+      ctx.fillStyle = colorOf(g);
+      ctx.beginPath(); ctx.moveTo(p, tip); ctx.lineTo(p - 9, base); ctx.lineTo(p + 9, base); ctx.fill();
+      text(ctx, tag, p, base - side * 6, { size: 10, align: 'center', color: C.black });
+    });
+  }
+
+  // The tachometer, on every page: 0-3000 RPM round a dial, green from
+  // 2100 to the altitude's top of the normal range (2500 to 5,000 ft, 2600
+  // to 10,000 ft, 2700 above), red 2700-3000. From 2780 RPM the pointer,
+  // value and label turn red, and the value and label flash.
+  function tach(ctx, s) {
+    const rpm = s.sys.rpm, alt = s.trueAlt;
+    const greenTop = alt < 5000 ? 2500 : alt < 10000 ? 2600 : 2700;
+    const over = rpm >= 2780, on = !over || flash1(s);
+    ctx.save();
+    ctx.translate(100, 160);
+    const ang = (v) => rad(150 + (Math.max(0, Math.min(3000, v)) / 3000) * 240);
+    const arc = (a, b, color, lw = 10) => {
+      ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(0, 0, 62, ang(a), ang(b)); ctx.stroke();
+    };
+    arc(0, 3000, '#4a4e55');
+    arc(2100, greenTop, C.green);
+    arc(2700, 3000, C.red);
+    ctx.strokeStyle = over ? C.red : C.white; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(ang(rpm)) * 60, Math.sin(ang(rpm)) * 60); ctx.stroke();
+    ctx.restore();
+    if (on) {
+      text(ctx, String(Math.round(rpm / 10) * 10), 100, 200, { size: 24, align: 'center', color: over ? C.red : C.white });
+      text(ctx, 'RPM', 100, 224, { size: 16, align: 'center', color: over ? C.red : C.white });
+    }
+  }
+
+  // The bottom of every page: bus volts (M BUS E: main under M, essential
+  // under E) and battery amps (M BATT S: main, standby). VOLTS and the
+  // value turn red outside 24.5-32.0 V. Amps: a discharging standby
+  // battery amber, the main one amber below -1.5 A.
+  function busBatt(ctx, s) {
+    const { x, w } = EIS, sys = s.sys, y = 712;
+    const vBad = (v) => v < 24.5 || v > 32;
+    const signed = (a) => (a >= 0 ? '+' : '') + a.toFixed(1);
+    const row = (ty, l, m, r, cl, cm, cr, size) => {
+      text(ctx, l, x, ty, { size, color: cl });
+      text(ctx, m, x + w / 2, ty, { size: 13, align: 'center', color: cm });
+      text(ctx, r, x + w, ty, { size, align: 'right', color: cr });
+    };
+    row(y, 'M', 'BUS', 'E', C.white, C.white, C.white, 14);
+    row(y + 22, sys.voltsM.toFixed(1), 'VOLTS', sys.voltsE.toFixed(1), vBad(sys.voltsM) ? C.red : C.white,
+      vBad(sys.voltsM) || vBad(sys.voltsE) ? C.red : C.white, vBad(sys.voltsE) ? C.red : C.white, 17);
+    row(y + 50, 'M', 'BATT', 'S', C.white, C.white, C.white, 14);
+    row(y + 72, signed(sys.ampsM), 'AMPS', signed(sys.ampsS), sys.ampsM < -1.5 ? C.yellow : C.white, C.white,
+      sys.ampsS < 0 ? C.yellow : C.white, 17);
+  }
+
+  // A number and its label on one line (the LEAN and SYSTEM pages).
+  function readout(ctx, label, value, y, color = C.white) {
+    text(ctx, label, EIS.x, y, { size: 15, color });
+    text(ctx, value, EIS.x + EIS.w, y, { size: 18, align: 'right', color });
+  }
+  // Out of limits: oil pressure 0-20 or 115-120 PSI red, oil temperature
+  // red (and flashing) from 245 °F.
+  const oilPsiColor = (p) => (p <= 20 || p >= 115 ? C.red : C.white);
+  const oilTempColor = (s, f) => (f >= 245 ? (flash1(s) ? C.red : C.black) : C.white);
 
   function eis(ctx, s, G) {
     box(ctx, 0, 70, 200, H - 104, { fill: C.panel, stroke: null });
     // The numbers come from js/g1000-systems.js.
-    const sys = s.sys, rpm = Math.round(sys.rpm);
-    // POH limits: red outside them, amber on a discharging battery.
-    const voltColor = (v) => (v < 24.5 || v > 32 ? C.red : C.white);
-    const ampColor = (v) => (v < -1.5 ? C.yellow : C.white);
-    const ff = +G.fuelFlow().toFixed(1);
-    const x = 12, w = 176;
+    const sys = s.sys, { x, w } = EIS;
+    const ff = G.fuelFlow();
+    const hottest = sys.egt.indexOf(Math.max(...sys.egt));
+    tach(ctx, s);
+    busBatt(ctx, s);
     if (s.eisPage === 'Lean') {
-      // Four columns, EGT (bar) and CHT (tick) per cylinder; the selected
-      // one (Cyl Slct) cyan with its numbers. Lean assist: the first to
-      // peak marked, and how far below its peak it now is.
-      const L = sys.lean;
-      text(ctx, 'LEAN', x, 100, { size: 18, color: C.cyan });
-      gaugeBar(ctx, 'FFLOW GPH', ff, 0, 20, [[0, 20, C.green]], x, 140, w, (v) => v.toFixed(1));
-      const base = 440, top = 220, span = (v) => Math.max(0, Math.min(1, (v - 1000) / 600)) * (base - top);
-      for (let c = 0; c < 4; c++) {
-        const cx = x + c * 44 + 8, sel = c === L.cyl, peaked = L.assist && L.peaked === c;
+      // EGT (bars, 1250-1650 °F) and CHT (a bar across, 100-500 °F) for
+      // the four cylinders. The one shown (the hottest, or Cyl Slct's for a
+      // while) is cyan, with its EGT and CHT below. Lean assist: PEAK °F,
+      // the shown cylinder's EGT less its peak (0 at peak, negative either
+      // side); the first to peak gets a hollow bar at its peak.
+      const L = sys.lean, c = G.systems.leanCyl();
+      readout(ctx, 'FFLOW GPH', ff.toFixed(1), 260);
+      const base = 460, top = 300, span = (v, lo, hi) => Math.max(0, Math.min(1, (v - lo) / (hi - lo))) * (base - top);
+      for (let k = 0; k < 4; k++) {
+        const cx = x + k * 44 + 8, sel = k === c, peaked = L.assist && L.peaked === k;
         ctx.fillStyle = sel ? C.cyan : C.white;
-        const h = span(sys.egt[c]);
+        const h = span(sys.egt[k], 1250, 1650);
         ctx.fillRect(cx, base - h, 26, h);
-        // CHT on its own scale (100-500 °F): a short bar across.
-        const ch = Math.max(0, Math.min(1, (sys.cht[c] - 100) / 400)) * (base - top);
-        ctx.fillStyle = C.green; ctx.fillRect(cx - 3, base - ch - 2, 32, 4);
-        text(ctx, String(c + 1), cx + 13, base + 16, { size: 16, align: 'center', color: sel ? C.cyan : C.white });
-        if (peaked) text(ctx, 'PEAK', cx + 13, top - 14, { size: 12, align: 'center', color: C.cyan });
+        if (peaked) {
+          const hp = Math.max(h + 6, span(L.max[k], 1250, 1650));
+          ctx.strokeStyle = C.cyan; ctx.lineWidth = 2; ctx.strokeRect(cx + 1, base - hp, 24, hp - h);
+        }
+        const ch = span(sys.cht[k], 100, 500);
+        ctx.fillStyle = sys.cht[k] >= 500 ? C.red : sel ? C.cyan : C.green;
+        ctx.fillRect(cx - 3, base - ch - 2, 32, 4);
+        text(ctx, String(k + 1), cx + 13, base + 14, { size: 15, align: 'center', color: sel ? C.cyan : C.white });
       }
-      const c = L.cyl;
-      text(ctx, `EGT ${c + 1}`, x, 486, { size: 16, color: C.grey });
-      text(ctx, `${Math.round(sys.egt[c])}°F`, x + w, 486, { size: 18, align: 'right', color: C.cyan });
-      text(ctx, `CHT ${c + 1}`, x, 514, { size: 16, color: C.grey });
-      text(ctx, `${Math.round(sys.cht[c])}°F`, x + w, 514, { size: 18, align: 'right', color: C.cyan });
+      readout(ctx, `EGT ${c + 1} °F`, String(Math.round(sys.egt[c])), 500, C.cyan);
+      readout(ctx, `CHT ${c + 1} °F`, String(Math.round(sys.cht[c])), 526, sys.cht[c] >= 500 ? C.red : C.cyan);
       if (L.assist) {
-        const p = L.peaked;
-        text(ctx, 'LEAN ASSIST', x, 554, { size: 15, color: C.cyan });
-        text(ctx, 'ΔPEAK', x, 582, { size: 16, color: C.grey });
-        text(ctx, p == null ? '---' : `${Math.round(sys.egt[p] - L.max[p])}°F`, x + w, 582, { size: 18, align: 'right' });
-        if (p == null) text(ctx, 'Lean slowly to find the peak', x, 610, { size: 12, color: C.grey });
+        const peak = L.max[c];
+        readout(ctx, 'PEAK °F', L.peaked == null ? '---' : String(Math.round(sys.egt[c] - peak)), 552);
       }
-      text(ctx, `MIXTURE ${Math.round(s.mixture * 100)}%`, x, 650, { size: 13, color: C.grey });
+      fuelQty(ctx, s, 600);
       return;
     }
     if (s.eisPage === 'System') {
-      text(ctx, 'SYSTEM', x, 100, { size: 18, color: C.cyan });
-      // The fuel totalizer (Rst Fuel, Dec Fuel, Inc Fuel, Rst Used).
-      text(ctx, 'CALC FUEL', x, 510, { size: 15, color: C.cyan });
-      text(ctx, 'GAL USED', x, 540, { size: 16, color: C.grey });
-      text(ctx, sys.tot.used.toFixed(1), x + w, 540, { size: 18, align: 'right' });
-      text(ctx, 'GAL REM', x, 570, { size: 16, color: C.grey });
-      text(ctx, sys.tot.rem.toFixed(1), x + w, 570, { size: 18, align: 'right', color: sys.tot.rem < 10 ? C.yellow : C.white });
-      text(ctx, `TANKS ${s.fuel.toFixed(1)}`, x, 600, { size: 13, color: C.grey });
-      const vz = [[20, 24.5, C.red], [24.5, 32, C.green], [32, 34, C.red]];
-      gaugeBar(ctx, 'VOLTS M', sys.voltsM, 20, 34, vz, x, 140, w, (v) => v.toFixed(1), voltColor(sys.voltsM));
-      gaugeBar(ctx, 'VOLTS E', sys.voltsE, 20, 34, vz, x, 200, w, (v) => v.toFixed(1), voltColor(sys.voltsE));
-      gaugeBar(ctx, 'AMPS M', sys.ampsM, -60, 60, [[-60, 60, C.green]], x, 260, w, (v) => v.toFixed(0), ampColor(sys.ampsM));
-      gaugeBar(ctx, 'AMPS S', sys.ampsS, -10, 10, [[-10, 10, C.green]], x, 320, w, (v) => v.toFixed(1), sys.ampsS < 0 ? C.yellow : C.white);
-      gaugeBar(ctx, 'OIL PSI', sys.oilPsi, 0, 115, [[0, 20, C.red], [20, 50, C.yellow], [50, 90, C.green], [90, 115, C.red]], x, 380, w, (v) => v.toFixed(0), sys.oilPsi <= 20 ? C.red : C.white);
-      gaugeBar(ctx, 'OIL °F', sys.oilF, 75, 250, [[75, 100, C.yellow], [100, 245, C.green], [245, 250, C.red]], x, 440, w, (v) => v.toFixed(0), sys.oilF >= 245 ? C.red : C.white);
+      // The numbers behind the ENGINE page's indicators, the fuel
+      // totalizer (Rst Fuel, Dec Fuel, Inc Fuel, Rst Used) and engine
+      // hours.
+      readout(ctx, 'FFLOW GPH', ff.toFixed(1), 262);
+      readout(ctx, 'OIL PSI', sys.oilPsi.toFixed(0), 288, oilPsiColor(sys.oilPsi));
+      readout(ctx, 'OIL °F', sys.oilF.toFixed(0), 314, oilTempColor(s, sys.oilF));
+      readout(ctx, 'EGT °F', Math.round(sys.egt[hottest]).toString(), 340);
+      readout(ctx, 'VAC IN HG', sys.vac.toFixed(1), 366);
+      fuelQty(ctx, s, 400);
+      readout(ctx, 'GAL USED', sys.tot.used.toFixed(1), 494);
+      readout(ctx, 'GAL REM', sys.tot.rem.toFixed(1), 520);
+      readout(ctx, 'ENG HRS', sys.engHrs.toFixed(1), 560);
       return;
     }
-    // ENGINE page: RPM as an arc, then bars.
-    ctx.save();
-    ctx.translate(100, 170);
-    ctx.lineWidth = 10;
-    const arc = (a, b, color) => {
-      const ang = (v) => rad(150 + (v / 2800) * 240);
-      ctx.strokeStyle = color; ctx.beginPath(); ctx.arc(0, 0, 62, ang(a), ang(b)); ctx.stroke();
-    };
-    arc(0, 2100, '#555');
-    arc(2100, 2700, C.green);
-    arc(2700, 2800, C.red);
-    const ang = rad(150 + (rpm / 2800) * 240);
-    ctx.strokeStyle = C.white; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(ang) * 60, Math.sin(ang) * 60); ctx.stroke();
-    ctx.restore();
-    text(ctx, 'RPM', 100, 230, { size: 16, align: 'center' });
-    text(ctx, String(Math.round(rpm / 10) * 10), 100, 208, { size: 24, align: 'center' });
-    gaugeBar(ctx, 'FFLOW GPH', ff, 0, 20, [[0, 20, C.green]], x, 270, w, (v) => v.toFixed(1));
-    gaugeBar(ctx, 'OIL PRES', sys.oilPsi, 0, 115, [[0, 20, C.red], [20, 50, C.yellow], [50, 90, C.green], [90, 115, C.red]], x, 320, w, (v) => v.toFixed(0), sys.oilPsi <= 20 ? C.red : C.white);
-    gaugeBar(ctx, 'OIL TEMP', sys.oilF, 75, 250, [[75, 100, C.yellow], [100, 245, C.green], [245, 250, C.red]], x, 370, w, (v) => v.toFixed(0), sys.oilF >= 245 ? C.red : C.white);
-    gaugeBar(ctx, 'EGT', Math.max(...sys.egt), 1000, 1600, [[1000, 1600, '#555']], x, 420, w, () => '');
-    gaugeBar(ctx, 'VAC', sys.vac, 3, 7, [[3, 4.5, '#555'], [4.5, 5.5, C.green], [5.5, 7, '#555']], x, 470, w, (v) => v.toFixed(1), sys.vac < 3.5 ? C.yellow : C.white);
-    // Fuel: the POH's red 0-5 gal (1.5 gal unusable at 0), amber 5-8.
-    const fz = [[0, 5, C.red], [5, 8, C.yellow], [8, 30, C.green]];
-    const fc = (g) => (g < 5 ? C.yellow : C.white);
-    gaugeBar(ctx, 'FUEL QTY L', s.fuelL, 0, 30, fz, x, 530, w, (v) => v.toFixed(0), fc(s.fuelL));
-    gaugeBar(ctx, 'FUEL QTY R', s.fuelR, 0, 30, fz, x, 580, w, (v) => v.toFixed(0), fc(s.fuelR));
-    // Bus volts and battery amps at the bottom (POH: M BUS E, M BATT S).
-    const pair = (label, a, b, y, ca, cb, d) => {
-      text(ctx, label, x + w / 2, y, { size: 13, align: 'center', color: C.grey });
-      text(ctx, a.toFixed(d), x, y, { size: 16, color: ca });
-      text(ctx, b.toFixed(d), x + w, y, { size: 16, align: 'right', color: cb });
-    };
-    pair('M  VOLTS  E', sys.voltsM, sys.voltsE, 630, voltColor(sys.voltsM), voltColor(sys.voltsE), 1);
-    pair('M  AMPS  S', sys.ampsM, sys.ampsS, 656, ampColor(sys.ampsM), sys.ampsS < 0 ? C.yellow : C.white, 1);
+    // ENGINE page: pointers only (the SYSTEM page has the numbers).
+    const even = (lo, hi, step) => Array.from({ length: Math.round((hi - lo) / step) + 1 }, (_, i) => lo + i * step);
+    indicator(ctx, { label: 'FFLOW GPH', value: ff, lo: 0, hi: 20, zones: [[0, 12, C.green]], ticks: even(0, 20, 2), y: 256 });
+    indicator(ctx, { label: 'OIL PRES', value: sys.oilPsi, lo: 0, hi: 120, y: 306, color: oilPsiColor(sys.oilPsi),
+      zones: [[0, 20, C.red], [50, 90, C.green], [115, 120, C.red]] });
+    indicator(ctx, { label: 'OIL TEMP', value: sys.oilF, lo: 75, hi: 250, y: 356, color: oilTempColor(s, sys.oilF),
+      zones: [[100, 245, C.green], [245, 250, C.red]] });
+    indicator(ctx, { label: 'EGT', value: sys.egt[hottest], lo: 1250, hi: 1650, ticks: even(1250, 1650, 50), y: 408, mark: hottest + 1 });
+    indicator(ctx, { label: 'VAC', value: sys.vac, lo: 3, hi: 7, zones: [[4.5, 5.5, C.green]], y: 460 });
+    fuelQty(ctx, s, 512);
   }
 
   // ---- Moving maps: the MFD's Navigation Map, the PFD's inset and HSI

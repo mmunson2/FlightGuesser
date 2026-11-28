@@ -610,7 +610,7 @@ window.G1000 = (function () {
         state.eisPage = label;
         stack[stack.length - 1] = { Engine: 'engine', Lean: 'lean', System: 'system' }[label];
         return;
-      case 'lean:Cyl Slct': state.sys.lean.cyl = (state.sys.lean.cyl + 1) % 4; return;
+      case 'lean:Cyl Slct': systems.cylSlct(); return;
       case 'lean:Assist': systems.assist(); return;
       case 'system:Rst Fuel': case 'system:Dec Fuel': case 'system:Inc Fuel': case 'system:Rst Used':
         systems.totalizer(label); return;
@@ -836,6 +836,12 @@ window.G1000 = (function () {
     timer.step(dt);
     alerts.step(dt);
     systems.step(dt, fuelFlow());
+    // An engine exceedance brings the EIS back to its ENGINE page (and the
+    // softkeys to the ENGINE menu).
+    if (state.eisPage !== 'Engine' && systems.exceedance()) {
+      state.eisPage = 'Engine';
+      for (const st of Object.values(state.menus)) if (['lean', 'system'].includes(st[st.length - 1])) st[st.length - 1] = 'engine';
+    }
     // A pitch trim fault disconnects the autopilot (PTRM).
     if (state.sys.failed.trim && a.ap) apDisconnect();
     // The autopilot runs on avionics bus 2.
