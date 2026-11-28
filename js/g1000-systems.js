@@ -54,6 +54,12 @@ window.G1000_SYSTEMS = (function () {
   const CYL_RICH = [1.0, 0.97, 1.02, 0.99], CYL_PEAK = [1440, 1475, 1420, 1455];
   // The fuel the totalizer starts with, and full usable fuel (gal).
   const FULL_USABLE = 53;
+  // Cyl Slct's choice shows this long (s) before the Lean page goes back
+  // to the hottest cylinder (the POH: "a short time"; made up).
+  const CYL_SLCT_S = 10;
+  // The engine's hours at the start (made up); ENG HRS counts on while it
+  // runs.
+  const ENG_HRS = 1847.3;
   // Main battery: usable charge, amp-hours; the load with the alternator
   // off, amps. About 35 minutes to the 20 V where the standby battery
   // takes the essential bus (made up; the POH says only "a short time").
@@ -86,8 +92,9 @@ window.G1000_SYSTEMS = (function () {
       egt: [0, 0, 0, 0], cht: [0, 0, 0, 0],
       // Lean assist: on, the hottest EGT seen per cylinder since it came
       // on, and the first cylinder to pass its peak. cyl: the cylinder
-      // Cyl Slct shows (0-3).
-      lean: { assist: false, max: [0, 0, 0, 0], peaked: null, cyl: 0 },
+      // Cyl Slct picked (0-3) and when (state.t).
+      lean: { assist: false, max: [0, 0, 0, 0], peaked: null, cyl: 0, slctAt: -1e9 },
+      engHrs: ENG_HRS,
       // The totalizer: fuel remaining as set (the 48 gal the mock starts
       // with), fuel used (gal).
       tot: { rem: 48, used: 0 },
@@ -150,6 +157,7 @@ window.G1000_SYSTEMS = (function () {
     function step(dt, gph) {
       const s = S(), f = s.failed;
       burn(dt, gph);
+      if (s.running) s.engHrs += dt / 3600;
       // The totalizer counts what the fuel flow says.
       s.tot.used += (gph / 3600) * dt;
       s.tot.rem = Math.max(0, s.tot.rem - (gph / 3600) * dt);
@@ -235,6 +243,25 @@ window.G1000_SYSTEMS = (function () {
     function assist(on = !S().lean.assist) {
       Object.assign(S().lean, { assist: on, max: S().egt.slice(), peaked: null });
     }
+    // The cylinder the Lean page shows: Cyl Slct's for a while, else the
+    // hottest EGT.
+    function leanCyl() {
+      const s = S(), L = s.lean;
+      return state.t - L.slctAt < CYL_SLCT_S ? L.cyl : s.egt.indexOf(Math.max(...s.egt));
+    }
+    // Cyl Slct: the next cylinder after the one showing.
+    function cylSlct() {
+      const L = S().lean;
+      L.cyl = (leanCyl() + 1) % 4;
+      L.slctAt = state.t;
+    }
+    // An engine limit exceeded (the POH: the EIS goes back to the ENGINE
+    // page from LEAN or SYSTEM): 2780 RPM or more, oil pressure 0-20 or
+    // 115 PSI and over, oil hotter than 245 °F.
+    function exceedance() {
+      const s = S();
+      return s.rpm >= 2780 || s.oilPsi <= 20 || s.oilPsi >= 115 || s.oilF > 245;
+    }
     // The totalizer's softkeys.
     function totalizer(what) {
       const t = S().tot;
@@ -273,7 +300,7 @@ window.G1000_SYSTEMS = (function () {
     // The lamp runs off the standby battery itself.
     const testLamp = () => S().sw.stby === 'test' && S().stbyBatt > STBY_OK;
 
-    return { fresh, step, annunciations, fail, FAILURES, mixtureEffect, bestPowerMixture, richness, assist, totalizer,
+    return { fresh, step, annunciations, fail, FAILURES, mixtureEffect, bestPowerMixture, richness, assist, totalizer, leanCyl, cylSlct, exceedance,
              setSwitch, buses, powered, testLamp, turnMags, MAGS };
   }
 

@@ -21,7 +21,15 @@ left edge. Still open:
 ## The G1000 mock (js/g1000.js)
 
 The live PFD/MFD and Operate mode follow the G1000 NXi and GFC 700 as I
-remember the pilot's guides. Softkey labels and the radio boxes' layout
+remember the pilot's guides.
+
+**No help on the screens** (2026-11-27): the displays show only what the
+real unit would. Key hints, "not in the mock" notes and disclaimers are
+not drawn. Where this file says a note or a hint shows, it is now kept
+as data for a separate help UI: one-off notes in `state.note`, and each
+frame's page and window hints in `G1000_DISPLAY.help('pfd' | 'mfd')`.
+That includes the MINIMUMS note, why a greyed menu option doesn't work,
+and the airspace name under an alert message. Softkey labels and the radio boxes' layout
 were checked against the NXi in MSFS 2020. Check the rest against
 Garmin's *G1000 NXi Pilot's Guide for the Cessna 172* (190-02520-xx) and
 the GFC 700 AFMS:
@@ -248,11 +256,9 @@ the GFC 700 AFMS:
     - Oil loss: pressure falls to 5 PSI as oil temperature rises.
     - CO builds to 120 PPM over about 40 s.
     - The left leak drains 20 gal/h. The fuel selector is BOTH.
-  - The EIS now reads these: oil pressure and temperature, vacuum, fuel
-    per tank, and the bus volts and battery amps at the bottom of the
-    ENGINE page (M VOLTS E, M AMPS S, as the POH describes). Volts are
-    red outside 24.5–32. A discharging battery shows amber, the main one
-    below −1.5 A.
+  - The EIS reads these. Since the audit (2026-11-27) its layout follows
+    this POH's section 7 ("Engine Instruments", "Fuel Indicating
+    System", "Electrical System Monitoring"); see **EIS** below.
   - PTRM (pitch trim fault): red, under the autopilot mode strip. The AP
     disconnects and won't engage again, as the POH's procedure says.
   - MAXSPD: amber, flashing, under the strip. With the AP engaged, the
@@ -499,9 +505,10 @@ the GFC 700 AFMS:
     runs leanest and peaks first. CHT tracks EGT.
   - Leaning below 0.55 × peak stops the engine. All of these numbers are
     made up.
-  - Lean softkeys: Cyl Slct shows the next cylinder's numbers. Assist
-    marks the first cylinder to peak and shows ΔPEAK (now minus its
-    peak).
+  - Lean softkeys: Cyl Slct shows the next cylinder's numbers for 10 s
+    (the POH says "a short time"; made up), then the page goes back to
+    the hottest. Assist marks the first cylinder to peak with a hollow
+    bar and shows PEAK °F (now minus its peak, negative either side).
   - The System page's CALC FUEL shows GAL USED and GAL REM. Its softkeys
     are Rst Fuel (53 gal, full usable), Dec Fuel and Inc Fuel (1 gal),
     and Rst Used.
@@ -556,6 +563,61 @@ the GFC 700 AFMS:
   - The button's geometry is merged into the volume knob's part in the
     model: in the quiz it is named as that knob. In Operate mode, a click
     below the knob is the button.
+
+### EIS audit (2026-11-27, against this POH's section 7)
+
+The EIS was first drawn from memory with one generic bar per value
+(label, number, bar, pointer). That gave two fuel gauges, numbers on the
+ENGINE page, and several wrong bands. Now, from the POH:
+
+- **Every page**: the tachometer at the top (0–3,000 RPM; green 2100 to
+  2500 below 5,000 ft, 2600 to 10,000 ft, 2700 above; red 2700–3000;
+  pointer, value and label red from 2780, value and label flashing). At
+  the bottom, M BUS E (main and essential volts, VOLTS between them) and
+  M BATT S (main and standby battery amps, AMPS between them).
+- **ENGINE page**: pointers only. FFLOW GPH 0–20 with 2 GPH ticks, green
+  0–12. OIL PRES 0–120, red 0–20, green 50–90, red 115–120 (nothing
+  between the bands; there was a made-up yellow). OIL TEMP 75–250, green
+  100–245, red 245–250 (no yellow below 100). EGT 1250–1650 with 50 °F
+  ticks, the hottest cylinder's number in the pointer. VAC, green
+  4.5–5.5.
+- **FUEL QTY GAL**: one scale, the L pointer above it and the R pointer
+  below. Red line at 0 (1.5 gal unusable left), yellow 0–5, green 5–24.
+  The sensors read no higher than about 24 gal, so a fuller tank shows
+  24. Under 5 gal the pointer and label turn amber; at empty, flashing
+  red. Also on the LEAN and SYSTEM pages.
+- **LEAN page**: FFLOW GPH as a number, EGT and CHT for the four
+  cylinders, the hottest in cyan, its EGT °F and CHT °F, and PEAK °F with
+  Assist. CHT is red from 500 °F.
+- **SYSTEM page**: the numbers behind the ENGINE page (FFLOW GPH, OIL
+  PSI, OIL °F, EGT °F, VAC), FUEL QTY GAL, GAL USED, GAL REM and ENG HRS.
+  ENG HRS starts at 1847.3 (made up) and counts while the engine runs.
+- **Back to ENGINE**: from LEAN or SYSTEM, the page and softkeys return
+  to ENGINE on an exceedance: 2780 RPM or more, oil pressure 20 PSI or
+  less or 115 or more, or oil over 245 °F. A stopped engine counts (no
+  oil pressure).
+
+Still to check against the real unit (the POH doesn't say):
+
+- The fuel scale's numerals (0, 10, 20, F here) and where F sits.
+- Which numbers the SYSTEM page lists, and their order. The POH puts ENG
+  HRS on the ENGINE page's list; here it is on SYSTEM.
+- How the LEAN page draws CHT. Here it's a bar across each cylinder, on
+  its own 100–500 °F scale.
+- The System page softkeys. This POH (2007) says GAL REM, then
+  adjustment softkeys, and RST USED. The mock keeps Rst Fuel, Dec Fuel,
+  Inc Fuel and Rst Used (the NXi's, from memory).
+- The POH shows the EIS on the PFD during engine starts. The mock always
+  shows it on the MFD.
+
+PFD items added in the audit, from the same section:
+
+- Reference marks every 45° round the HSI's compass card.
+- An altitude trend vector: a magenta line on the altitude tape's left
+  edge, to where the altitude will be in 6 seconds.
+- Not added: the red pitch chevrons that point back to level flight
+  past the pitch limits. The mock's airplane doesn't reach those
+  attitudes.
 
 ## The engine model
 

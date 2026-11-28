@@ -1111,6 +1111,14 @@ G1000_CHECKS = r"""() => {
   G.reset();
   sk('mfd', 0, 1);
   expect(G.menu('mfd') === 'lean' && s.eisPage === 'Lean', `Lean page: ${G.menu('mfd')}`);
+  // The Lean page shows the hottest cylinder; Cyl Slct the next for a
+  // while, then the hottest again.
+  const hot = () => s.sys.egt.indexOf(Math.max(...s.sys.egt));
+  expect(G.systems.leanCyl() === hot(), `Lean: hottest shown: ${G.systems.leanCyl()} vs ${hot()}`);
+  sk('mfd', 3);
+  expect(G.systems.leanCyl() === (hot() + 1) % 4, `Cyl Slct: ${G.systems.leanCyl()}`);
+  run(11);
+  expect(G.systems.leanCyl() === hot(), `Cyl Slct times out: ${G.systems.leanCyl()}`);
   sk('mfd', 4);
   const ff0 = G.fuelFlow();
   for (let i = 0; i < 40 && s.sys.lean.peaked == null; i++) { G.fly({ mixture: -0.01 }); run(5); }
@@ -1131,6 +1139,12 @@ G1000_CHECKS = r"""() => {
   expect(s.sys.tot.used === s.sys.tot.used && Math.abs(s.sys.tot.used - ffT / 10) < 0.2 && Math.abs(s.sys.tot.rem - (51 - s.sys.tot.used)) < 1e-6 && used0 === 0,
     `totalizer: used ${s.sys.tot.used.toFixed(2)}, rem ${s.sys.tot.rem.toFixed(2)}`);
   drawAll('system page');
+  // Engine hours count while it runs.
+  expect(s.sys.engHrs > 1847.3 + 300 / 3600, `ENG HRS: ${s.sys.engHrs}`);
+  // An exceedance (low oil pressure) takes the EIS back to the ENGINE page.
+  G.fail('oil', true); run(30);
+  expect(s.eisPage === 'Engine' && G.menu('mfd') === 'engine', `exceedance: ${s.eisPage} ${G.menu('mfd')}`);
+  G.fail('oil', false);
   sk('mfd', 10);
   expect(G.menu('mfd') === 'mfd' && s.eisPage === 'Engine', `EIS Back: ${G.menu('mfd')} ${s.eisPage}`);
 
