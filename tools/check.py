@@ -1087,6 +1087,22 @@ G1000_CHECKS = r"""() => {
   G.press('ent', 'mfd');
   expect(s.fms.fpl.active === 2, `ACT Leg: active ${s.fms.fpl.active}`);
 
+  // Nearest Airports' boxes: FREQ puts the cursor in the frequencies, ENT
+  // loads one; RNWY steps through the runways; APT back to the list.
+  G.reset();
+  G.pages.goPage(4, 0);
+  G.push('fms', 'mfd'); G.turn('fms', 'inner', 1, 'mfd');
+  const na = G.pages.nrstAirport().w;
+  expect(na.id === G.pages.nearestAirports()[1].w.id, `NRST APT selection ${na.id}`);
+  G.press('softkey:7', 'mfd'); G.turn('fms', 'inner', 1, 'mfd');
+  G.press('ent', 'mfd');
+  expect(s.mfd.nrst.box === 'freq' && (na.freqs.length < 2 || s.com[0].stby === na.freqs[1].freq),
+    `NRST FREQ: box ${s.mfd.nrst.box}, COM1 stby ${s.com[0].stby}`);
+  G.press('softkey:6', 'mfd'); G.turn('fms', 'inner', 5, 'mfd');
+  expect(s.mfd.nrst.rnwy === Math.min(5, na.runways.length - 1), `NRST RNWY ${s.mfd.nrst.rnwy}`);
+  G.press('softkey:5', 'mfd');
+  expect(s.mfd.nrst.box === 'apt' && s.mfd.cursor === 1, `NRST APT: ${s.mfd.nrst.box} ${s.mfd.cursor}`);
+
   // GA: the AP off, the FD wings level and pitching up, ALTS armed.
   G.reset();
   G.press('ap'); G.press('hdg');

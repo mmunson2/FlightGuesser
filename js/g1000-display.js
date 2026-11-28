@@ -376,14 +376,26 @@ window.G1000_DISPLAY = (function () {
     return `${f(lat, 'N', 'S', 2)}  ${f(lon, 'E', 'W', 3)}`;
   };
   // A label and a value in two columns, from the top of the page down.
-  function rowsOf(ctx, pairs, x, y, gap = 40) {
+  function rowsOf(ctx, pairs, x, y, gap = 40, valX = 230, size = 22) {
     pairs.forEach(([k, v, color = C.white], i) => {
       text(ctx, k, x, y + i * gap, { size: 18, color: C.grey });
-      text(ctx, v, x + 230, y + i * gap, { size: 22, color });
+      text(ctx, v, x + valX, y + i * gap, { size, color });
     });
   }
   function pageBackground(ctx) {
     box(ctx, PAGE.x, PAGE.y, PAGE.w, PAGE.h, { fill: '#05070a', stroke: null });
+  }
+  // The WPT and NRST pages' map, at the right: north up, centred on the
+  // waypoint shown or selected, at the MFD's range (RANGE knob).
+  const PANE = { x: 620, w: 398 };
+  function pageMap(ctx, s, G, at, y = PAGE.y + 40, h = 300) {
+    const { x, w } = PANE;
+    box(ctx, x, y, w, h, { fill: '#0a1a10', stroke: C.grey });
+    if (!at) return;
+    const range = G.RANGES[s.range], ringR = h * 0.42;
+    drawMap(ctx, s, G, { x0: x, y0: y, w, h, ox: x + w / 2, oy: y + h / 2, ringR, range, up: 0, center: at, set: s.mapSet, small: true });
+    text(ctx, `${range}NM`, x + 8, y + h - 14, { size: 14, color: C.grey });
+    text(ctx, 'NORTH UP', x + w - 8, y + 14, { size: 13, align: 'right', color: C.grey });
   }
   function identLine(ctx, s, G, page, ident, x, y) {
     const p = s.mfd;
@@ -416,19 +428,21 @@ window.G1000_DISPLAY = (function () {
     ];
     pairs.forEach(([k, v], i) => {
       text(ctx, k, x, y + 50 + i * 33, { size: 16, color: C.grey });
-      text(ctx, v, x + 125, y + 50 + i * 33, { size: 19 });
+      text(ctx, v, x + 125, y + 50 + i * 33, { size: 17 });
     });
+    pageMap(ctx, s, G, a);
 
-    // Frequencies: kind, MHz, and which runway a tower frequency serves.
-    const fx = PAGE.x + 520;
-    text(ctx, 'FREQUENCIES', fx, y, { size: 16, color: C.cyan });
+    // Frequencies, under the map: kind, MHz, and which runway a tower
+    // frequency serves.
+    const fx = PANE.x + 10, fy0 = PAGE.y + 370;
+    text(ctx, 'FREQUENCIES', fx, fy0, { size: 16, color: C.cyan });
     a.freqs.slice(0, 9).forEach((f, i) => {
-      const fy = y + 32 + i * 30;
+      const fy = fy0 + 32 + i * 30;
       text(ctx, f.kind, fx, fy, { size: 15, color: C.grey });
-      text(ctx, f.freq.toFixed(3), fx + 118, fy, { size: 19, color: C.green });
-      if (f.note) text(ctx, f.note.replace(/^RWY /, ''), fx + 205, fy, { size: 14, color: C.grey });
+      text(ctx, f.freq.toFixed(3), fx + 112, fy, { size: 19, color: C.green });
+      if (f.note) text(ctx, f.note.replace(/^RWY /, ''), fx + 196, fy, { size: 14, color: C.grey });
     });
-    if (!a.freqs.length) text(ctx, 'none listed', fx, y + 32, { size: 16, color: C.grey });
+    if (!a.freqs.length) text(ctx, 'none listed', fx, fy0 + 32, { size: 16, color: C.grey });
 
     // Runways, longest first: length × width, surface, lights, and the
     // ends with right-hand traffic.
@@ -437,9 +451,9 @@ window.G1000_DISPLAY = (function () {
     a.runways.slice(0, 4).forEach((r, i) => {
       const yy = ry + 30 + i * 30;
       const rp = r.ends.filter((e) => e.rightTraffic).map((e) => e.id);
-      text(ctx, r.id, x, yy, { size: 20 });
-      text(ctx, `${r.len} × ${r.wid}FT  ${r.surface}  ${LIGHTS[r.lights] ?? ''}`, x + 125, yy, { size: 18 });
-      if (rp.length) text(ctx, `RP ${rp.join(', ')}`, x + 520, yy, { size: 17, color: C.yellow });
+      text(ctx, r.id, x, yy, { size: 19 });
+      text(ctx, `${r.len} × ${r.wid}FT ${r.surface} ${LIGHTS[r.lights] ?? ''}`, x + 92, yy, { size: 14 });
+      if (rp.length) text(ctx, `RP ${rp.join(',')}`, x + 92, yy + 16, { size: 12, color: C.yellow });
     });
     hint(ctx, `${G.WA_SOURCE}: Washington public-use airports. Not for navigation.`);
   }
@@ -455,7 +469,8 @@ window.G1000_DISPLAY = (function () {
       ['FROM P.POS', `${pad3(brg)}°  ${dist.toFixed(1)}NM`],
       // The radial the airplane is on: the bearing from the station.
       ['RADIAL', `${pad3(G.toMag(trueBrg + 180, v.magVar))}° FROM`], ['MAG VAR', magVarText(v) + ' declared'],
-    ], x, y + 60);
+    ], x, y + 60, 40, 140, 18);
+    pageMap(ctx, s, G, v);
     hint(ctx, 'Push FMS to pick another station. Nearest VOR (NRST) loads frequencies.');
   }
 
@@ -556,29 +571,67 @@ window.G1000_DISPLAY = (function () {
     pageBackground(ctx);
     const list = vor ? G.pages.nearestVors() : G.pages.nearestAirports();
     const x = PAGE.x + 30, top = PAGE.y + 60, rowH = 40, cur = s.mfd.cursor;
-    text(ctx, 'BRG', x + 220, top - 4, { size: 15, align: 'right', color: C.grey });
-    text(ctx, 'DIS', x + 340, top - 4, { size: 15, align: 'right', color: C.grey });
-    text(ctx, vor ? 'FREQ' : 'LONGEST RWY', x + 380, top - 4, { size: 15, color: C.grey });
+    // (Airports: the list has the cursor only in its APT box.)
+    const n = s.mfd.nrst, inList = vor || n.box === 'apt';
+    const chosen = vor ? (cur ?? 0) : n.apt;
+    text(ctx, 'BRG', x + 170, top - 4, { size: 15, align: 'right', color: C.grey });
+    text(ctx, 'DIS', x + 270, top - 4, { size: 15, align: 'right', color: C.grey });
+    if (vor) text(ctx, 'FREQ', x + 290, top - 4, { size: 15, color: C.grey });
     list.slice(0, 15).forEach((r, i) => {
       const ry = top + 34 + i * rowH;
       if (ry > PAGE.y + PAGE.h - 90) return;
-      const sel = cur === i;
+      const sel = inList && cur === i;
       if (sel) box(ctx, x - 6, ry - 15, 90, 30, { fill: C.cyan, stroke: null });
-      text(ctx, r.w.id, x, ry, { size: 22, color: sel ? C.black : C.white });
-      text(ctx, pad3(r.brg) + '°', x + 220, ry, { size: 21, align: 'right' });
-      text(ctx, r.dist.toFixed(1) + 'NM', x + 340, ry, { size: 21, align: 'right' });
-      if (vor) {
-        text(ctx, r.w.freq.toFixed(2), x + 380, ry, { size: 21, color: C.green });
-        text(ctx, r.w.name, x + 480, ry, { size: 16, color: C.grey });
-      } else {
-        // Longest runway and its surface, then the name.
-        const rw = r.w.runways[0];
-        text(ctx, rw ? `${rw.len}FT ${rw.surface}` : '', x + 380, ry, { size: 17 });
-        text(ctx, r.w.name.slice(0, 24), x + 560, ry, { size: 15, color: C.grey });
-      }
+      text(ctx, r.w.id, x, ry, { size: 22, color: sel ? C.black : !vor && i === chosen ? C.cyan : C.white });
+      text(ctx, pad3(r.brg) + '°', x + 170, ry, { size: 21, align: 'right' });
+      text(ctx, r.dist.toFixed(1) + 'NM', x + 270, ry, { size: 21, align: 'right' });
+      if (vor) text(ctx, r.w.freq.toFixed(2), x + 290, ry, { size: 21, color: C.green });
     });
+    const at = list[chosen]?.w;
+    if (vor) pageMap(ctx, s, G, at);
+    else nearestAirportBoxes(ctx, s, G, at, cur, n);
     hint(ctx, cur == null ? 'Push FMS for the cursor'
-      : vor ? 'ENT: frequency to NAV standby · D→: direct to it' : 'ENT: airport information · D→: direct to it');
+      : vor ? 'ENT: frequency to NAV standby · D→: direct to it'
+        : n.box === 'freq' ? 'ENT: frequency to COM standby' : n.box === 'rnwy' ? 'Small knob: next runway'
+          : 'ENT: airport information · D→: direct to it · RNWY, FREQ: the boxes');
+  }
+  // Nearest Airports, right of the list: the map, then INFORMATION,
+  // RUNWAYS (one at a time) and FREQUENCIES for the selected airport.
+  function nearestAirportBoxes(ctx, s, G, a, cur, n) {
+    pageMap(ctx, s, G, a, PAGE.y + 40, 270);
+    if (!a) return;
+    const x = PANE.x + 10, w = PANE.w - 20;
+    const head = (str, y) => { text(ctx, str, x, y, { size: 15, color: C.cyan }); ctx.fillStyle = C.grey; ctx.fillRect(x, y + 11, w, 1); };
+    let y = PAGE.y + 336;
+    head('INFORMATION', y);
+    text(ctx, a.name.slice(0, 30), x, y + 30, { size: 17 });
+    text(ctx, `${a.city}`.slice(0, 22), x, y + 56, { size: 15, color: C.grey });
+    text(ctx, `${a.elev}FT`, x + w, y + 56, { size: 17, align: 'right' });
+    y += 86;
+    head('RUNWAYS', y);
+    const r = a.runways[n.rnwy] ?? a.runways[0], selR = cur != null && n.box === 'rnwy';
+    if (r) {
+      ctx.font = font(20);
+      const tw = ctx.measureText(r.id).width;
+      if (selR) box(ctx, x - 4, y + 16, tw + 8, 28, { fill: C.cyan, stroke: null });
+      text(ctx, r.id, x, y + 30, { size: 20, color: selR ? C.black : C.white });
+      text(ctx, `${a.runways.indexOf(r) + 1} of ${a.runways.length}`, x + w, y + 30, { size: 14, align: 'right', color: C.grey });
+      text(ctx, `${r.len} × ${r.wid}FT  ${r.surface}  ${LIGHTS[r.lights] ?? ''}`, x, y + 56, { size: 15 });
+    }
+    y += 86;
+    head('FREQUENCIES', y);
+    // Up to six, scrolled to keep the cursor's in view.
+    const first = Math.max(0, Math.min(n.freq - 5, a.freqs.length - 6));
+    a.freqs.slice(first, first + 6).forEach((f, k) => {
+      const i = first + k, fy = y + 30 + k * 28, sel = cur != null && n.box === 'freq' && n.freq === i;
+      text(ctx, f.kind, x, fy, { size: 14, color: C.grey });
+      const ft = f.freq.toFixed(3);
+      ctx.font = font(18);
+      const tw = ctx.measureText(ft).width;
+      if (sel) box(ctx, x + 116, fy - 13, tw + 8, 26, { fill: C.cyan, stroke: null });
+      text(ctx, ft, x + 120, fy, { size: 18, color: sel ? C.black : C.green });
+      if (f.note) text(ctx, f.note.replace(/^RWY /, ''), x + 210, fy, { size: 13, color: C.grey });
+    });
   }
 
   // Nearest Frequencies: center, flight service and weather, a section
@@ -661,7 +714,8 @@ window.G1000_DISPLAY = (function () {
     else field(u.id, x, y, 0);
     text(ctx, `${s.fms.user.indexOf(u) + 1} of ${s.fms.user.length}`, x + 200, y, { size: 15, color: C.grey });
     const { brg, dist } = G.bearingDist(s, u);
-    rowsOf(ctx, [['COMMENT', u.name], ['POSITION', latLon(u.lat, u.lon)], ['FROM P.POS', `${pad3(G.toMag(brg))}°  ${dist.toFixed(1)}NM`]], x, y + 50);
+    rowsOf(ctx, [['COMMENT', u.name.slice(0, 22)], ['POSITION', latLon(u.lat, u.lon)], ['FROM P.POS', `${pad3(G.toMag(brg))}°  ${dist.toFixed(1)}NM`]], x, y + 50, 40, 140, 18);
+    pageMap(ctx, s, G, u);
     const ry = y + 200;
     text(ctx, 'REFERENCE WAYPOINT', x, ry, { size: 16, color: C.cyan });
     const r = u.ref;
@@ -690,8 +744,8 @@ window.G1000_DISPLAY = (function () {
       text(ctx, r.w.id, x, ry, { size: 22, color: sel ? C.black : C.white });
       text(ctx, pad3(r.brg) + '°', x + 220, ry, { size: 21, align: 'right' });
       text(ctx, r.dist.toFixed(1) + 'NM', x + 340, ry, { size: 21, align: 'right' });
-      text(ctx, r.w.name.slice(0, 30), x + 380, ry, { size: 15, color: C.grey });
     });
+    pageMap(ctx, s, G, list[cur ?? 0]?.w);
     hint(ctx, cur == null ? 'Push FMS for the cursor' : 'ENT: its information page · D→: direct to it');
   }
 

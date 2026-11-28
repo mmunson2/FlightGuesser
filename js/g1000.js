@@ -106,7 +106,7 @@ window.G1000 = (function () {
   const MFD_ROOTS = {
     map: [MENUS.mfd, LIVE.mfd],
     fpl: [['Engine', '', 'Map Opt', 'New WPT', 'View', 'VNV Prof', 'Cncl VNV', 'VNV Direct', 'ATK Ofst', 'ACT Leg', 'Charts', 'Checklist'], [0, 2, 4, 9, 11]],
-    nrstApt: [['Engine', '', 'Map Opt', '', '', 'APT', 'RNWY', 'FREQ', 'APR', 'LD APR', 'Charts', 'Checklist'], [0, 2, 11]],
+    nrstApt: [['Engine', '', 'Map Opt', '', '', 'APT', 'RNWY', 'FREQ', 'APR', 'LD APR', 'Charts', 'Checklist'], [0, 2, 5, 6, 7, 11]],
     aptInfo: [['Engine', '', 'Map Opt', '', '', 'Info-1', 'DP', 'STAR', 'APR', 'WX', 'Charts', 'Checklist'], [0, 2, 11]],
     withMap: [['Engine', '', 'Map Opt', '', '', '', '', '', '', '', 'Charts', 'Checklist'], [0, 2, 11]],
     plain: [['Engine', '', '', '', '', '', '', '', '', '', '', 'Checklist'], [0, 11]],
@@ -772,6 +772,9 @@ window.G1000 = (function () {
       case 'mfd:Detail All': case 'mfd:Detail-1': case 'mfd:Detail-2': case 'mfd:Detail-3':
         state.dcltr = (state.dcltr + 1) % DCLTR.length; return;
       case 'mfd:View': stack.push('fpl-view'); return;
+      // Nearest Airports: the cursor to the airport list, the runway or the
+      // frequencies box.
+      case 'mfd:APT': case 'mfd:RNWY': case 'mfd:FREQ': pages.nrstBox(label); return;
       case 'fpl-view:Narrow': case 'fpl-view:Wide': state.fms.view = label; return;
       // ACT Leg: the leg to the waypoint under the cursor, asked first.
       case 'mfd:ACT Leg': {

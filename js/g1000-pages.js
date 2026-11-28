@@ -44,6 +44,10 @@ window.G1000_PAGES = (function () {
       // user: the user waypoint shown (WPT - User WPT Information);
       // entryFor: what an open entry there is for ('name' or 'ref').
       wpt: { airport: 'KPAE', vor: 'PAE', user: null }, tripTo: 'KAWO', entryFor: null,
+      // Nearest Airports' boxes: which has the cursor (APT, RNWY, FREQ
+      // softkeys), the airport selected in the list, and the runway and
+      // frequency shown or picked in its boxes.
+      nrst: { box: 'apt', apt: 0, rnwy: 0, freq: 0 },
       // Utility: flight timer (from t0), odometer, and the trip's distance,
       // time (from tripT0) and top ground speed; the Page Menu resets them.
       stats: { t0: 0, odo: 0, trip: 0, tripT0: 0, maxGs: 0 },
@@ -197,7 +201,7 @@ window.G1000_PAGES = (function () {
       if (key === 'WPT:0') return p.wpt.airport;
       if (key === 'WPT:3') return p.wpt.vor;
       if (key === 'AUX:0') return p.tripTo;
-      if (key === 'NRST:0' && p.cursor != null) return nearestAirports()[p.cursor]?.w.id ?? null;
+      if (key === 'NRST:0' && p.cursor != null) return nrstAirport()?.w.id ?? null;
       if (key === 'NRST:3' && p.cursor != null) return nearestVors()[p.cursor]?.w.id ?? null;
       if (key === 'NRST:4' && p.cursor != null) return nearestUser()[p.cursor]?.w.id ?? null;
       if (key === 'WPT:4') return shownUser()?.id ?? null;
@@ -281,6 +285,14 @@ window.G1000_PAGES = (function () {
         else userChange(p.cursor, steps);
         return;
       }
+      // Nearest Airports: the cursor in whichever box has it.
+      if (key === 'NRST:0') {
+        const n = p.nrst, a = nrstAirport()?.w;
+        if (n.box === 'apt') { p.cursor = n.apt = clamp(p.cursor + steps, 0, listLength(key) - 1); n.rnwy = n.freq = 0; }
+        else if (n.box === 'rnwy') p.cursor = n.rnwy = clamp(n.rnwy + steps, 0, Math.max(0, (a?.runways.length ?? 1) - 1));
+        else p.cursor = n.freq = clamp(n.freq + steps, 0, Math.max(0, (a?.freqs.length ?? 1) - 1));
+        return;
+      }
       p.cursor = clamp(p.cursor + steps, 0, Math.max(0, listLength(key) - 1));
     }
     function push() {
@@ -292,7 +304,9 @@ window.G1000_PAGES = (function () {
         p.entry = { ident: now, pos: 0 };
       } else if (key === 'WPT:4') {
         if (shownUser()) p.cursor = 0; else note('No user waypoints: MENU to create one');
-      } else if (['NRST:0', 'NRST:3', 'NRST:4', 'NRST:5', 'NRST:6'].includes(key)) {
+      } else if (key === 'NRST:0') {
+        if (listLength(key)) { p.nrst.box = 'apt'; p.cursor = p.nrst.apt; } else note('Nothing near enough to list');
+      } else if (['NRST:3', 'NRST:4', 'NRST:5', 'NRST:6'].includes(key)) {
         if (listLength(key)) p.cursor = 0; else note('Nothing near enough to list');
       } else if (key === 'AUX:3') {
         p.cursor = 0;
@@ -308,6 +322,7 @@ window.G1000_PAGES = (function () {
       if (key === 'clr') {
         if (p.cursor == null) return false;
         p.cursor = p.entry = null;
+        p.nrst.box = 'apt';
         return true;
       }
       if (key !== 'ent' || p.cursor == null) return false;
@@ -348,9 +363,16 @@ window.G1000_PAGES = (function () {
         // ENT on a stored plan: the Page Menu, to activate or delete it.
         openMenu();
       } else if (page === 'NRST:0') {
-        // ENT on a nearest airport: its information page.
-        p.wpt.airport = nearestAirports()[p.cursor].w.id;
-        goPage(1, 0);
+        const a = nrstAirport()?.w;
+        if (p.nrst.box === 'freq') {
+          // ENT on a frequency: into the tuned COM's standby.
+          const f = a?.freqs[p.nrst.freq];
+          if (f) state.com[state.comTune].stby = f.freq;
+        } else if (p.nrst.box === 'apt' && a) {
+          // ENT on a nearest airport: its information page.
+          p.wpt.airport = a.id;
+          goPage(1, 0);
+        }
       } else if (page === 'NRST:5') {
         // ENT on a frequency: into the tuned COM's standby.
         const r = nearestFreqs()[p.cursor];
@@ -363,6 +385,18 @@ window.G1000_PAGES = (function () {
         note(`${v.freq.toFixed(2)} (${v.id}) to NAV${state.navTune + 1} standby`);
       }
       return true;
+    }
+
+    // ---- Nearest Airports' boxes ----
+    // The airport the boxes are about: the one selected in the list.
+    const nrstAirport = () => nearestAirports()[P().nrst.apt] ?? null;
+    // The APT, RNWY and FREQ softkeys: the cursor into that box.
+    function nrstBox(label) {
+      const p = P(), n = p.nrst;
+      if (pageKey() !== 'NRST:0') return;
+      if (!listLength('NRST:0')) { note('Nothing near enough to list'); return; }
+      n.box = label.toLowerCase();
+      p.cursor = n.box === 'apt' ? n.apt : n.box === 'rnwy' ? n.rnwy : n.freq;
     }
 
     // ---- The PFD's Nearest Airports window ----
@@ -423,7 +457,7 @@ window.G1000_PAGES = (function () {
 
     return {
       GROUPS, LIVE, fresh, sync, goPage, fplKey, pageKey, pageName, selectedIdent, turn, push, press,
-      pfdNearest, pfdInput, airportFreq, CDI_SCALES, step, trip, nearestAirports, nearestVors, nearestUser, nearestFreqs, nearestAirspaces, catalogRows, matchers,
+      pfdNearest, pfdInput, airportFreq, CDI_SCALES, nrstAirport, nrstBox, step, trip, nearestAirports, nearestVors, nearestUser, nearestFreqs, nearestAirspaces, catalogRows, matchers,
       shownUser, gpsStatus, USER_ROWS,
       cursorOn: () => P().cursor != null,
       isFplPage: () => pageKey() === FPL_PAGE,
