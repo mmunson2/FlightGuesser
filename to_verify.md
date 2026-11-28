@@ -40,7 +40,13 @@ the GFC 700 AFMS:
   - The FD can't be turned off while the AP is engaged.
   - Pressing an active mode key returns to ROL or PIT.
   - A mode change flashes for 10 seconds.
-  - AP disconnect flashes a yellow "AP" for about 5 seconds.
+  - AP disconnect with the AP key flashes a yellow "AP" for about 5
+    seconds. An abnormal disconnect (PTRM, avionics bus 2 off) flashes AP
+    red and white until acknowledged. With no AP DISC switch in the mock,
+    the next AP key press acknowledges it (it doesn't engage on that press).
+  - Losing a NAV mode for lack of guidance (no VOR signal, CDI source
+    changed) flashes the lost mode in yellow in its slot for 10 seconds,
+    then ROL shows in green.
 - **NOSE UP/DN steps**: 0.5° in PIT, 100 fpm in VS, 1 kt in FLC (where
   nose up means slower). In ALT the keys do nothing in the mock.
 - **Limits in the mock**: bank 22° in HDG and NAV, pitch −10° to +15°,
@@ -48,6 +54,11 @@ the GFC 700 AFMS:
 - **ALTS**:
   - Arms in PIT, VS and FLC when the selected altitude is ahead.
   - The capture lead is |VS| ÷ 5 ft.
+  - ALTS and ALT fly indicated (baro-corrected) altitude: changing BARO
+    in ALT climbs or descends to keep the readout on the reference.
+  - Changing the selected altitude during ALTS capture reverts to PIT,
+    and ALTS arms again for the new altitude.
+  - The selected altitude goes from −1,000 to 50,000 ft.
   - The real GFC 700 shows ALTS green during the capture, then ALT. Check
     those annunciations.
 - **Altitude alerter**:
@@ -618,6 +629,33 @@ PFD items added in the audit, from the same section:
 - Not added: the red pitch chevrons that point back to level flight
   past the pitch limits. The mock's airplane doesn't reach those
   attitudes.
+
+### Accuracy fixes (2026-11-27, branch g1000-inaccuracies)
+
+From an audit of the mock against this POH and the pilot's guides.
+From the POH:
+
+- Roll scale: the roll pointer is slaved to the airplane symbol (fixed
+  at top centre); the arc, its ticks and its zero mark turn with the
+  horizon. The slip/skid marker is a white trapezoid under the pointer
+  (always centred: the mock flies coordinated).
+- HSI: no red X when the VOR has no signal; the deviation bar simply
+  isn't drawn.
+- LEAN page: the hottest CHT's bar is cyan, apart from the EGT cylinder
+  selection.
+
+From memory (check):
+
+- STD BARO shows only after the STD Baro softkey; a 29.92 dialled with
+  the knob reads 29.92IN, and turning the knob ends STD BARO.
+- CLR no longer goes back a softkey level (only Back does).
+- The airspeed readout shows dashes below 20 KIAS.
+- The altitude readout's last two digits move in 20 ft steps.
+- The time is in its own box right of the transponder, as UTC hh:mm:ss.
+  Check the label (LCL/UTC) and whether the NXi shows seconds.
+- WPT ARRIVAL's text names the waypoint: "Arriving at waypoint -[KAWO]".
+- PTRM and MAXSPD boxes moved right of centre, off the now-fixed roll
+  pointer. Where the real ones show is still open (see MAXSPD above).
 
 ## The engine model
 

@@ -181,6 +181,9 @@ window.G1000 = (function () {
       // Pilot input with the autopilot off (arrow keys): attitude targets.
       manual: { pitch: 2.0, roll: 0 },
       baro: ACTUAL_BARO,
+      // STD Baro (the PFD Opt softkey): shows STD BARO until the BARO knob
+      // turns. A 29.92 dialled by hand reads 29.92IN.
+      baroStd: false,
       // The standby altimeter's own Kollsman setting (set before flight).
       stbyBaro: ACTUAL_BARO,
       com: [{ act: 132.950, stby: 120.200 }, { act: 128.650, stby: 121.900 }], comTune: 0,
@@ -195,7 +198,11 @@ window.G1000 = (function () {
       // flightId: sent with the transponder's replies (AUX - System Setup).
       xpdr: { code: '1200', mode: 'ALT', identUntil: 0, entry: null, flightId: 'N172SP' },
       afcs: { ap: false, fd: false, lat: null, latArmed: null, vert: null, vertArmed: null,
-              ref: { pitch: 0, roll: 0, vs: 0, ias: 0, alt: 0 }, changed: {}, apOffAt: -99 },
+              ref: { pitch: 0, roll: 0, vs: 0, ias: 0, alt: 0 }, changed: {}, apOffAt: -99,
+              // apAbnormal: the last disconnect wasn't the pilot's (AP red and
+              // white until acknowledged). lost: a mode the FD dropped for lack
+              // of guidance, flashing yellow in its slot ({ axis, mode, at }).
+              apAbnormal: false, lost: null },
       // Selected altitude alerter: 'approach' (within 1,000 ft), 'reached'
       // (within 200 ft), 'deviate' (off by more than 200 ft once reached).
       alt: { phase: 'far', flashUntil: 0 },
@@ -353,7 +360,15 @@ window.G1000 = (function () {
     if (mode === 'PIT') r.pitch = clamp(state.pitch, -10, 15);
     if (mode === 'VS') r.vs = clamp(Math.round(state.vs / 100) * 100, -1500, 1500);
     if (mode === 'FLC') r.ias = clamp(Math.round(state.ias), 55, 120);
-    if (mode === 'ALT') r.alt = Math.round(state.trueAlt / 10) * 10;
+    // The GFC 700 holds indicated (baro-corrected) altitude.
+    if (mode === 'ALT') r.alt = Math.round(indicatedAlt() / 10) * 10;
+  }
+  // A reversion for lack of guidance (no VOR signal, CDI source changed):
+  // the lost mode flashes yellow for 10 seconds, then the default shows.
+  function lose(axis) {
+    const a = state.afcs;
+    if (a[axis]) a.lost = { axis, mode: a[axis], at: state.t };
+    setMode(axis, axis === 'lat' ? LAT_DEFAULT : VERT_DEFAULT);
   }
   function arm(axis, mode) {
     const a = state.afcs;
@@ -374,9 +389,12 @@ window.G1000 = (function () {
     a.fd = false;
     a.lat = a.vert = a.latArmed = a.vertArmed = null;
   }
-  function apDisconnect() {
+  // abnormal: not the pilot's (a trim fault, power loss): AP flashes red
+  // and white until acknowledged; the pilot's disconnect flashes yellow.
+  function apDisconnect(abnormal = false) {
     state.afcs.ap = false;
     state.afcs.apOffAt = state.t;
+    state.afcs.apAbnormal = abnormal;
     state.manual.pitch = state.pitch;
     state.manual.roll = state.roll;
   }
@@ -484,6 +502,9 @@ window.G1000 = (function () {
     switch (key) {
       case 'ap':
         if (a.ap) apDisconnect();
+        // An abnormal disconnect's flashing AP: this press acknowledges it
+        // (the real AP DISC switch isn't modelled).
+        else if (a.apAbnormal) a.apAbnormal = false;
         // PTRM: the POH says not to engage the autopilot again.
         else if (state.sys.failed.trim) note('PTRM: pitch trim failure. Do not engage the autopilot');
         else if (systems.buses().avn2) { fdOn(); a.ap = true; }
@@ -512,9 +533,9 @@ window.G1000 = (function () {
         [n.act, n.stby] = [n.stby, n.act];
         return;
       }
-      case 'clr':
-        if (state.menus[display].length > 1) state.menus[display].pop();
-        return;
+      // CLR clears windows and cursors (above); it doesn't change the
+      // softkeys (BACK does).
+      case 'clr': return;
       case 'ent':
         return note('ENT: nothing to do here in the mock (open FPL or D→)');
       default:
@@ -557,7 +578,7 @@ window.G1000 = (function () {
         const order = ['GPS', 'VOR1', 'VOR2'];
         state.cdi = order[(order.indexOf(state.cdi) + 1) % 3];
         // A NAV mode on the old source drops back to ROL.
-        if (['NAV', 'APR'].includes(state.afcs.lat)) setMode('lat', LAT_DEFAULT);
+        if (['NAV', 'APR'].includes(state.afcs.lat)) lose('lat');
         if (['NAV', 'APR'].includes(state.afcs.latArmed)) arm('lat', null);
         return;
       }
@@ -566,7 +587,7 @@ window.G1000 = (function () {
         x.identUntil = state.t + 18;
         if (menu !== 'pfd') stack.splice(1);
         return;
-      case 'pfd-opt:STD Baro': state.baro = 29.92; return;
+      case 'pfd-opt:STD Baro': state.baro = 29.92; state.baroStd = true; return;
       case 'pfd-opt:Wind': stack.push('wind'); return;
       case 'wind:Option 1': case 'wind:Option 2': case 'wind:Option 3': state.windShow = label.slice(-1); return;
       case 'wind:Off': state.windShow = 'Off'; return;
@@ -652,9 +673,12 @@ window.G1000 = (function () {
       }
       case 'hdg': state.hdgBug = wrap360(state.hdgBug + steps); return;
       case 'alt':
-        state.altSel = clamp(state.altSel + steps * (part === 'outer' ? 1000 : 100), -1000, 20000);
+        state.altSel = clamp(state.altSel + steps * (part === 'outer' ? 1000 : 100), -1000, 50000);
+        // Changed during capture: back to PIT, ALTS armed again (step()).
+        if (state.afcs.vert === 'ALTS') setMode('vert', VERT_DEFAULT);
         return;
       case 'crs_baro':
+        if (part === 'outer') state.baroStd = false;
         if (part === 'outer' && state.altUnits.baro === 'HPA') {
           // In hPa: whole hectopascals.
           state.baro = clamp((Math.round(state.baro * HPA) + steps) / HPA, 27.0, 31.0);
@@ -766,7 +790,7 @@ window.G1000 = (function () {
       const want = wrap360(nav.courseTrue - clamp(nav.xtk * 40, -45, 45));
       rollCmd = clamp(diff(want, track()) * 1.2, -22, 22);
     } else if ((a.lat === 'NAV' || a.lat === 'APR') && !nav) {
-      setMode('lat', LAT_DEFAULT);
+      lose('lat');
     }
     if (a.latArmed && nav && nav.capturable) {
       setMode('lat', a.latArmed);
@@ -775,7 +799,9 @@ window.G1000 = (function () {
 
     // Vertical: ALTS arms in PIT, VS and FLC when the selected altitude
     // is ahead; it captures with a lead that grows with the climb rate.
-    const altErr = state.altSel - state.trueAlt;
+    // Indicated altitude: the GFC 700 flies the baro-corrected altitude.
+    const iAlt = indicatedAlt();
+    const altErr = state.altSel - iAlt;
     if (a.fd && ['PIT', 'VS', 'FLC'].includes(a.vert)) {
       const toward = Math.sign(altErr) === Math.sign(state.vs) || Math.abs(state.vs) < 50;
       arm('vert', toward && Math.abs(altErr) > 50 ? 'ALTS' : null);
@@ -795,7 +821,7 @@ window.G1000 = (function () {
     if (a.vert === 'VS') pitchCmd = pathFor(a.ref.vs) + alpha;
     if (a.vert === 'ALT' || a.vert === 'ALTS') {
       const target = a.vert === 'ALTS' ? state.altSel : a.ref.alt;
-      pitchCmd = pathFor(clamp((target - state.trueAlt) * 4, -700, 700)) + alpha;
+      pitchCmd = pathFor(clamp((target - iAlt) * 4, -700, 700)) + alpha;
     }
     if (a.vert === 'FLC') {
       // The path angle power allows at the reference speed, plus a pull
@@ -846,9 +872,10 @@ window.G1000 = (function () {
       for (const st of Object.values(state.menus)) if (['lean', 'system'].includes(st[st.length - 1])) st[st.length - 1] = 'engine';
     }
     // A pitch trim fault disconnects the autopilot (PTRM).
-    if (state.sys.failed.trim && a.ap) apDisconnect();
+    if (state.sys.failed.trim && a.ap) apDisconnect(true);
     // The autopilot runs on avionics bus 2.
-    if (a.ap && !systems.buses().avn2) apDisconnect();
+    if (a.ap && !systems.buses().avn2) apDisconnect(true);
+    if (a.lost && (state.t - a.lost.at >= 10 || !a.fd)) a.lost = null;
     alerter();
   }
 

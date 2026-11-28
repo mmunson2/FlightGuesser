@@ -402,6 +402,21 @@ G1000_CHECKS = r"""() => {
   expect(run(300, () => a().vert === 'ALT'), `no ALT capture: ${a().vert} at ${s.trueAlt.toFixed(0)} ft`);
   run(30);
   expect(Math.abs(s.trueAlt - 4500) < 30, `holding ${s.trueAlt.toFixed(0)} ft, selected 4,500`);
+  // ALT holds indicated altitude: 0.30 in more on the BARO knob and it
+  // descends 300 ft true to keep the readout.
+  G.turn('crs_baro', 'outer', 30);
+  run(90);
+  expect(Math.abs(G.indicatedAlt() - a().ref.alt) < 30 && Math.abs(s.trueAlt - 4200) < 40,
+    `ALT on indicated: ${G.indicatedAlt().toFixed(0)} vs ref ${a().ref.alt}, true ${s.trueAlt.toFixed(0)}`);
+  // The selected altitude changed during ALTS capture: PIT, ALTS armed again.
+  G.reset();
+  G.press('ap'); G.press('vs');
+  for (let i = 0; i < 5; i++) G.press('nose_up');
+  G.turn('alt', 'outer', -1);  // 4,500
+  expect(run(300, () => a().vert === 'ALTS'), `no ALTS capture: ${a().vert}`);
+  G.turn('alt', 'outer', 1);   // 5,500
+  run(1);
+  expect(a().vert === 'PIT' && a().vertArmed === 'ALTS', `ALTS retargeted: ${a().vert}/${a().vertArmed}`);
 
   // VOR: CDI to VOR1 (PAE), CRS push centres the needle with a TO flag.
   G.reset();
@@ -422,6 +437,11 @@ G1000_CHECKS = r"""() => {
   run(240);
   nav = G.navSolution();
   expect(nav && Math.abs(nav.dev) < 0.25, `NAV tracking: needle at ${nav && nav.dev.toFixed(2)} of full scale`);
+  // A CDI change drops NAV to ROL, VOR flashing yellow in its slot for 10 s.
+  G.press('softkey:5', 'pfd');
+  expect(a().lat === 'ROL' && a().lost?.mode === 'NAV', `CDI change: ${a().lat}, lost ${JSON.stringify(a().lost)}`);
+  run(11);
+  expect(!a().lost, 'the lost mode should clear after 10 s');
 
   // Radios: transfer swaps; outer knobs wrap at the band's ends.
   G.reset();
@@ -854,6 +874,9 @@ G1000_CHECKS = r"""() => {
   // PTRM: the autopilot disconnects and won't engage again.
   fresh(() => G.press('ap'));
   G.fail('trim'); run(1);
+  expect(!a().ap && a().apAbnormal, 'PTRM: an abnormal disconnect (red/white AP)');
+  G.press('ap');
+  expect(!a().ap && !a().apAbnormal, 'PTRM: the AP key acknowledges the disconnect');
   G.press('ap');
   expect(!a().ap, 'PTRM: the autopilot should be off and stay off');
   // MAXSPD: the autopilot diving in PIT holds the speed under Vne.
@@ -877,6 +900,13 @@ G1000_CHECKS = r"""() => {
   G.reset();
   G.press('softkey:3', 'pfd'); G.press('softkey:9', 'pfd');
   expect(s.baro === 29.92 && Math.abs(G.standbyAlt() - s.trueAlt) < 1, `standby altimeter ${G.standbyAlt()} vs ${s.trueAlt}`);
+  // STD BARO until the knob turns; 29.92 dialled by hand is just 29.92IN.
+  expect(s.baroStd, 'STD Baro softkey: STD BARO');
+  G.turn('crs_baro', 'outer', 1); G.turn('crs_baro', 'outer', -1);
+  expect(!s.baroStd && s.baro === 29.92, `29.92 dialled: baroStd ${s.baroStd}`);
+  // CLR leaves the softkeys alone (BACK changes level).
+  G.press('clr', 'pfd');
+  expect(G.menu('pfd') === 'pfd-opt', `CLR changed the softkeys: ${G.menu('pfd')}`);
   for (const [id, draw] of Object.entries(G1000_STANDBY.draw)) {
     const cv = document.createElement('canvas');
     cv.width = cv.height = G1000_STANDBY.SIZE;

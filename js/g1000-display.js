@@ -903,10 +903,13 @@ window.G1000_DISPLAY = (function () {
     ctx.restore();
     ctx.restore();
 
-    // Roll scale: fixed arc with ticks, the pointer turns with the bank.
+    // Roll scale: the arc and its ticks turn with the horizon; the roll
+    // pointer is slaved to the airplane symbol (POH 7-17), fixed at the top.
     ctx.save();
     ctx.translate(ATT.x, ATT.y);
     const R = 190;
+    ctx.save();
+    ctx.rotate(rad(-s.roll));
     ctx.strokeStyle = C.white;
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(0, 0, R, rad(-150), rad(-30)); ctx.stroke();
@@ -916,13 +919,15 @@ window.G1000_DISPLAY = (function () {
       ctx.beginPath(); ctx.moveTo(0, -R); ctx.lineTo(0, -R - len); ctx.stroke();
       ctx.restore();
     }
-    // Zero: a fixed white triangle above the arc.
+    // Zero: a white triangle above the arc, turning with it.
     ctx.fillStyle = C.white;
     ctx.beginPath(); ctx.moveTo(0, -R); ctx.lineTo(-12, -R - 20); ctx.lineTo(12, -R - 20); ctx.fill();
-    // Roll pointer and the slip/skid bar under it (centred: no slip here).
-    ctx.rotate(rad(-s.roll));
+    ctx.restore();
+    // Roll pointer, and the slip/skid trapezoid under it (centred: the
+    // mock flies coordinated).
+    ctx.fillStyle = C.white;
     ctx.beginPath(); ctx.moveTo(0, -R + 2); ctx.lineTo(-12, -R + 22); ctx.lineTo(12, -R + 22); ctx.fill();
-    ctx.fillRect(-14, -R + 26, 28, 6);
+    ctx.beginPath(); ctx.moveTo(-12, -R + 25); ctx.lineTo(12, -R + 25); ctx.lineTo(16, -R + 32); ctx.lineTo(-16, -R + 32); ctx.fill();
     ctx.restore();
   }
 
@@ -1011,7 +1016,8 @@ window.G1000_DISPLAY = (function () {
     ctx.moveTo(x + 4, cy - 24); ctx.lineTo(x + w - 18, cy - 24); ctx.lineTo(x + w - 4, cy);
     ctx.lineTo(x + w - 18, cy + 24); ctx.lineTo(x + 4, cy + 24); ctx.closePath();
     ctx.fill(); ctx.stroke();
-    text(ctx, String(Math.round(s.ias)), x + w - 22, cy + 1, { size: 32, align: 'right', color });
+    // Below 20 KIAS the readout shows dashes.
+    text(ctx, s.ias < 20 ? '---' : String(Math.round(s.ias)), x + w - 22, cy + 1, { size: 32, align: 'right', color });
     // FLC reference speed, above the tape.
     if (s.afcs.vert === 'FLC') text(ctx, `${s.afcs.ref.ias}KT`, x + w / 2, top - 16, { size: 22, align: 'center', color: C.cyan });
     box(ctx, x, bot, w, 30, { fill: C.black, stroke: C.grey });
@@ -1066,7 +1072,8 @@ window.G1000_DISPLAY = (function () {
     ctx.moveTo(x - 10, cy); ctx.lineTo(x + 4, cy - 24); ctx.lineTo(x + w - 2, cy - 24);
     ctx.lineTo(x + w - 2, cy + 24); ctx.lineTo(x + 4, cy + 24); ctx.closePath();
     ctx.fill(); ctx.stroke();
-    text(ctx, String(Math.round(alt / 10) * 10), x + w - 8, cy + 1, { size: 30, align: 'right' });
+    // The last two digits roll in 20 ft steps.
+    text(ctx, String(Math.round(alt / 20) * 20), x + w - 8, cy + 1, { size: 30, align: 'right' });
     // ALT Units, Meters: the metric altitude under the readout, and the
     // selected altitude's beside its box.
     const M = s.altUnits.meters, FT_M = 0.3048;
@@ -1087,7 +1094,7 @@ window.G1000_DISPLAY = (function () {
     box(ctx, x, bot, w, 30, { fill: C.black, stroke: C.grey });
     // In inches, or hectopascals (ALT Units, HPA).
     const baroText = s.altUnits.baro === 'HPA' ? `${Math.round(s.baro * G.HPA)}HPA` : `${s.baro.toFixed(2)}IN`;
-    text(ctx, s.baro === 29.92 ? 'STD BARO' : baroText, x + w / 2, bot + 15,
+    text(ctx, s.baroStd ? 'STD BARO' : baroText, x + w / 2, bot + 15,
       { size: 19, align: 'center', color: C.cyan });
   }
 
@@ -1138,10 +1145,18 @@ window.G1000_DISPLAY = (function () {
       } else text(ctx, str, x, y + 1, { size: 21, align, color });
     };
     const latName = (m) => (m === 'NAV' || m === 'APR') ? G.navModeName(m) : m;
-    slot(latName(a.lat), x0 + 45, C.green, 'lat');
+    // A mode lost for lack of guidance flashes yellow in its slot, then
+    // the default mode shows in green.
+    const lost = a.lost && s.t - a.lost.at < 10 ? a.lost : null;
+    if (lost?.axis === 'lat') {
+      if (Math.floor(s.t * 2) % 2 === 0) text(ctx, latName(lost.mode), x0 + 45, y + 1, { size: 21, align: 'center', color: C.yellow });
+    } else slot(latName(a.lat), x0 + 45, C.green, 'lat');
     slot(latName(a.latArmed), x0 + 125, C.white, 'latArmed');
     if (a.ap) text(ctx, 'AP', x0 + 200, y + 1, { size: 21, align: 'center', color: C.green });
-    else if (s.t - a.apOffAt < 5 && blinkOn(s, a.apOffAt + 5)) {
+    else if (a.apAbnormal) {
+      // Not the pilot's disconnect: red and white until acknowledged.
+      text(ctx, 'AP', x0 + 200, y + 1, { size: 21, align: 'center', color: Math.floor(s.t * 2) % 2 ? C.white : C.red });
+    } else if (s.t - a.apOffAt < 5 && blinkOn(s, a.apOffAt + 5)) {
       text(ctx, 'AP', x0 + 200, y + 1, { size: 21, align: 'center', color: C.yellow });
     }
     const vref = a.vert === 'VS' ? `${a.ref.vs}FPM` : a.vert === 'FLC' ? `${a.ref.ias}KT`
@@ -1155,7 +1170,8 @@ window.G1000_DISPLAY = (function () {
     if (s.sys.failed.trim) below.push(['PTRM', C.red, true]);
     if (a.maxspd) below.push(['MAXSPD', C.yellow, blinkOn(s, s.t + 1)]);
     below.forEach(([str, color, show], i) => {
-      const bx = x0 + w / 2 - (below.length * 110) / 2 + i * 110;
+      // Right of the roll pointer, which stays at top centre.
+      const bx = ATT.x + 22 + i * 110;
       box(ctx, bx + 5, 108, 100, 28, { fill: C.black, stroke: color });
       if (show) text(ctx, str, bx + 55, 123, { size: 19, align: 'center', color });
     });
@@ -1291,10 +1307,8 @@ window.G1000_DISPLAY = (function () {
     // OBS mode: sequencing suspended on the active waypoint.
     if (nav?.obs) text(ctx, 'OBS', 46, 30, { size: 17, align: 'center', color: srcColor });
     if (hsiMap) text(ctx, G.RANGES[s.pfdMap.range] + 'NM', 0, R - 46, { size: 14, align: 'center', color: C.grey });
-    if (s.cdi !== 'GPS' && !nav) {
-      ctx.strokeStyle = C.red; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(-60, -40); ctx.lineTo(60, 40); ctx.moveTo(60, -40); ctx.lineTo(-60, 40); ctx.stroke();
-    }
+    // No VOR signal: no flag (POH 4-16); the missing deviation bar is the
+    // warning.
     // GPS integrity lost: LOI, amber, and no deviation.
     if (s.cdi === 'GPS' && s.sys.failed.gps) text(ctx, 'LOI', 0, 40, { size: 22, align: 'center', color: C.yellow });
     ctx.restore();
@@ -1383,17 +1397,20 @@ window.G1000_DISPLAY = (function () {
     }
     // Transponder: code, mode, ident.
     const x = s.xpdr;
-    box(ctx, W - 280, y, 280, 38, { fill: C.black, stroke: C.grey });
+    box(ctx, W - 400, y, 250, 38, { fill: C.black, stroke: C.grey });
     const ident = s.t < x.identUntil;
     const code = x.entry !== null ? (x.entry + '____').slice(0, 4) : x.code;
     const modeColor = x.mode === 'STBY' ? C.white : C.green;
-    text(ctx, 'XPDR', W - 270, y + 19, { size: 20 });
-    text(ctx, code, W - 200, y + 19, { size: 22, color: x.entry !== null ? C.cyan : modeColor });
-    text(ctx, ident ? 'IDNT' : x.mode, W - 130, y + 19, { size: 22, color: modeColor });
+    text(ctx, 'XPDR', W - 390, y + 19, { size: 20 });
+    text(ctx, code, W - 320, y + 19, { size: 22, color: x.entry !== null ? C.cyan : modeColor });
+    text(ctx, ident ? 'IDNT' : x.mode, W - 250, y + 19, { size: 22, color: modeColor });
     // R: replying to an interrogation (a radar sweep every 4.8 s, made up).
-    if (x.mode !== 'STBY' && s.t % 4.8 < 0.6) text(ctx, 'R', W - 84, y + 19, { size: 18, color: C.green });
+    if (x.mode !== 'STBY' && s.t % 4.8 < 0.6) text(ctx, 'R', W - 196, y + 19, { size: 18, color: C.green });
     const d = new Date(s.t * 1000 + Date.UTC(2026, 0, 1, 17, 0, 0));
-    text(ctx, `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`, W - 10, y + 19, { size: 18, align: 'right', color: C.grey });
+    // The time of day, in its own box right of the transponder.
+    box(ctx, W - 148, y, 148, 38, { fill: C.black, stroke: C.grey });
+    const two = (n) => String(n).padStart(2, '0');
+    text(ctx, `UTC ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`, W - 74, y + 19, { size: 18, align: 'center' });
   }
 
   // Reversionary mode (DISPLAY BACKUP): the PFD with the engine strip down
@@ -1574,6 +1591,7 @@ window.G1000_DISPLAY = (function () {
       // the shown cylinder's EGT less its peak (0 at peak, negative either
       // side); the first to peak gets a hollow bar at its peak.
       const L = sys.lean, c = G.systems.leanCyl();
+      const hotCht = sys.cht.indexOf(Math.max(...sys.cht));
       readout(ctx, 'FFLOW GPH', ff.toFixed(1), 260);
       const base = 460, top = 300, span = (v, lo, hi) => Math.max(0, Math.min(1, (v - lo) / (hi - lo))) * (base - top);
       for (let k = 0; k < 4; k++) {
@@ -1586,7 +1604,7 @@ window.G1000_DISPLAY = (function () {
           ctx.strokeStyle = C.cyan; ctx.lineWidth = 2; ctx.strokeRect(cx + 1, base - hp, 24, hp - h);
         }
         const ch = span(sys.cht[k], 100, 500);
-        ctx.fillStyle = sys.cht[k] >= 500 ? C.red : sel ? C.cyan : C.green;
+        ctx.fillStyle = sys.cht[k] >= 500 ? C.red : k === hotCht ? C.cyan : C.green;
         ctx.fillRect(cx - 3, base - ch - 2, 32, 4);
         text(ctx, String(k + 1), cx + 13, base + 14, { size: 15, align: 'center', color: sel ? C.cyan : C.white });
       }

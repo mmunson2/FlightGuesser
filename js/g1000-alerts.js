@@ -90,8 +90,10 @@ window.G1000_ALERTS = (function () {
       al.messages = al.messages.filter((m) => m.id in now);
       for (const [id, about] of Object.entries(now)) {
         const m = al.messages.find((x) => x.id === id);
-        if (m) { m.about = about; continue; }
-        al.messages.unshift({ id, ...MSGS[id], about, t: state.t });
+        // WPT ARRIVAL names the waypoint: "Arriving at waypoint -[KAWO]".
+        const shown = id === 'wpt' ? `${MSGS[id].text} -[${about}]` : MSGS[id].text;
+        if (m) { m.about = about; m.text = shown; continue; }
+        al.messages.unshift({ id, ...MSGS[id], text: shown, about, t: state.t });
         al.unseen = true;
       }
     }
