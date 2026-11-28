@@ -51,8 +51,13 @@ window.G1000_FMS = (function () {
       // The Flight Plan Catalog: stored plans, { wpts } each. Two local
       // examples to start with; the real unit keeps what was stored.
       catalog: [{ wpts: ['KPAE', 'KAWO', 'KBVS'] }, { wpts: ['KBFI', 'KPAE', 'KBLI'] }],
+      // Direct-To's recent waypoints, newest first (its RECENT list).
+      recent: [],
       // The open window on each display: null, a Direct-To window
-      // { type: 'dto', ident, pos, stage: 'ident' | 'activate' }, or the
+      // { type: 'dto', ident, pos, stage: 'ident' | 'course' | 'activate',
+      // course: null (straight there) or a course (magnetic) into the
+      // waypoint, edited: typed into yet, list: the small knob's waypoint
+      // list { items: [{ group, id }], cursor } or null }, or the
       // flight plan { type: 'fpl', cursor, entry: {ident, pos} | null,
       // prompt: {text, action} | null }.
       win: { pfd: null, mfd: null },
@@ -90,6 +95,11 @@ window.G1000_FMS = (function () {
       const f = F().fpl, obs = F().obs;
       let l = null;
       if (f.dto) l = { from: f.dto.from, to: byId[f.dto.to], fromId: null, direct: true };
+      // A Direct-To with a course: that course into the waypoint.
+      if (f.dto?.course != null) {
+        const to = byId[f.dto.to], crsTrue = f.dto.course + magVarAt(to.lat, to.lon);
+        l = { ...l, from: project(to, crsTrue + 180, 100) };
+      }
       else if (f.active != null && f.active >= 1 && f.active < f.wpts.length) {
         l = { from: byId[f.wpts[f.active - 1]], to: byId[f.wpts[f.active]], fromId: f.wpts[f.active - 1], direct: false };
       }
@@ -146,8 +156,8 @@ window.G1000_FMS = (function () {
       const to = bearingDist(state, l.to);
       // Desired track and bearing shown magnetic, by the variation where
       // the airplane is.
-      // OBS: the course is the one selected (by the waypoint's variation).
-      const course = F().obs ? F().obs.crs : toMagAt(p.dtk, state);
+      // OBS, or a Direct-To with a course: the course is the one selected.
+      const course = F().obs ? F().obs.crs : F().fpl.dto?.course ?? toMagAt(p.dtk, state);
       return {
         source: 'GPS', station: l.to, course, courseTrue: p.dtk, obs: !!F().obs,
         toFrom: p.remaining > 0 ? 'TO' : 'FROM',
@@ -199,11 +209,26 @@ window.G1000_FMS = (function () {
         else if (f.dto.index > i) f.dto.index--;
       }
     }
-    function directTo(id) {
+    // course: a selected course (magnetic) into the waypoint, or none.
+    function directTo(id, course = null) {
       const f = F().fpl;
       const index = f.wpts.indexOf(id);
-      f.dto = { from: { lat: state.lat, lon: state.lon }, to: id, index: index < 0 ? null : index };
+      f.dto = { from: { lat: state.lat, lon: state.lon }, to: id, index: index < 0 ? null : index, course };
       F().obs = null;
+      F().recent = [id, ...F().recent.filter((r) => r !== id)].slice(0, 10);
+    }
+    // The small knob's list in the Direct-To window (turned back with
+    // nothing typed): the flight plan's waypoints, the five nearest
+    // airports, the recent ones and the user waypoints.
+    function dtoList() {
+      const near = waypoints.filter((w) => w.type === 'airport')
+        .map((w) => ({ id: w.id, d: bearingDist(state, w).dist })).sort((a, b) => a.d - b.d).slice(0, 5);
+      return [
+        ...F().fpl.wpts.map((id) => ({ group: 'FPL', id })),
+        ...near.map((n) => ({ group: 'NRST', id: n.id })),
+        ...F().recent.map((id) => ({ group: 'RECENT', id })),
+        ...F().user.map((u) => ({ group: 'USER', id: u.id })),
+      ];
     }
     function activateLeg(i) {
       const f = F().fpl;
@@ -328,7 +353,7 @@ window.G1000_FMS = (function () {
           const f = F().fpl;
           const fromCursor = win?.type === 'fpl' && win.cursor != null ? f.wpts[win.cursor] : null;
           const def = opts.dtoDefault ?? fromCursor ?? leg()?.to.id ?? '';
-          w[display] = { type: 'dto', ident: def, pos: 0, stage: 'ident' };
+          w[display] = { type: 'dto', ident: def, pos: 0, stage: 'ident', course: null, edited: false, list: null };
           return true;
         }
         case 'fpl':
@@ -345,10 +370,17 @@ window.G1000_FMS = (function () {
     function ent(win, display) {
       const w = F().win;
       if (win.type === 'dto') {
+        // A pick from the list: into the identifier.
+        if (win.list) {
+          const it = win.list.items[win.list.cursor];
+          if (it) Object.assign(win, { ident: it.id, pos: 0, edited: true });
+          win.list = null;
+          return true;
+        }
         const m = match(win.ident);
         if (!m) { note('No waypoint matches ' + (win.ident || '(blank)')); return true; }
-        if (win.stage === 'ident') { win.ident = m.id; win.stage = 'activate'; return true; }
-        directTo(m.id);
+        if (win.stage === 'ident' || win.stage === 'course') { win.ident = m.id; win.stage = 'activate'; return true; }
+        directTo(m.id, win.course);
         w[display] = null;
         return true;
       }
@@ -369,7 +401,10 @@ window.G1000_FMS = (function () {
     function clr(win, display) {
       const w = F().win;
       if (win.type === 'dto') {
-        if (win.stage === 'activate') win.stage = 'ident'; else w[display] = null;
+        if (win.list) win.list = null;
+        // CLR on the course: straight to the waypoint again.
+        else if (win.stage === 'course') { win.course = null; win.stage = 'activate'; }
+        else if (win.stage === 'activate') win.stage = 'ident'; else w[display] = null;
         return true;
       }
       if (win.prompt) { win.prompt = null; return true; }
@@ -394,7 +429,30 @@ window.G1000_FMS = (function () {
         return;
       }
       if (win.type === 'dto') {
+        if (win.list) {
+          win.list.cursor = clamp(win.list.cursor + steps, 0, Math.max(0, win.list.items.length - 1));
+          return;
+        }
+        // Past the identifier the large knob moves between it, COURSE and
+        // ACTIVATE; the small knob sets the course.
+        if (win.stage !== 'ident' && part === 'outer') {
+          const order = ['ident', 'course', 'activate'], i = clamp(order.indexOf(win.stage) + steps, 0, 2);
+          win.stage = order[i];
+          if (win.stage === 'course' && win.course == null) {
+            const m = match(win.ident);
+            win.course = m ? Math.round(toMagAt(bearingDist(state, m).brg, state)) % 360 : 0;
+          }
+          if (win.stage === 'ident') win.pos = 0;
+          return;
+        }
+        if (win.stage === 'course' && part === 'inner') { win.course = (((win.course + steps) % 360) + 360) % 360; return; }
         win.stage = 'ident';
+        // The small knob turned back with nothing typed yet: the list.
+        if (part === 'inner' && steps < 0 && !win.edited) {
+          const items = dtoList();
+          if (items.length) { win.list = { items, cursor: 0 }; return; }
+        }
+        win.edited = true;
         if (part === 'inner') editChar(win, steps); else moveCursor(win, steps);
         return;
       }

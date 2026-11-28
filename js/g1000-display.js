@@ -112,16 +112,43 @@ window.G1000_DISPLAY = (function () {
 
   function dtoWindow(ctx, s, G, win, x, y, w, h) {
     box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
-    text(ctx, 'DIRECT TO', x + w / 2, y + 22, { size: 22, align: 'center', color: C.cyan });
-    const m = identField(ctx, win, x + 20, y + 66, G, win.stage === 'ident');
-    text(ctx, m ? m.name : 'No match', x + 20, y + 104, { size: 18, color: m ? C.white : C.yellow });
+    text(ctx, 'DIRECT TO', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
+    const m = identField(ctx, win, x + 20, y + 54, G, win.stage === 'ident' && !win.list);
+    // The airport's city beside the identifier, the name under it.
+    if (m?.city) text(ctx, m.city.slice(0, 16), x + w - 12, y + 54, { size: 15, align: 'right', color: C.grey });
+    text(ctx, m ? (m.name ?? '').slice(0, 30) : 'No match', x + 20, y + 84, { size: 17, color: m ? C.white : C.yellow });
+    // VNV: the altitude and offset for a vertical path to it (no VNAV in
+    // the mock: blank).
+    text(ctx, 'VNV', x + 20, y + 112, { size: 14, color: C.grey });
+    text(ctx, '_____FT', x + 70, y + 112, { size: 17, color: C.cyan });
+    text(ctx, '+0NM', x + 180, y + 112, { size: 17, color: C.cyan });
     if (m) {
       const { brg: trueBrg, dist } = G.bearingDist(s, m), brg = G.toMag(trueBrg);
-      text(ctx, `BRG ${pad3(brg)}°   DIS ${dist.toFixed(1)}NM`, x + 20, y + 138, { size: 20 });
+      text(ctx, `BRG ${pad3(brg)}°  DIS ${dist.toFixed(1)}NM`, x + 20, y + 142, { size: 17 });
+      // COURSE: straight there (the bearing), or the course selected.
+      const crs = `CRS ${pad3(win.course ?? brg)}°`, onC = win.stage === 'course';
+      ctx.font = font(17);
+      const tw = ctx.measureText(crs).width;
+      if (onC) box(ctx, x + w - 16 - tw, y + 128, tw + 8, 28, { fill: C.cyan, stroke: null });
+      text(ctx, crs, x + w - 12, y + 142, { size: 17, align: 'right', color: onC ? C.black : C.cyan });
+    }
+    // The small knob's waypoint list, left of the window.
+    if (win.list) {
+      const lw = 220, lx = x - lw - 4, rowH = 26, n = Math.floor((h - 40) / rowH), L = win.list;
+      box(ctx, lx, y, lw, h, { fill: 'rgba(8, 9, 11, 0.97)', stroke: C.white });
+      const first = Math.max(0, Math.min(L.cursor - n + 1, L.items.length - n));
+      let lastGroup = first > 0 ? L.items[first - 1].group : null;
+      L.items.slice(first, first + n).forEach((it, k) => {
+        const ry = y + 22 + k * rowH, sel = first + k === L.cursor;
+        if (it.group !== lastGroup) text(ctx, it.group, lx + 8, ry, { size: 13, color: C.grey });
+        lastGroup = it.group;
+        if (sel) box(ctx, lx + 80, ry - 12, 90, 24, { fill: C.cyan, stroke: null });
+        text(ctx, it.id, lx + 86, ry, { size: 18, color: sel ? C.black : C.cyan });
+      });
     }
     const on = win.stage === 'activate';
-    box(ctx, x + w / 2 - 80, y + 166, 160, 36, { fill: on ? C.cyan : C.black, stroke: C.cyan });
-    text(ctx, 'ACTIVATE?', x + w / 2, y + 185, { size: 20, align: 'center', color: on ? C.black : C.cyan });
+    box(ctx, x + w / 2 - 80, y + 172, 160, 36, { fill: on ? C.cyan : C.black, stroke: C.cyan });
+    text(ctx, 'ACTIVATE?', x + w / 2, y + 191, { size: 20, align: 'center', color: on ? C.black : C.cyan });
   }
 
   // One flight plan data field for a row (js/g1000-fms.js rows()): DTK,

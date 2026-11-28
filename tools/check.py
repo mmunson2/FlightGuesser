@@ -1103,6 +1103,25 @@ G1000_CHECKS = r"""() => {
   G.press('softkey:5', 'mfd');
   expect(s.mfd.nrst.box === 'apt' && s.mfd.cursor === 1, `NRST APT: ${s.mfd.nrst.box} ${s.mfd.cursor}`);
 
+  // Direct-To: the small knob back lists waypoints (FPL first); a course
+  // into the waypoint (COURSE field) makes the leg along it.
+  G.reset();
+  G.fms.activatePlan(['KPAE', 'KAWO']);
+  G.press('direct_to', 'pfd');
+  G.turn('fms', 'inner', -1, 'pfd');
+  const dw = () => s.fms.win.pfd;
+  expect(dw().list?.items[0]?.group === 'FPL' && dw().list.items.some((it) => it.group === 'NRST'), `D→ list: ${JSON.stringify(dw().list?.items.slice(0, 3))}`);
+  G.turn('fms', 'inner', 1, 'pfd'); G.press('ent', 'pfd');
+  expect(dw().ident === 'KAWO' && !dw().list, `D→ list pick: ${dw().ident}`);
+  G.press('ent', 'pfd');                       // to ACTIVATE
+  G.turn('fms', 'outer', -1, 'pfd');            // to COURSE
+  expect(dw().stage === 'course' && dw().course != null, `D→ course field: ${dw().stage} ${dw().course}`);
+  dw().course = 90; G.press('ent', 'pfd'); G.press('ent', 'pfd');
+  const dl = G.fms.leg(), dn = G.navSolution();
+  expect(!s.fms.win.pfd && s.fms.fpl.dto?.course === 90 && dl.to.id === 'KAWO' && Math.abs(((dn.course - 90 + 540) % 360) - 180) < 1,
+    `D→ with a course: ${JSON.stringify(s.fms.fpl.dto)}, course ${dn?.course}`);
+  expect(s.fms.recent[0] === 'KAWO', `recent ${s.fms.recent}`);
+
   // GA: the AP off, the FD wings level and pitching up, ALTS armed.
   G.reset();
   G.press('ap'); G.press('hdg');
