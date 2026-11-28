@@ -39,6 +39,8 @@ window.I18N = {
   'controls.lever': 'Push or pull the throttle, mixture, cabin heat and cabin air (scroll up pushes in)',
   'controls.fly.key': 'Arrows, Page Up/Down, Home/End',
   'controls.fly': 'Fly by hand with the autopilot off (pitch and bank), set power and the mixture (Home richer, End leaner). With the MFD map pointer out (RANGE push), the arrows move it',
+  'controls.yoke.key': 'G, D, [ ], hold C',
+  'controls.yoke': 'The yoke and throttle buttons: G Go-Around, D A/P TRIM DISC, [ and ] manual electric trim (nose down, up), hold C for Control Wheel Steering (fly by hand with the autopilot on)',
   'tools.operate': 'Operate G1000',
   'tools.operateTip': 'Use the G1000 and autopilot: keys click, knobs turn by dragging around them or scrolling',
   'tools.resetFlight': 'Reset flight',

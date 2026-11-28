@@ -1046,6 +1046,29 @@ G1000_CHECKS = r"""() => {
   G.press('ent', 'pfd');
   expect(s.fms.win.pfd.field === 'freq' && s.com[0].stby === nf.freq, `PFD NRST freq: ${s.fms.win.pfd.field}, COM1 stby ${s.com[0].stby} vs ${nf?.freq}`);
 
+  // GA: the AP off, the FD wings level and pitching up, ALTS armed.
+  G.reset();
+  G.press('ap'); G.press('hdg');
+  G.press('ga');
+  expect(!s.afcs.ap && s.afcs.fd && s.afcs.lat === 'GA' && s.afcs.vert === 'GA', `GA: ${s.afcs.lat}/${s.afcs.vert}, AP ${s.afcs.ap}`);
+  run(2);
+  expect(s.afcs.vertArmed === 'ALTS', `GA: ALTS armed ${s.afcs.vertArmed}`);
+  // A/P TRIM DISC and manual electric trim disconnect the autopilot (a
+  // normal disconnect: no red AP).
+  G.press('ap'); G.press('ap_disc');
+  expect(!s.afcs.ap && !s.afcs.apAbnormal, 'A/P TRIM DISC');
+  G.press('ap'); G.press('trim_up');
+  expect(!s.afcs.ap, 'MET disconnects the AP');
+  // CWS: hand flying with the AP on; let go, PIT holds the new pitch.
+  G.reset();
+  G.press('ap');
+  G.cws(true);
+  G.fly({ pitch: 4 });
+  run(5);
+  G.cws(false);
+  expect(s.afcs.ap && s.afcs.vert === 'PIT' && Math.abs(s.afcs.ref.pitch - s.pitch) < 0.01 && s.pitch > 4,
+    `CWS: PIT ref ${s.afcs.ref.pitch.toFixed(1)}, pitch ${s.pitch.toFixed(1)}`);
+
   // ALT: NOSE UP/DN moves the reference 10 ft a press.
   G.reset();
   G.press('ap'); G.press('alt');

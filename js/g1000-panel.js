@@ -656,6 +656,22 @@ window.G1000_PANEL = (function () {
         redraw(true);
         return;
       }
+      // The yoke's and throttle's autopilot controls: G the Go-Around
+      // button, D A/P TRIM DISC, [ and ] the manual electric trim (nose
+      // down, up), C held CWS.
+      const yokeKey = { g: 'ga', d: 'ap_disc', '[': 'trim_dn', ']': 'trim_up' }[e.key.toLowerCase()];
+      if (yokeKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        if (!(yokeKey === 'ga' && e.repeat)) G.press(yokeKey);
+        redraw(true);
+        return;
+      }
+      if (e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        G.cws(true);
+        redraw(true);
+        return;
+      }
       const input = { ArrowUp: { pitch: -0.5 }, ArrowDown: { pitch: 0.5 }, ArrowLeft: { roll: -3 },
         ArrowRight: { roll: 3 }, PageUp: { power: 0.05 }, PageDown: { power: -0.05 },
         Home: { mixture: 0.02 }, End: { mixture: -0.02 } }[e.key];
@@ -663,6 +679,10 @@ window.G1000_PANEL = (function () {
       e.preventDefault();
       G.fly(input);
     });
+
+    // CWS: let go with the key (or when the window loses focus).
+    document.addEventListener('keyup', (e) => { if (e.key.toLowerCase() === 'c' && G.state.afcs.cws) { G.cws(false); redraw(true); } });
+    window.addEventListener('blur', () => { if (G.state.afcs.cws) G.cws(false); });
 
     // ---- Every frame: the simulation, and the screens at ~15 Hz ----
     // Drawing a screen and uploading its 1024 x 852 texture is the

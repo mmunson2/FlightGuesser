@@ -1196,7 +1196,9 @@ window.G1000_DISPLAY = (function () {
       if (Math.floor(s.t * 2) % 2 === 0) text(ctx, latName(lost.mode), x0 + 45, y + 1, { size: 21, align: 'center', color: C.yellow });
     } else slot(latName(a.lat), x0 + 45, C.green, 'lat');
     slot(latName(a.latArmed), x0 + 125, C.white, 'latArmed');
-    if (a.ap) text(ctx, 'AP', x0 + 200, y + 1, { size: 21, align: 'center', color: C.green });
+    // CWS held: CWS in white where AP shows.
+    if (a.ap && a.cws) text(ctx, 'CWS', x0 + 200, y + 1, { size: 21, align: 'center', color: C.white });
+    else if (a.ap) text(ctx, 'AP', x0 + 200, y + 1, { size: 21, align: 'center', color: C.green });
     else if (a.apAbnormal) {
       // Not the pilot's disconnect: red and white until acknowledged.
       text(ctx, 'AP', x0 + 200, y + 1, { size: 21, align: 'center', color: Math.floor(s.t * 2) % 2 ? C.white : C.red });

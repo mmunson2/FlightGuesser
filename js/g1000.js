@@ -210,7 +210,11 @@ window.G1000 = (function () {
               // apAbnormal: the last disconnect wasn't the pilot's (AP red and
               // white until acknowledged). lost: a mode the FD dropped for lack
               // of guidance, flashing yellow in its slot ({ axis, mode, at }).
-              apAbnormal: false, lost: null },
+              apAbnormal: false, lost: null,
+              // CWS (the yoke's Control Wheel Steering button) held: the
+              // servos let go and the pilot flies; let go, the references
+              // sync to the attitude then.
+              cws: false },
       // Selected altitude alerter: 'approach' (within 1,000 ft), 'reached'
       // (within 200 ft), 'deviate' (off by more than 200 ft once reached).
       alt: { phase: 'far', flashUntil: 0 },
@@ -377,6 +381,26 @@ window.G1000 = (function () {
     // The GFC 700 holds indicated (baro-corrected) altitude.
     if (mode === 'ALT') r.alt = Math.round(indicatedAlt() / 10) * 10;
   }
+  // GA (the throttle's Go-Around button): wings level, a fixed pitch up.
+  const GA_PITCH = 7;
+  // The references to the attitude now (CWS released): bank in ROL,
+  // pitch in PIT, the vertical speed, airspeed or altitude in VS, FLC, ALT.
+  function syncRefs() {
+    const a = state.afcs, r = a.ref;
+    if (a.lat === 'ROL') r.roll = clamp(state.roll, -22, 22);
+    if (a.vert === 'PIT') r.pitch = clamp(state.pitch, -10, 15);
+    if (a.vert === 'VS') r.vs = clamp(Math.round(state.vs / 100) * 100, -1500, 1500);
+    if (a.vert === 'FLC') r.ias = clamp(Math.round(state.ias), 55, 120);
+    if (a.vert === 'ALT') r.alt = Math.round(indicatedAlt() / 10) * 10;
+  }
+  // CWS held (on) or let go.
+  function cws(on) {
+    const a = state.afcs;
+    if (a.cws === on) return;
+    a.cws = on;
+    // Held: the pilot holds the attitude the airplane has.
+    if (on) { state.manual.pitch = state.pitch; state.manual.roll = state.roll; } else if (a.fd) syncRefs();
+  }
   // A reversion for lack of guidance (no VOR signal, CDI source changed):
   // the lost mode flashes yellow for 10 seconds, then the default shows.
   function lose(axis) {
@@ -533,6 +557,31 @@ window.G1000 = (function () {
         // The FD can't go off while the AP flies.
         if (a.ap) return;
         if (a.fd) fdOff(); else fdOn();
+        return;
+      // The yoke's A/P TRIM DISC: disconnects the autopilot (and
+      // acknowledges an abnormal disconnect).
+      case 'ap_disc':
+        if (a.ap) apDisconnect();
+        else a.apAbnormal = false;
+        return;
+      // Manual electric trim (the yoke's split switch): disconnects the
+      // autopilot; hand flying, it trims the pitch.
+      case 'trim_up': case 'trim_dn': {
+        if (state.sys.failed.trim) return;
+        if (a.ap) { apDisconnect(); return; }
+        const d = key === 'trim_up' ? 0.3 : -0.3;
+        state.manual.pitch = clamp(state.manual.pitch + d, -10, 15);
+        return;
+      }
+      // The throttle's Go-Around button: the autopilot off, the flight
+      // director in GA (wings level, pitch up), ALTS armed for the
+      // selected altitude (step()).
+      case 'ga':
+        if (a.ap) apDisconnect();
+        a.fd = true;
+        setMode('lat', 'GA');
+        setMode('vert', 'GA');
+        arm('lat', null);
         return;
       case 'hdg': return modeKey('lat', 'HDG');
       case 'nav': return navKey('NAV');
@@ -839,6 +888,7 @@ window.G1000 = (function () {
     // Lateral: a bank to fly.
     let rollCmd = state.roll;
     if (a.lat === 'ROL') rollCmd = a.ref.roll;
+    if (a.lat === 'GA') rollCmd = 0;
     // The bug is magnetic; the airplane's heading is true.
     if (a.lat === 'HDG') rollCmd = clamp(diff(toTrue(state.hdgBug), state.hdg) * 1.2, -22, 22);
     if ((a.lat === 'NAV' || a.lat === 'APR') && nav) {
@@ -859,7 +909,7 @@ window.G1000 = (function () {
     // Indicated altitude: the GFC 700 flies the baro-corrected altitude.
     const iAlt = indicatedAlt();
     const altErr = state.altSel - iAlt;
-    if (a.fd && ['PIT', 'VS', 'FLC'].includes(a.vert)) {
+    if (a.fd && ['PIT', 'VS', 'FLC', 'GA'].includes(a.vert)) {
       const toward = Math.sign(altErr) === Math.sign(state.vs) || Math.abs(state.vs) < 50;
       arm('vert', toward && Math.abs(altErr) > 50 ? 'ALTS' : null);
       if (a.vertArmed === 'ALTS' && Math.abs(altErr) < Math.max(50, Math.abs(state.vs) / 5)) {
@@ -875,6 +925,7 @@ window.G1000 = (function () {
     }
     let pitchCmd = state.pitch;
     if (a.vert === 'PIT') pitchCmd = a.ref.pitch;
+    if (a.vert === 'GA') pitchCmd = GA_PITCH;
     if (a.vert === 'VS') pitchCmd = pathFor(a.ref.vs) + alpha;
     if (a.vert === 'ALT' || a.vert === 'ALTS') {
       const target = a.vert === 'ALTS' ? state.altSel : a.ref.alt;
@@ -895,7 +946,8 @@ window.G1000 = (function () {
     a.cmd = { roll: rollCmd, pitch: pitchCmd };
 
     const toward = (v, target, rate) => v + clamp(target - v, -rate * dt, rate * dt);
-    if (a.ap) {
+    // (CWS held: the pilot flies.)
+    if (a.ap && !a.cws) {
       state.roll = toward(state.roll, rollCmd, 5);
       state.pitch = toward(state.pitch, pitchCmd, 2);
     } else {
@@ -964,7 +1016,7 @@ window.G1000 = (function () {
   function fly({ pitch = 0, roll = 0, power = 0, mixture = 0 }) {
     state.power = clamp(state.power + power, 0, 1);
     state.mixture = clamp(state.mixture + mixture, 0, 1);
-    if (state.afcs.ap) return;
+    if (state.afcs.ap && !state.afcs.cws) return;
     state.manual.pitch = clamp(state.manual.pitch + pitch, -10, 15);
     state.manual.roll = clamp(state.manual.roll + roll, -30, 30);
   }
@@ -974,7 +1026,7 @@ window.G1000 = (function () {
     // The airplane's magnetic heading, as the HSI shows it.
     magHeading: () => toMag(state.hdg), HPA, SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, systems, airportSize, fuelFlow,
     FAILURES: G1000_SYSTEMS.FAILURES, fail: (id, on) => systems.fail(id, on), DB_EXPIRES,
-    press, turn, push, fly, hold, HOLD, bearingDist, navSolution, indicatedAlt, standbyAlt, tas, gs, track, navModeName,
+    press, turn, push, fly, hold, HOLD, cws, bearingDist, navSolution, indicatedAlt, standbyAlt, tas, gs, track, navModeName,
     windInfo, bearingTo, dmeInfo, oat, densityAlt, mapUp, pan, panTarget, checklist, gma,
     // Sets the wind: from (true), knots.
     setWind: (dir, spd) => { state.wind = { dir: wrap360(dir), spd: Math.max(0, spd) }; },
