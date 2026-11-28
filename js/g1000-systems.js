@@ -43,7 +43,14 @@
 //   150 and 50). START springs back to BOTH.
 // - The pump, cabin power and ELT do nothing yet (procedure practice).
 window.G1000_SYSTEMS = (function () {
-  const FAILURES = ['alternator', 'overvolt', 'oil', 'vacuum', 'leakL', 'co', 'trim', 'gps'];
+  // adc, ahrs: the air data computer and attitude/heading reference (red
+  // X on the PFD instruments they feed, the autopilot off). rpmSensor,
+  // ffSensor, oilPSensor, egtSensor (cylinder 3's EGT probe): an EIS
+  // sensor (red X on what it shows).
+  const FAILURES = ['alternator', 'overvolt', 'oil', 'vacuum', 'leakL', 'co', 'trim', 'gps',
+    'adc', 'ahrs', 'rpmSensor', 'ffSensor', 'oilPSensor', 'egtSensor'];
+  // The cylinder whose EGT probe egtSensor fails.
+  const EGT_PROBE_CYL = 2;
   // Richness: the fuel-air ratio over the one that gives peak EGT (1).
   // Full rich gives 1.35 at sea level, richer as the air thins.
   const richAt = (alt) => 1.35 * (1 + alt / 25000);
@@ -245,9 +252,18 @@ window.G1000_SYSTEMS = (function () {
     }
     // The cylinder the Lean page shows: Cyl Slct's for a while, else the
     // hottest EGT.
+    // The hottest cylinder by EGT whose probe works (a failed probe's
+    // cylinder is passed over: the POH, "the next hottest EGT").
+    function hottestEgt() {
+      const s = S();
+      let best = -1;
+      s.egt.forEach((v, k) => { if (!egtOk(k)) return; if (best < 0 || v > s.egt[best]) best = k; });
+      return best;
+    }
+    const egtOk = (k) => !(S().failed.egtSensor && k === EGT_PROBE_CYL);
     function leanCyl() {
       const s = S(), L = s.lean;
-      return state.t - L.slctAt < CYL_SLCT_S ? L.cyl : s.egt.indexOf(Math.max(...s.egt));
+      return state.t - L.slctAt < CYL_SLCT_S ? L.cyl : hottestEgt();
     }
     // Cyl Slct: the next cylinder after the one showing.
     function cylSlct() {
@@ -260,7 +276,9 @@ window.G1000_SYSTEMS = (function () {
     // 115 PSI and over, oil hotter than 245 °F.
     function exceedance() {
       const s = S();
-      return s.rpm >= 2780 || s.oilPsi <= 20 || s.oilPsi >= 115 || s.oilF > 245;
+      // (A failed sensor reads nothing, so it can't exceed.)
+      const f = s.failed;
+      return (!f.rpmSensor && s.rpm >= 2780) || (!f.oilPSensor && (s.oilPsi <= 20 || s.oilPsi >= 115)) || s.oilF > 245;
     }
     // The totalizer's softkeys.
     function totalizer(what) {
@@ -300,7 +318,7 @@ window.G1000_SYSTEMS = (function () {
     // The lamp runs off the standby battery itself.
     const testLamp = () => S().sw.stby === 'test' && S().stbyBatt > STBY_OK;
 
-    return { fresh, step, annunciations, fail, FAILURES, mixtureEffect, bestPowerMixture, richness, assist, totalizer, leanCyl, cylSlct, exceedance,
+    return { fresh, step, annunciations, fail, FAILURES, mixtureEffect, hottestEgt, egtOk, bestPowerMixture, richness, assist, totalizer, leanCyl, cylSlct, exceedance,
              setSwitch, buses, powered, testLamp, turnMags, MAGS };
   }
 

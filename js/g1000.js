@@ -546,6 +546,8 @@ window.G1000 = (function () {
     switch (key) {
       case 'ap':
         if (a.ap) apDisconnect();
+        // No attitude or air data: no autopilot or flight director.
+        else if (!afcsSensors()) { a.apAbnormal = false; return; }
         // An abnormal disconnect's flashing AP: this press acknowledges it
         // (the real AP DISC switch isn't modelled).
         else if (a.apAbnormal) a.apAbnormal = false;
@@ -556,6 +558,7 @@ window.G1000 = (function () {
       case 'fd':
         // The FD can't go off while the AP flies.
         if (a.ap) return;
+        if (!a.fd && !afcsSensors()) return;
         if (a.fd) fdOff(); else fdOn();
         return;
       // The yoke's A/P TRIM DISC: disconnects the autopilot (and
@@ -577,6 +580,7 @@ window.G1000 = (function () {
       // director in GA (wings level, pitch up), ALTS armed for the
       // selected altitude (step()).
       case 'ga':
+        if (!afcsSensors()) return;
         if (a.ap) apDisconnect();
         a.fd = true;
         setMode('lat', 'GA');
@@ -630,6 +634,8 @@ window.G1000 = (function () {
     // Held anywhere else: as a press.
     press(key, display);
   }
+  // The GFC 700 needs the AHRS and the air data computer.
+  const afcsSensors = () => !state.sys.failed.adc && !state.sys.failed.ahrs;
   function nose(dir) {
     const a = state.afcs, r = a.ref;
     if (!a.fd) return;
@@ -984,6 +990,9 @@ window.G1000 = (function () {
     if (state.sys.failed.trim && a.ap) apDisconnect(true);
     // The autopilot runs on avionics bus 2.
     if (a.ap && !systems.buses().avn2) apDisconnect(true);
+    // An AHRS or ADC failure: the autopilot disconnects, the flight
+    // director goes away.
+    if (!afcsSensors()) { if (a.ap) apDisconnect(true); if (a.fd) fdOff(); }
     if (a.lost && (state.t - a.lost.at >= 10 || !a.fd)) a.lost = null;
     alerter();
   }

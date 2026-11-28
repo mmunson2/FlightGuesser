@@ -887,6 +887,25 @@ G1000_CHECKS = r"""() => {
   expect(!a().ap && !a().apAbnormal, 'PTRM: the AP key acknowledges the disconnect');
   G.press('ap');
   expect(!a().ap, 'PTRM: the autopilot should be off and stay off');
+  // AHRS or ADC failure: the autopilot disconnects (abnormal), the FD goes,
+  // and neither comes back on; the PFD and EIS draw their red X's.
+  for (const id of ['ahrs', 'adc']) {
+    fresh(() => G.press('ap'));
+    G.fail(id); run(1);
+    G.press('ap'); G.press('ap'); G.press('fd');
+    expect(!a().ap && !a().fd, `${id} failure: AP ${a().ap}, FD ${a().fd}`);
+  }
+  for (const id of ['rpmSensor', 'ffSensor', 'oilPSensor', 'egtSensor']) G.fail(id, true);
+  expect(G.systems.hottestEgt() !== 2 && G.systems.leanCyl() !== 2, 'a failed EGT probe is never the hottest');
+  {
+    const cv = document.createElement('canvas');
+    cv.width = G1000_DISPLAY.W; cv.height = G1000_DISPLAY.H;
+    try {
+      for (const page of ['Engine', 'Lean', 'System']) { s.eisPage = page; G1000_DISPLAY.drawMFD(cv.getContext('2d'), s, G); }
+      G1000_DISPLAY.drawPFD(cv.getContext('2d'), s, G);
+    } catch (e) { errors.push(`g1000: drawing failed sensors: ${e}`); }
+    s.eisPage = 'Engine';
+  }
   // MAXSPD: the autopilot diving in PIT holds the speed under Vne.
   fresh(() => { G.press('ap'); s.power = 1; for (let i = 0; i < 30; i++) G.press('nose_dn'); });
   let fastest = 0, maxspd = false;

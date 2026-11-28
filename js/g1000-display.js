@@ -995,6 +995,13 @@ window.G1000_DISPLAY = (function () {
     ctx.restore();
   }
 
+  // A failed sensor's display: its area blanked, a red X corner to corner.
+  function redX(ctx, x, y, w, h, fill = C.black) {
+    if (fill) { ctx.fillStyle = fill; ctx.fillRect(x, y, w, h); }
+    ctx.strokeStyle = C.red; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.moveTo(x + w, y); ctx.lineTo(x, y + h); ctx.stroke();
+  }
+
   // Values that need the last frame's (speed trend).
   const last = { pfd: null };
 
@@ -1340,7 +1347,7 @@ window.G1000_DISPLAY = (function () {
       ctx.restore();
     }
     box(ctx, -38, -R - 64, 76, 36, { fill: C.black, stroke: C.white });
-    text(ctx, pad3(G.magHeading()) + '°', 0, -R - 45, { size: 26, align: 'center' });
+    text(ctx, s.sys.failed.ahrs ? '' : pad3(G.magHeading()) + '°', 0, -R - 45, { size: 26, align: 'center' });
     // Small airplane in the middle.
     ctx.strokeStyle = C.white;
     ctx.lineWidth = 4;
@@ -1387,7 +1394,7 @@ window.G1000_DISPLAY = (function () {
     if (s.windShow === 'Off') return;
     const y = 548, h = 64, x = SIDE.x, w = SIDE.w;
     sideBox(ctx, y, h);
-    if (G.tas() < 30) { text(ctx, 'NO WIND', x + w / 2, y + 22, { size: 13, align: 'center' }); text(ctx, 'DATA', x + w / 2, y + 42, { size: 13, align: 'center' }); return; }
+    if (G.tas() < 30 || s.sys.failed.adc || s.sys.failed.ahrs) { text(ctx, 'NO WIND', x + w / 2, y + 22, { size: 13, align: 'center' }); text(ctx, 'DATA', x + w / 2, y + 42, { size: 13, align: 'center' }); return; }
     const wi = G.windInfo(), calm = wi.spd < 1;
     const arrow = (ax, ay, len, ang) => {
       ctx.save(); ctx.translate(ax, ay); ctx.rotate(rad(ang));
@@ -1443,7 +1450,7 @@ window.G1000_DISPLAY = (function () {
     const oat = Math.round(G.oat());
     if (!s.reversion) {
       box(ctx, 0, y, 150, 38, { fill: C.black, stroke: C.grey });
-      text(ctx, `OAT ${oat}°C`, 10, y + 19, { size: 20 });
+      if (s.sys.failed.adc) { text(ctx, 'OAT', 10, y + 19, { size: 20 }); redX(ctx, 64, y + 4, 80, 30); } else text(ctx, `OAT ${oat}°C`, 10, y + 19, { size: 20 });
     }
     // Transponder: code, mode, ident.
     const x = s.xpdr;
@@ -1490,13 +1497,30 @@ window.G1000_DISPLAY = (function () {
     helpFor = 'pfd'; helpLines.pfd = [];
     if (s.reversion && !whole) return reversionary(ctx, s, G);
     ctx.clearRect(0, 0, W, H);
-    attitude(ctx, s);
-    aircraftSymbol(ctx, s);
+    const f = s.sys.failed;
+    // AHRS failed: no attitude (a red X over a black background).
+    if (f.ahrs) {
+      ctx.fillStyle = C.black; ctx.fillRect(0, 0, W, H);
+      redX(ctx, 255, 110, 460, 380, null);
+    } else { attitude(ctx, s); aircraftSymbol(ctx, s); }
     airspeedTape(ctx, s, G);
     altitudeTape(ctx, s, G);
     vsi(ctx, s);
+    // ADC failed: the airspeed, altitude and vertical speed (the selected
+    // altitude and baro, set by the pilot, stay).
+    if (f.adc) {
+      redX(ctx, 150, 120, 100, 370);
+      redX(ctx, 710, 120, 120, 340);
+      redX(ctx, 832, 130, 80, 340);
+    }
     annunciationWindow(ctx, s);
     hsi(ctx, s, G);
+    // AHRS failed: no heading on the HSI.
+    if (f.ahrs) {
+      ctx.save(); ctx.beginPath(); ctx.arc(512, 690, 140, 0, Math.PI * 2); ctx.clip();
+      redX(ctx, 372, 550, 280, 280);
+      ctx.restore();
+    }
     if (s.pfdMap.layout === 'Inset Map') insetMap(ctx, s, G);
     windWindow(ctx, s, G);
     dmeWindow(ctx, s, G);
@@ -1526,8 +1550,10 @@ window.G1000_DISPLAY = (function () {
   // ticks, and a white pointer above it (an inverted triangle, `mark` in
   // it: the EGT's hottest cylinder). color: the label's and pointer's
   // (red or amber outside the limits).
-  function indicator(ctx, { label, value, lo, hi, zones = [], ticks = [], y, color = C.white, mark }) {
+  function indicator(ctx, { label, value, lo, hi, zones = [], ticks = [], y, color = C.white, mark, failed }) {
     const { x, w } = EIS, by = y + 24;
+    // A failed sensor: the label, and a red X where the scale was.
+    if (failed) { text(ctx, label, x + w / 2, y, { size: 15, align: 'center' }); redX(ctx, x + 30, by - 14, w - 60, 26, null); return; }
     const px = (v) => x + Math.max(0, Math.min(1, (v - lo) / (hi - lo))) * w;
     text(ctx, label, x + w / 2, y, { size: 15, align: 'center', color });
     ctx.fillStyle = '#4a4e55';
@@ -1574,6 +1600,12 @@ window.G1000_DISPLAY = (function () {
   // to 10,000 ft, 2700 above), red 2700-3000. From 2780 RPM the pointer,
   // value and label turn red, and the value and label flash.
   function tach(ctx, s) {
+    // Sensor failed: a red X over the dial.
+    if (s.sys.failed.rpmSensor) {
+      text(ctx, 'RPM', 100, 224, { size: 16, align: 'center' });
+      redX(ctx, 40, 100, 120, 110, null);
+      return;
+    }
     const rpm = s.sys.rpm, alt = s.trueAlt;
     const greenTop = alt < 5000 ? 2500 : alt < 10000 ? 2600 : 2700;
     const over = rpm >= 2780, on = !over || flash1(s);
@@ -1617,9 +1649,11 @@ window.G1000_DISPLAY = (function () {
   }
 
   // A number and its label on one line (the LEAN and SYSTEM pages).
+  // (value null: a failed sensor, a red X for the number.)
   function readout(ctx, label, value, y, color = C.white) {
-    text(ctx, label, EIS.x, y, { size: 15, color });
-    text(ctx, value, EIS.x + EIS.w, y, { size: 18, align: 'right', color });
+    text(ctx, label, EIS.x, y, { size: 15, color: value == null ? C.white : color });
+    if (value == null) redX(ctx, EIS.x + EIS.w - 46, y - 10, 46, 20, null);
+    else text(ctx, value, EIS.x + EIS.w, y, { size: 18, align: 'right', color });
   }
   // Out of limits: oil pressure 0-20 or 115-120 PSI red, oil temperature
   // red (and flashing) from 245 °F.
@@ -1630,8 +1664,9 @@ window.G1000_DISPLAY = (function () {
     box(ctx, 0, 70, 200, H - 104, { fill: C.panel, stroke: null });
     // The numbers come from js/g1000-systems.js.
     const sys = s.sys, { x, w } = EIS;
-    const ff = G.fuelFlow();
-    const hottest = sys.egt.indexOf(Math.max(...sys.egt));
+    const ff = G.fuelFlow(), fl = sys.failed;
+    // The hottest cylinder with a working EGT probe.
+    const hottest = G.systems.hottestEgt();
     tach(ctx, s);
     busBatt(ctx, s);
     if (s.eisPage === 'Lean') {
@@ -1642,13 +1677,14 @@ window.G1000_DISPLAY = (function () {
       // side); the first to peak gets a hollow bar at its peak.
       const L = sys.lean, c = G.systems.leanCyl();
       const hotCht = sys.cht.indexOf(Math.max(...sys.cht));
-      readout(ctx, 'FFLOW GPH', ff.toFixed(1), 260);
+      readout(ctx, 'FFLOW GPH', fl.ffSensor ? null : ff.toFixed(1), 260);
       const base = 460, top = 300, span = (v, lo, hi) => Math.max(0, Math.min(1, (v - lo) / (hi - lo))) * (base - top);
       for (let k = 0; k < 4; k++) {
         const cx = x + k * 44 + 8, sel = k === c, peaked = L.assist && L.peaked === k;
         ctx.fillStyle = sel ? C.cyan : C.white;
-        const h = span(sys.egt[k], 1250, 1650);
+        const h = G.systems.egtOk(k) ? span(sys.egt[k], 1250, 1650) : 0;
         ctx.fillRect(cx, base - h, 26, h);
+        if (!G.systems.egtOk(k)) redX(ctx, cx, top + 40, 26, base - top - 40, null);
         if (peaked) {
           const hp = Math.max(h + 6, span(L.max[k], 1250, 1650));
           ctx.strokeStyle = C.cyan; ctx.lineWidth = 2; ctx.strokeRect(cx + 1, base - hp, 24, hp - h);
@@ -1658,7 +1694,7 @@ window.G1000_DISPLAY = (function () {
         ctx.fillRect(cx - 3, base - ch - 2, 32, 4);
         text(ctx, String(k + 1), cx + 13, base + 14, { size: 15, align: 'center', color: sel ? C.cyan : C.white });
       }
-      readout(ctx, `EGT ${c + 1} °F`, String(Math.round(sys.egt[c])), 500, C.cyan);
+      readout(ctx, `EGT ${c + 1} °F`, G.systems.egtOk(c) ? String(Math.round(sys.egt[c])) : null, 500, C.cyan);
       readout(ctx, `CHT ${c + 1} °F`, String(Math.round(sys.cht[c])), 526, sys.cht[c] >= 500 ? C.red : C.cyan);
       if (L.assist) {
         const peak = L.max[c];
@@ -1671,8 +1707,8 @@ window.G1000_DISPLAY = (function () {
       // The numbers behind the ENGINE page's indicators, the fuel
       // totalizer (Rst Fuel, Dec Fuel, Inc Fuel, Rst Used) and engine
       // hours.
-      readout(ctx, 'FFLOW GPH', ff.toFixed(1), 262);
-      readout(ctx, 'OIL PSI', sys.oilPsi.toFixed(0), 288, oilPsiColor(sys.oilPsi));
+      readout(ctx, 'FFLOW GPH', fl.ffSensor ? null : ff.toFixed(1), 262);
+      readout(ctx, 'OIL PSI', fl.oilPSensor ? null : sys.oilPsi.toFixed(0), 288, oilPsiColor(sys.oilPsi));
       readout(ctx, 'OIL °F', sys.oilF.toFixed(0), 314, oilTempColor(s, sys.oilF));
       readout(ctx, 'EGT °F', Math.round(sys.egt[hottest]).toString(), 340);
       readout(ctx, 'VAC IN HG', sys.vac.toFixed(1), 366);
@@ -1684,8 +1720,8 @@ window.G1000_DISPLAY = (function () {
     }
     // ENGINE page: pointers only (the SYSTEM page has the numbers).
     const even = (lo, hi, step) => Array.from({ length: Math.round((hi - lo) / step) + 1 }, (_, i) => lo + i * step);
-    indicator(ctx, { label: 'FFLOW GPH', value: ff, lo: 0, hi: 20, zones: [[0, 12, C.green]], ticks: even(0, 20, 2), y: 256 });
-    indicator(ctx, { label: 'OIL PRES', value: sys.oilPsi, lo: 0, hi: 120, y: 306, color: oilPsiColor(sys.oilPsi),
+    indicator(ctx, { label: 'FFLOW GPH', value: ff, lo: 0, hi: 20, zones: [[0, 12, C.green]], ticks: even(0, 20, 2), y: 256, failed: fl.ffSensor });
+    indicator(ctx, { label: 'OIL PRES', value: sys.oilPsi, lo: 0, hi: 120, y: 306, color: oilPsiColor(sys.oilPsi), failed: fl.oilPSensor,
       zones: [[0, 20, C.red], [50, 90, C.green], [115, 120, C.red]] });
     indicator(ctx, { label: 'OIL TEMP', value: sys.oilF, lo: 75, hi: 250, y: 356, color: oilTempColor(s, sys.oilF),
       zones: [[100, 245, C.green], [245, 250, C.red]] });
