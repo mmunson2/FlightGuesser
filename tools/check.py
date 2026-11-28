@@ -1065,6 +1065,28 @@ G1000_CHECKS = r"""() => {
   G.press('ent', 'pfd');
   expect(s.fms.win.pfd.field === 'freq' && s.com[0].stby === nf.freq, `PFD NRST freq: ${s.fms.win.pfd.field}, COM1 stby ${s.com[0].stby} vs ${nf?.freq}`);
 
+  // MFD softkeys by page: the map's Detail cycles; Map Opt goes away
+  // with the page; the flight plan's View and ACT Leg.
+  G.reset();
+  expect(G.labels('mfd')[9] === 'Detail All', `map softkeys ${G.labels('mfd')}`);
+  G.press('softkey:9', 'mfd'); G.press('softkey:9', 'mfd');
+  expect(s.dcltr === 2 && G.labels('mfd')[9] === 'Detail-2', `Detail ${s.dcltr}`);
+  G.press('softkey:2', 'mfd');
+  expect(G.menu('mfd') === 'map-opt', `Map Opt: ${G.menu('mfd')}`);
+  G.turn('fms', 'outer', 2, 'mfd');
+  expect(G.menu('mfd') === 'mfd' && G.labels('mfd')[2] === '', `AUX page softkeys: ${G.menu('mfd')} ${G.labels('mfd')}`);
+  G.fms.activatePlan(['KPAE', 'KAWO', 'KBVS']);
+  G.press('fpl', 'mfd');
+  expect(G.labels('mfd')[9] === 'ACT Leg', `FPL softkeys ${G.labels('mfd')}`);
+  G.press('softkey:4', 'mfd'); G.press('softkey:5', 'mfd');
+  expect(s.fms.view === 'Wide', `View ${s.fms.view}`);
+  G.press('softkey:10', 'mfd');
+  G.push('fms', 'mfd'); G.turn('fms', 'outer', 1, 'mfd');  // (the cursor starts on the active waypoint)
+  G.press('softkey:9', 'mfd');
+  expect(s.fms.win.mfd.prompt?.text === 'Activate leg to KBVS?', `ACT Leg prompt: ${s.fms.win.mfd.prompt?.text}`);
+  G.press('ent', 'mfd');
+  expect(s.fms.fpl.active === 2, `ACT Leg: active ${s.fms.fpl.active}`);
+
   // GA: the AP off, the FD wings level and pitching up, ALTS armed.
   G.reset();
   G.press('ap'); G.press('hdg');

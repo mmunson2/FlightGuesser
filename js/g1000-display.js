@@ -146,15 +146,17 @@ window.G1000_DISPLAY = (function () {
     return '';
   }
 
-  function fplWindow(ctx, s, G, win, x, y, w, h) {
+  const ALL_FIELDS = ['DTK', 'DIS', 'CUM', 'ETE', 'ETA', 'FUEL'];
+  function fplWindow(ctx, s, G, win, x, y, w, h, wide = false) {
     box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.95)', stroke: C.white });
     text(ctx, 'ACTIVE FLIGHT PLAN', x + w / 2, y + 20, { size: 20, align: 'center', color: C.cyan });
     const rows = G.fms.rows();
     // The plan's first and last waypoints.
     if (rows.length) text(ctx, `${rows[0].id} / ${rows[rows.length - 1].id}`, x + w / 2, y + 44, { size: 17, align: 'center' });
-    const cols = [x + 40, x + w * 0.45, x + w * 0.7, x + w - 12];
-    // The three data columns (Change Fields).
-    const fields = [s.fms.fields.f1, s.fms.fields.f2, s.fms.fields.f3];
+    // The three data columns (Change Fields), or all six (Wide).
+    const fields = wide ? ALL_FIELDS : [s.fms.fields.f1, s.fms.fields.f2, s.fms.fields.f3];
+    const colW = (w - 162) / fields.length;
+    const cols = [x + 40, ...fields.map((_, k) => x + 150 + (k + 1) * colW)];
     fields.forEach((fd, k) => text(ctx, fd, cols[k + 1], y + 68, { size: 15, align: 'right', color: C.grey }));
     if (s.fms.insertAfter) text(ctx, 'INSERT AFTER', x + 10, y + 68, { size: 12, color: C.grey });
     const rowH = 30, top = y + 94;
@@ -211,6 +213,8 @@ window.G1000_DISPLAY = (function () {
     else if (win.type === 'nrst') pfdNearest(ctx, s, G, win, x, y, w, h);
     else if (win.type === 'tmr') timerWindow(ctx, s, G, win, x, 500, w, 276);
     else if (win.type === 'alerts') alertsWindow(ctx, s, G, win, x, 548, w, 228);
+    // The MFD's flight plan, View Wide: across the map, every field.
+    else if (display === 'mfd' && s.fms.view === 'Wide') fplWindow(ctx, s, G, win, 300, y, W - 300, h, true);
     else fplWindow(ctx, s, G, win, x, y, w, h);
   }
 
@@ -1750,6 +1754,10 @@ window.G1000_DISPLAY = (function () {
     // A map setting that is a range: the symbol shows at that map range or
     // less ('Off': never).
     const shows = (val) => val !== 'Off' && range <= val;
+    // Detail (the MFD's declutter): -1 drops the text, -2 also airspace,
+    // small and medium airports and user waypoints, -3 all airports and
+    // VORs. The flight plan always shows.
+    const dc = v.dcltr ?? 0;
     const up = v.up ?? s.hdg, center = v.center ?? s;
     const { ox, oy, ringR } = v, ppn = ringR / range;
     ctx.save();
@@ -1763,7 +1771,7 @@ window.G1000_DISPLAY = (function () {
       return [ox + Math.sin(a) * dist * ppn, oy - Math.cos(a) * dist * ppn];
     };
     // Airspace first, under everything: each shelf's outline.
-    const cls = { B: shows(set.clsB), C: shows(set.clsC), D: shows(set.clsD) };
+    const cls = { B: dc < 2 && shows(set.clsB), C: dc < 2 && shows(set.clsC), D: dc < 2 && shows(set.clsD) };
     for (const a of G.AIRSPACE) {
       if (!cls[a.cls]) continue;
       // Skip shelves wholly far away (their first point beyond 3 ranges
@@ -1814,8 +1822,8 @@ window.G1000_DISPLAY = (function () {
     // Airports: towered cyan, non-towered magenta, each size shown up to
     // its Map Setup range, identifiers up to APT Text's; smaller rings
     // beyond 25 NM.
-    const labels = shows(set.aptText), ring = (range > 25 ? 6 : 9) * (small ? 0.75 : 1);
-    const sized = { L: shows(set.aptL), M: shows(set.aptM), S: shows(set.aptS) };
+    const labels = dc < 1 && shows(set.aptText), ring = (range > 25 ? 6 : 9) * (small ? 0.75 : 1);
+    const sized = { L: dc < 3 && shows(set.aptL), M: dc < 2 && shows(set.aptM), S: dc < 2 && shows(set.aptS) };
     const far = (px, py) => Math.hypot(px - ox, py - oy) > 1500;
     for (const ap of G.AIRPORTS) {
       if (!sized[G.airportSize(ap)]) continue;
@@ -1843,7 +1851,7 @@ window.G1000_DISPLAY = (function () {
       }
       if (labels) text(ctx, ap.id, px + 12, py - 11, { size: small ? 14 : 18 });
     }
-    for (const n of shows(set.vor) ? G.NAVAIDS : []) {
+    for (const n of dc < 3 && shows(set.vor) ? G.NAVAIDS : []) {
       const [px, py] = toXY(n), r = small ? 8 : 11;
       ctx.strokeStyle = C.cyan;
       ctx.lineWidth = 2;
@@ -1853,10 +1861,10 @@ window.G1000_DISPLAY = (function () {
         ctx[k ? 'lineTo' : 'moveTo'](px + Math.cos(a) * r, py + Math.sin(a) * r);
       }
       ctx.closePath(); ctx.stroke();
-      if (shows(set.vorText)) text(ctx, small ? n.id : `${n.id} ${n.freq.toFixed(1)}`, px + r + 4, py + 14, { size: small ? 13 : 16, color: C.cyan });
+      if (dc < 1 && shows(set.vorText)) text(ctx, small ? n.id : `${n.id} ${n.freq.toFixed(1)}`, px + r + 4, py + 14, { size: small ? 13 : 16, color: C.cyan });
     }
     // User waypoints: a small cyan square, shown with the small airports.
-    for (const u of shows(set.aptS) ? s.fms.user : []) {
+    for (const u of dc < 2 && shows(set.aptS) ? s.fms.user : []) {
       const [px, py] = toXY(u), r = small ? 4 : 6;
       if (far(px, py)) continue;
       ctx.strokeStyle = C.cyan; ctx.lineWidth = 2;
@@ -1893,12 +1901,13 @@ window.G1000_DISPLAY = (function () {
   function navMap(ctx, s, G) {
     const { x: x0, y: y0, w, h } = PAGE;
     box(ctx, x0, y0, w, h, { fill: '#0a1a10', stroke: null });
+    // (Detail: s.dcltr, in drawMap.)
     const range = G.RANGES[s.range], northUp = s.mapSet.orient === 'North Up', pan = s.pan;
     // Heading or track up: own ship two thirds down, the range ring above
     // it. North up, or panned: the middle (the pointer, panned).
     const mid = northUp || pan;
     const ox = x0 + w / 2, oy = y0 + h * (mid ? 0.5 : 0.66), ringR = h * (mid ? 0.42 : 0.5);
-    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR, range, up: G.mapUp('mfd'), center: pan ?? null, set: s.mapSet });
+    drawMap(ctx, s, G, { x0, y0, w, h, ox, oy, ringR, range, up: G.mapUp('mfd'), center: pan ?? null, set: s.mapSet, dcltr: s.dcltr });
     if (s.mapSet.ring === 'On' && !pan) text(ctx, `${range}NM`, ox + ringR * 0.72, oy - ringR * 0.72, { size: 18, color: C.grey });
     // The orientation, top left.
     text(ctx, { 'Heading Up': 'HDG UP', 'Track Up': 'TRK UP', 'North Up': 'NORTH UP' }[s.mapSet.orient], x0 + 10, y0 + 18, { size: 16, color: C.grey });

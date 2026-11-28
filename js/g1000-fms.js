@@ -62,6 +62,9 @@ window.G1000_FMS = (function () {
       // The flight plan's options (its Page Menu): a new waypoint goes in
       // after the selected one instead of before; the three data columns.
       insertAfter: false, fields: freshFields(),
+      // The MFD flight plan page's View: 'Narrow' (the three fields) or
+      // 'Wide' (all six).
+      view: 'Narrow',
       // User waypoints: { id, lat, lon, type: 'user', name, ref } (ref: the
       // reference waypoint, radial (magnetic) and distance it was made by).
       user: [],

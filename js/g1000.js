@@ -78,7 +78,12 @@ window.G1000 = (function () {
     'alt-units': ['', '', '', '', '', 'Meters', '', 'IN', 'HPA', '', 'Back', 'Alerts'],
     xpdr: ['', '', 'Standby', 'On', 'Alt', '', 'VFR', 'Code', 'Ident', '', 'Back', 'Alerts'],
     'xpdr-code': ['0', '1', '2', '3', '4', '5', '6', '7', 'Ident', 'BKSP', 'Back', 'Alerts'],
+    // The MFD's top row: by page (MFD_ROOTS); this is the Navigation Map's.
     mfd: ['Engine', '', 'Map Opt', '', '', '', '', '', '', 'Detail', 'Charts', 'Checklist'],
+    // Map Opt: the map's overlays (none of their data is in the mock).
+    'map-opt': ['Traffic', 'Inset', '', 'Topo', 'Terrain', 'Airways', '', 'NEXRAD', 'METAR', 'Legend', 'Back', ''],
+    // The flight plan page's View: narrow (three data columns) or wide.
+    'fpl-view': ['', '', '', '', 'Narrow', 'Wide', '', '', '', '', 'Back', ''],
     engine: ['Engine', 'Lean', 'System', '', '', '', '', '', '', '', 'Back', ''],
     // The EIS's Lean page: the cylinder shown, lean assist.
     lean: ['Engine', 'Lean', 'System', 'Cyl Slct', 'Assist', '', '', '', '', '', 'Back', ''],
@@ -91,9 +96,25 @@ window.G1000 = (function () {
   // The softkeys that do something in the mock; the rest draw grey.
   const LIVE = {
     pfd: [1, 3, 4, 5, 6, 7, 8, 9, 10], 'pfd-opt': [2, 3, 4, 6, 8, 9, 10], wind: [2, 3, 4, 5, 10], 'alt-units': [5, 7, 8, 10], 'map-hsi': [1, 10], 'map-layout': [1, 2, 3, 10], xpdr: [2, 3, 4, 6, 7, 8, 10],
-    'xpdr-code': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mfd: [0, 11], engine: [0, 1, 2, 10], lean: [0, 1, 2, 3, 4, 10],
+    'xpdr-code': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mfd: [0, 2, 9, 11], 'map-opt': [10], 'fpl-view': [4, 5, 10], engine: [0, 1, 2, 10], lean: [0, 1, 2, 3, 4, 10],
     system: [0, 1, 2, 3, 4, 5, 6, 10], checklist: [0, 10, 11],
   };
+
+  // The MFD's top softkey row on each page: the map pages' (Map Opt,
+  // Detail), the flight plan's, Nearest Airports', Airport Information's,
+  // and the rest (Engine and Checklist only). [labels, live].
+  const MFD_ROOTS = {
+    map: [MENUS.mfd, LIVE.mfd],
+    fpl: [['Engine', '', 'Map Opt', 'New WPT', 'View', 'VNV Prof', 'Cncl VNV', 'VNV Direct', 'ATK Ofst', 'ACT Leg', 'Charts', 'Checklist'], [0, 2, 4, 9, 11]],
+    nrstApt: [['Engine', '', 'Map Opt', '', '', 'APT', 'RNWY', 'FREQ', 'APR', 'LD APR', 'Charts', 'Checklist'], [0, 2, 11]],
+    aptInfo: [['Engine', '', 'Map Opt', '', '', 'Info-1', 'DP', 'STAR', 'APR', 'WX', 'Charts', 'Checklist'], [0, 2, 11]],
+    withMap: [['Engine', '', 'Map Opt', '', '', '', '', '', '', '', 'Charts', 'Checklist'], [0, 2, 11]],
+    plain: [['Engine', '', '', '', '', '', '', '', '', '', '', 'Checklist'], [0, 11]],
+  };
+  const MFD_ROOT_OF = { 'MAP:0': 'map', 'FPL:0': 'fpl', 'NRST:0': 'nrstApt', 'WPT:0': 'aptInfo',
+    'WPT:3': 'withMap', 'WPT:4': 'withMap', 'NRST:3': 'withMap', 'NRST:4': 'withMap' };
+  // Detail (declutter) levels: All, then -1 to -3.
+  const DCLTR = ['Detail All', 'Detail-1', 'Detail-2', 'Detail-3'];
 
   // Map symbol sizes (Map Setup shows each up to its own range): by the
   // longest runway, large from 8,100 ft, medium from 5,000 ft.
@@ -220,6 +241,8 @@ window.G1000 = (function () {
       alt: { phase: 'far', flashUntil: 0 },
       menus: { pfd: ['pfd'], mfd: ['mfd'] },
       mfd: pages.fresh(), eisPage: 'Engine', range: 6,
+      // The Navigation Map's Detail level (0 all, 1-3 less).
+      dcltr: 0,
       // The PFD's map (Map/HSI, Layout): 'Map Off', 'Inset Map' or 'HSI Map',
       // and its range (an index into RANGES).
       pfdMap: { layout: 'Map Off', range: 4 }, pfdMapSet: menus.freshPfdMap(),
@@ -522,8 +545,20 @@ window.G1000 = (function () {
   }
   // The softkey labels a menu shows, and which of them do something: the
   // PFD's top menu gains Engine (the EIS pages) in reversionary mode.
-  const labelsOf = (m) => (m === 'pfd' && state.reversion ? ['Engine', ...MENUS.pfd.slice(1)] : MENUS[m]);
-  const liveOf = (m) => (m === 'pfd' && state.reversion ? [0, ...LIVE.pfd] : LIVE[m]);
+  const mfdRoot = () => MFD_ROOTS[MFD_ROOT_OF[pages.pageKey()] ?? 'plain'];
+  function labelsOf(m) {
+    if (m === 'pfd' && state.reversion) return ['Engine', ...MENUS.pfd.slice(1)];
+    if (m === 'mfd') return mfdRoot()[0].map((l) => (l === 'Detail' ? DCLTR[state.dcltr] : l));
+    return MENUS[m];
+  }
+  const liveOf = (m) => (m === 'pfd' && state.reversion ? [0, ...LIVE.pfd] : m === 'mfd' ? mfdRoot()[1] : LIVE[m]);
+  // The MFD's page-specific softkeys (Map Opt, View) go back to the top row
+  // when the page changes.
+  const PAGE_MENUS = { 'map-opt': () => mfdRoot()[0].includes('Map Opt'), 'fpl-view': () => pages.pageKey() === 'FPL:0' };
+  function syncMfdMenus() {
+    const st = state.menus.mfd, top = st[st.length - 1];
+    if (PAGE_MENUS[top] && !PAGE_MENUS[top]()) state.menus.mfd = ['mfd'];
+  }
   const menu = (display) => {
     const d = pfdIfReverted(display);
     return state.menus[d][state.menus[d].length - 1];
@@ -732,6 +767,19 @@ window.G1000 = (function () {
         stack.pop(); return;
       case 'xpdr-code:Back': x.entry = null; x.knob = false; stack.pop(); return;
       case 'mfd:Engine': case 'pfd:Engine': stack.push('engine'); return;
+      case 'mfd:Map Opt': stack.push('map-opt'); return;
+      case 'map-opt:Back': case 'fpl-view:Back': stack.pop(); return;
+      case 'mfd:Detail All': case 'mfd:Detail-1': case 'mfd:Detail-2': case 'mfd:Detail-3':
+        state.dcltr = (state.dcltr + 1) % DCLTR.length; return;
+      case 'mfd:View': stack.push('fpl-view'); return;
+      case 'fpl-view:Narrow': case 'fpl-view:Wide': state.fms.view = label; return;
+      // ACT Leg: the leg to the waypoint under the cursor, asked first.
+      case 'mfd:ACT Leg': {
+        const win = state.fms.win.mfd, f = state.fms.fpl, c = win?.cursor;
+        if (win?.type !== 'fpl' || c == null || c < 1 || c >= f.wpts.length) return note('ACT Leg: push FMS and pick a waypoint after the first');
+        win.prompt = { text: `Activate leg to ${f.wpts[c]}?`, action: () => fms.activateLeg(c) };
+        return;
+      }
       case 'mfd:Checklist': checklist.open(); stack.push('checklist'); return;
       case 'checklist:Exit': checklist.close(); stack.pop(); return;
       case 'checklist:Emergency': checklist.emergency(); return;
@@ -1035,7 +1083,8 @@ window.G1000 = (function () {
     // The airplane's magnetic heading, as the HSI shows it.
     magHeading: () => toMag(state.hdg), HPA, SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, systems, airportSize, fuelFlow,
     FAILURES: G1000_SYSTEMS.FAILURES, fail: (id, on) => systems.fail(id, on), DB_EXPIRES,
-    press, turn, push, fly, hold, HOLD, cws, bearingDist, navSolution, indicatedAlt, standbyAlt, tas, gs, track, navModeName,
+    ...Object.fromEntries(Object.entries({ press, turn, push, hold }).map(([k, fn]) => [k, (...args) => { const r = fn(...args); syncMfdMenus(); return r; }])),
+    fly, HOLD, cws, bearingDist, navSolution, indicatedAlt, standbyAlt, tas, gs, track, navModeName,
     windInfo, bearingTo, dmeInfo, oat, densityAlt, mapUp, pan, panTarget, checklist, gma,
     // Sets the wind: from (true), knots.
     setWind: (dir, spd) => { state.wind = { dir: wrap360(dir), spd: Math.max(0, spd) }; },
