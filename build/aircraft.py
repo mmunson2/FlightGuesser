@@ -54,7 +54,8 @@ SYSTEMS = {
                     "adf_key", "nav1_key", "nav2_key", "aux_key", "man_sq_key", "play_key", "pilot_key",
                     "coplt_key", "audio_volume_knob"],
     "cabin": ["heat_and_air", "instrument_panel", "pedestal", "front_seats", "rear_seat", "cabin_floor",
-              "cabin_interior", "sun_visors", "cabin_air_vents", "overhead_console", "hand_microphone"],
+              "cabin_interior", "sun_visors", "cabin_air_vents", "fresh_air_inlets", "overhead_console",
+              "hand_microphone"],
 }
 # Parts drawn as tinted glass (no texture), which let clicks through.
 GLASS_PARTS = {"windows", "landing_light_lens"}
@@ -343,6 +344,12 @@ def _top_rgb(name, c, rgb):
     return rgb
 
 
+# Objects painted plain skin (texture dropped): FlightGear's black discs on
+# the wing roots' leading edges, the fresh-air inlets (behind them extras.py
+# models the ducts' inlet boxes, `cabin_air_door`).
+SKIN_PAINT = {"wingventhole"}
+
+
 SPLIT_OBJECTS = {
     **{name: [(None, _window_fan)] for name in ("windowframeleftext", "windowframerightext",
                                                 "windowframeleftint-fg1000", "windowframerightint-fg1000")},
@@ -462,7 +469,7 @@ SOURCES = [
         r"SeatMounts\.[01]": "front_seats",
         r"SeatMounts\.2": "rear_seat",
         r"carpethole": "cabin_floor",
-        r"wingventhole": "cabin_air_vents",
+        r"wingventhole": "fresh_air_inlets",
         r"courtesyoff": "courtesy_lights",
     }),
     (C172 + "Interior/Panel/c172sp-panel/c172sp-interior.ac", "ac", None, None, {
@@ -677,8 +684,9 @@ GLASS_RGB = (0.75, 0.85, 0.95)
 
 # Textures replaced by our own edits (tools/placards.py), by the .ac's
 # texture name: the flap indicator without the 172P's AVOID SLIPS WITH
-# FLAPS EXTENDED placard (FlightGear's model is a 172P fitted as a 172S).
-TEXTURE_OVERRIDES = {"flaps.png": Path(__file__).resolve().parent / "placards" / "flaps.png"}
+# FLAPS EXTENDED placard (FlightGear's model is a 172P fitted as a 172S),
+# and the wing without its painted fresh-air inlets.
+TEXTURE_OVERRIDES = {n: Path(__file__).resolve().parent / "placards" / n for n in ("flaps.png", "wing.png")}
 
 
 def _texture(c172p, ac_path, name, cache={}):
@@ -751,6 +759,8 @@ def load(c172p):
         objs = [(name, _correct(name, c), uv, rgb, tex) for name, c, uv, rgb, tex in objs]
         objs = [(name, *_patch(name, c, uv, rgb), tex) for name, c, uv, rgb, tex in objs]
         objs = [(name, c, uv, _top_rgb(name, c, rgb), tex) for name, c, uv, rgb, tex in objs]
+        objs = [(name, c, None, np.full_like(rgb, SKIN_RGB), None) if name in SKIN_PAINT else (name, c, uv, rgb, tex)
+                for name, c, uv, rgb, tex in objs]
         corners = {name: c for name, c, *_ in objs}
         for name, c in corners.items():
             for rx, pids in HOLES.items():

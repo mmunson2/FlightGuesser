@@ -11,7 +11,9 @@ and left out. The registration matches the fuselage's (4X-CHV).
 
 Also writes flaps.png: FlightGear's flap indicator texture without the
 172P's AVOID SLIPS WITH FLAPS EXTENDED placard, which a 172S doesn't have
-(build/aircraft.py TEXTURE_OVERRIDES uses it).
+(build/aircraft.py TEXTURE_OVERRIDES uses it), and wing.png without the
+black half-discs painted on each wing root's leading edge for the fresh-air
+inlets, which build/extras.py models in 3D.
 """
 
 from pathlib import Path
@@ -86,9 +88,22 @@ def flaps_172s():
     return im
 
 
+# The painted inlets' boxes in wing.png (2048 x 2048), with a 3 px margin;
+# each is covered by the plain skin INLET_SHIFT px above it.
+INLET_BOXES = [(327, 895, 339, 915), (327, 1133, 339, 1153)]
+INLET_SHIFT = 24
+
+
+def wing_172s():
+    im = Image.open(C172P / "repo/Models/wing.png").convert("RGBA")
+    for x0, y0, x1, y1 in INLET_BOXES:
+        im.paste(im.crop((x0, y0 - INLET_SHIFT, x1, y1 - INLET_SHIFT)), (x0, y0))
+    return im
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     for name, im in (("placard-registration", registration()), ("placard-winterization", winterization()),
-                     ("flaps", flaps_172s())):
+                     ("flaps", flaps_172s()), ("wing", wing_172s())):
         im.save(OUT / f"{name}.png", optimize=True)
         print(OUT / f"{name}.png", im.size)

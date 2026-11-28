@@ -87,9 +87,10 @@ COLORS = {
     "flow_divider": 0xc9b27a, "injector_lines": 0xc8642a, "engine_fuel_lines": 0x8c4a24,
     "intake_pipes": 0x9a9ea2,
 }
-# Weld cell in mm, per part id (default CELL).
+# Weld cell in mm, per part id (default CELL). The cylinders need 1 mm: a
+# coarser cell welds neighbouring cooling fins together into spikes.
 CELL = 3.5
-CELLS = {"magnetos": 5.0, "ignition_harness": 5.0, "fuel_servo": 5.0, "cylinders": 5.0,
+CELLS = {"magnetos": 5.0, "ignition_harness": 5.0, "fuel_servo": 5.0, "cylinders": 1.0,
          "flow_divider": 1.0, "injector_lines": 2.0, "engine_fuel_lines": 3.0}
 
 # Placement: the crankshaft axis (STEP x, y) and the propeller flange
