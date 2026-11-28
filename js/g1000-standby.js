@@ -147,8 +147,25 @@ window.G1000_STANDBY = (function () {
     text(ctx, s.stbyBaro.toFixed(2), R + 140, R + 1, 32);
     text(ctx, 'ALT', R, R - 120, 26, C.grey);
     const alt = G.standbyAlt();
-    // 10,000 ft: a thin hand with a triangle; 1,000: short and wide; 100: long.
+    // Below 10,000 ft a striped low-altitude flag shows in a window
+    // under the hub.
+    if (alt < 10000) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(R - 40, R + 46, 80, 30); ctx.clip();
+      ctx.fillStyle = C.white; ctx.fillRect(R - 40, R + 46, 80, 30);
+      ctx.fillStyle = '#000';
+      for (let k = -40; k < 80; k += 16) {
+        ctx.beginPath(); ctx.moveTo(R + k, R + 46); ctx.lineTo(R + k + 8, R + 46); ctx.lineTo(R + k - 22, R + 76); ctx.lineTo(R + k - 30, R + 76); ctx.fill();
+      }
+      ctx.restore();
+    }
+    // 10,000 ft: a thin hand with a triangle at its tip; 1,000: short and
+    // wide; 100: long.
     needle(ctx, (alt / 100000) * 360, R - 30, 6, C.white, 0.05);
+    ctx.save(); ctx.translate(R, R); ctx.rotate(rad((alt / 100000) * 360));
+    ctx.fillStyle = C.white;
+    ctx.beginPath(); ctx.moveTo(0, -R + 14); ctx.lineTo(-14, -R + 40); ctx.lineTo(14, -R + 40); ctx.fill();
+    ctx.restore();
     needle(ctx, (alt / 10000) * 360, R - 130, 26);
     needle(ctx, (alt / 1000) * 360, R - 40, 14);
     hub(ctx);

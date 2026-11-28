@@ -57,6 +57,8 @@ window.I18N = {
   'tools.wind': 'Wind…',
   'tools.windTip': 'Set the wind: direction it blows from (true) and speed',
   'tools.windCalm': 'Calm',
+  'tools.temp': 'Temperature…',
+  'tools.tempTip': "Set the day's temperature: degrees from standard (ISA)",
   'operate.hint': 'Operating the G1000: click keys and switches, drag around knobs to turn them, drag levers to push or pull',
   'viewer.none': 'Click a part to name it',
   'viewer.inGroup': '{part} ({group})',

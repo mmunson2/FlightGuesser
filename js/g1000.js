@@ -169,6 +169,9 @@ window.G1000 = (function () {
       // Operate mode, or setWind). windShow: the PFD's wind window
       // (PFD Opt, Wind): 'Off', or layout '1', '2' or '3'.
       wind: { dir: 0, spd: 0 }, windShow: 'Off',
+      // The day's temperature: °C above (+) or below ISA (the
+      // Temperature list in Operate mode, or setIsaDev).
+      isaDev: 0,
       // The HSI's bearing pointers (PFD Opt, Bearing 1 and 2): null, a NAV
       // radio ('NAV1', 'NAV2') or 'GPS'.
       brg: [null, null],
@@ -238,7 +241,13 @@ window.G1000 = (function () {
   const indicatedAlt = () => state.trueAlt + (state.baro - ACTUAL_BARO) * 1000;
   // The standby altimeter, by its own setting.
   const standbyAlt = () => state.trueAlt + (state.stbyBaro - ACTUAL_BARO) * 1000;
-  const tas = () => state.ias * (1 + 0.02 * state.trueAlt / 1000);
+  // Outside air temperature (°C): the standard lapse from 15 °C, plus the
+  // day's deviation from it.
+  const oat = () => 15 - 2 * state.trueAlt / 1000 + state.isaDev;
+  // Density altitude: about 120 ft for each °C above standard.
+  const densityAlt = () => state.trueAlt + 120 * state.isaDev;
+  // TAS: about 2% more than IAS per 1,000 ft of density altitude.
+  const tas = () => state.ias * (1 + 0.02 * densityAlt() / 1000);
   // Fuel flow (GPH): made up from power and altitude, not the POH's tables.
   // None with the engine stopped.
   // Leaner or richer than best power scales it (js/g1000-systems.js).
@@ -947,9 +956,11 @@ window.G1000 = (function () {
     magHeading: () => toMag(state.hdg), HPA, SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, systems, airportSize, fuelFlow,
     FAILURES: G1000_SYSTEMS.FAILURES, fail: (id, on) => systems.fail(id, on), DB_EXPIRES,
     press, turn, push, fly, bearingDist, navSolution, indicatedAlt, standbyAlt, tas, gs, track, navModeName,
-    windInfo, bearingTo, dmeInfo, mapUp, pan, panTarget, checklist, gma,
+    windInfo, bearingTo, dmeInfo, oat, densityAlt, mapUp, pan, panTarget, checklist, gma,
     // Sets the wind: from (true), knots.
     setWind: (dir, spd) => { state.wind = { dir: wrap360(dir), spd: Math.max(0, spd) }; },
+    // The day's temperature, °C from ISA.
+    setIsaDev: (dev) => { state.isaDev = dev; },
     tick(dt) {
       // Big gaps (a background tab) are skipped, small steps keep it stable.
       dt = Math.min(dt, 0.5);

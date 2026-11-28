@@ -206,7 +206,7 @@ window.G1000_DISPLAY = (function () {
     // PFD: the lower right corner, beside the HSI and under the CRS box.
     // MFD: the map's right half.
     // (Above the MFD's page group indicator.)
-    const [x, y, w, h] = display === 'pfd' ? [660, 548, 358, 228] : [600, 106, 418, H - 34 - 160];
+    const [x, y, w, h] = display === 'pfd' ? [660, 548, 358, 228] : [600, PAGE.y, 418, H - 34 - 54 - PAGE.y];
     if (win.type === 'dto') dtoWindow(ctx, s, G, win, x, y, w, Math.min(h, 228));
     else if (win.type === 'nrst') pfdNearest(ctx, s, G, win, x, y, w, h);
     else if (win.type === 'tmr') timerWindow(ctx, s, G, win, x, 500, w, 276);
@@ -226,7 +226,7 @@ window.G1000_DISPLAY = (function () {
     const pfd = display === 'pfd', maxH = pfd ? 280 : 560;
     // A setup window: room for its longest group (PFD: from the baro box down).
     const h = m.type === 'cpa' ? 220 : m.type === 'map' ? (pfd ? 286 : 420) : Math.min(maxH, head - rowH / 2 + Math.max(2, m.items.length) * rowH + foot);
-    const [x, y, w] = pfd ? [640, 776 - h, 378] : [590, 106, 428];
+    const [x, y, w] = pfd ? [640, 776 - h, 378] : [590, PAGE.y, 428];
     box(ctx, x, y, w, h, { fill: 'rgba(8, 9, 11, 0.97)', stroke: C.white });
     if (m.type === 'map') return mapSetup(ctx, s, G, m, x, y, w, h);
     if (m.type === 'cpa') return cpaWindow(ctx, s, G, m, x, y, w, h);
@@ -362,7 +362,8 @@ window.G1000_DISPLAY = (function () {
 
   // ---- MFD pages (js/g1000-pages.js) ----
   // The content area right of the EIS and below the nav data bar.
-  const PAGE = { x: 200, y: 106, w: W - 200, h: H - 34 - 106 };
+  // (The navigation data fields are in the top bar, between the radios.)
+  const PAGE = { x: 200, y: 70, w: W - 200, h: H - 34 - 70 };
   const latLon = (lat, lon) => {
     const f = (v, pos, neg, dw) => {
       const a = Math.abs(v), d = Math.floor(a);
@@ -1433,11 +1434,11 @@ window.G1000_DISPLAY = (function () {
     });
   }
 
-  function bottomBoxes(ctx, s) {
+  function bottomBoxes(ctx, s, G) {
     const y = H - 34 - 40;
-    // Outside air temperature, standard lapse from 15 °C.
-    // (Reversionary mode shows it in the engine strip instead.)
-    const oat = Math.round(15 - 2 * s.trueAlt / 1000);
+    // Outside air temperature (G.oat: the standard lapse and the day's
+    // deviation). (Reversionary mode shows it in the engine strip instead.)
+    const oat = Math.round(G.oat());
     if (!s.reversion) {
       box(ctx, 0, y, 150, 38, { fill: C.black, stroke: C.grey });
       text(ctx, `OAT ${oat}°C`, 10, y + 19, { size: 20 });
@@ -1479,7 +1480,7 @@ window.G1000_DISPLAY = (function () {
     ctx.drawImage(revCanvas, crop, top, W - crop, bottom - top, strip, top, W - strip, bottom - top);
     ctx.drawImage(revCanvas, 0, bottom, W, H - bottom, 0, bottom, W, H - bottom);
     eis(ctx, s, G);
-    text(ctx, `OAT ${Math.round(15 - 2 * s.trueAlt / 1000)}°C`, 12, 688, { size: 18 });
+    text(ctx, `OAT ${Math.round(G.oat())}°C`, 12, 688, { size: 18 });
     text(ctx, 'REVERSIONARY', strip / 2, bottom - 14, { size: 13, align: 'center', color: C.yellow });
   }
 
@@ -1498,7 +1499,7 @@ window.G1000_DISPLAY = (function () {
     windWindow(ctx, s, G);
     dmeWindow(ctx, s, G);
     bearingWindows(ctx, s, G);
-    bottomBoxes(ctx, s);
+    bottomBoxes(ctx, s, G);
     radios(ctx, s, G);
     navStatus(ctx, s, G);
     fma(ctx, s, G);
@@ -1697,6 +1698,12 @@ window.G1000_DISPLAY = (function () {
   // shows follows Map Setup (s.mapSet) on all three. ----
   // Airspace: Class B blue, C magenta, D blue dashed, as on the charts.
   const AIRSPACE = { B: { color: '#3a8bff', dash: [] }, C: { color: C.magenta, dash: [] }, D: { color: '#3a8bff', dash: [10, 7] } };
+  // An airport's longest hard-surfaced (asphalt or concrete) runway, or
+  // null for a soft field.
+  const HARD = /ASPH|CONC|BIT|PEM/;
+  const longestHard = (ap) => (ap.runways ?? []).filter((r) => HARD.test(r.surface ?? ''))
+    .sort((a, b) => (b.len ?? 0) - (a.len ?? 0))[0] ?? null;
+
   function drawMap(ctx, s, G, v) {
     // v.set: the map's settings (the MFD's Map Setup, or the PFD's).
     // v.up: the true bearing that is up (north, track or heading); v.center:
@@ -1779,6 +1786,23 @@ window.G1000_DISPLAY = (function () {
       ctx.strokeStyle = ap.towered ? C.cyan : C.magenta;
       ctx.lineWidth = small ? 2 : 3;
       ctx.beginPath(); ctx.arc(px, py, ring, 0, Math.PI * 2); ctx.stroke();
+      // A hard-surfaced runway: a line through the ring along the longest
+      // one; a soft field is a plain ring. Fuel: four notches outside.
+      const rw = longestHard(ap);
+      if (rw) {
+        const a = rad((rw.ends[0]?.true ?? 0) - up);
+        ctx.beginPath();
+        ctx.moveTo(px - Math.sin(a) * (ring + 3), py + Math.cos(a) * (ring + 3));
+        ctx.lineTo(px + Math.sin(a) * (ring + 3), py - Math.cos(a) * (ring + 3)); ctx.stroke();
+      }
+      if (ap.fuel) {
+        for (let k = 0; k < 4; k++) {
+          const a = rad(45 + 90 * k);
+          ctx.beginPath();
+          ctx.moveTo(px + Math.cos(a) * ring, py + Math.sin(a) * ring);
+          ctx.lineTo(px + Math.cos(a) * (ring + 5), py + Math.sin(a) * (ring + 5)); ctx.stroke();
+        }
+      }
       if (labels) text(ctx, ap.id, px + 12, py - 11, { size: small ? 14 : 18 });
     }
     for (const n of shows(set.vor) ? G.NAVAIDS : []) {
@@ -1829,7 +1853,7 @@ window.G1000_DISPLAY = (function () {
   }
 
   function navMap(ctx, s, G) {
-    const x0 = 200, y0 = 106, w = W - 200, h = H - 34 - 106;
+    const { x: x0, y: y0, w, h } = PAGE;
     box(ctx, x0, y0, w, h, { fill: '#0a1a10', stroke: null });
     const range = G.RANGES[s.range], northUp = s.mapSet.orient === 'North Up', pan = s.pan;
     // Heading or track up: own ship two thirds down, the range ring above
@@ -1881,8 +1905,9 @@ window.G1000_DISPLAY = (function () {
     text(ctx, { 'Heading Up': 'HDG UP', 'Track Up': 'TRK UP', 'North Up': 'NORTH UP' }[set.orient], x0 + 8, y0 + 14, { size: 13, color: C.grey });
   }
 
+  // The MFD's navigation data, in the top bar between the NAV and COM
+  // radios: GS and DTK above, TRK and ETE below.
   function navDataBar(ctx, s, G) {
-    box(ctx, 200, 70, W - 200, 36, { fill: C.panel, stroke: null });
     // DTK and ETE (to the active waypoint, at the present ground speed)
     // come from the GPS leg; blank without one.
     const nav = G.navSolution('GPS');
@@ -1895,9 +1920,9 @@ window.G1000_DISPLAY = (function () {
     const fields = [['GS', `${Math.round(G.gs())}KT`], ['DTK', nav ? pad3(nav.course) + '°' : '___°'],
       ['TRK', `${pad3(G.toMag(G.track()))}°`], ['ETE', ete]];
     fields.forEach(([k, v], i) => {
-      const x = 220 + i * 200;
-      text(ctx, k, x, 88, { size: 18 });
-      text(ctx, v, x + 50, 88, { size: 20, color: C.magenta });
+      const x = 400 + (i % 2) * 135, y = 20 + Math.floor(i / 2) * 32;
+      text(ctx, k, x, y, { size: 16 });
+      text(ctx, v, x + 42, y, { size: 19, color: C.magenta });
     });
   }
 
@@ -1909,8 +1934,8 @@ window.G1000_DISPLAY = (function () {
     ctx.fillRect(0, 0, W, H);
     mfdPage(ctx, s, G);
     eis(ctx, s, G);
-    navDataBar(ctx, s, G);
     radios(ctx, s, G);
+    navDataBar(ctx, s, G);
     fmsWindow(ctx, s, G, 'mfd');
     pageMenuWindow(ctx, s, G, 'mfd');
     pageGroups(ctx, s, G);

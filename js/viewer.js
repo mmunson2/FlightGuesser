@@ -263,6 +263,7 @@
     resetBtn.hidden = !on;
     failSel.hidden = !on;
     windSel.hidden = !on;
+    tempSel.hidden = !on;
     if (on) select(null);
     else picked.textContent = selection.length ? picked.textContent : t('viewer.none');
   }
@@ -300,7 +301,21 @@
     windOptions();
   });
   windOptions();
-  resetBtn.addEventListener('click', () => { avionics.reset(); failOptions(); windOptions(); });
+  // The day's temperature (js/g1000.js setIsaDev): ISA and some hot and
+  // cold days, for OAT, TAS and density altitude.
+  const tempSel = document.getElementById('g1000-temp');
+  const TEMPS = [0, -20, -10, 10, 20, 30];
+  function tempOptions() {
+    const dev = G1000.state.isaDev;
+    tempSel.replaceChildren(new Option(t('tools.temp'), ''),
+      ...TEMPS.map((d, i) => new Option((dev === d ? '✓ ' : '') + (d ? `ISA ${d > 0 ? '+' : '−'}${Math.abs(d)} °C` : 'ISA'), String(i))));
+  }
+  tempSel.addEventListener('change', () => {
+    if (tempSel.value) G1000.setIsaDev(TEMPS[+tempSel.value]);
+    tempOptions();
+  });
+  tempOptions();
+  resetBtn.addEventListener('click', () => { avionics.reset(); failOptions(); windOptions(); tempOptions(); });
   avionics.onTurn((said) => { picked.textContent = said; });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !controlsEl.hidden) { closeControls(); return; }

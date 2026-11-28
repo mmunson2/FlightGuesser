@@ -901,6 +901,14 @@ G1000_CHECKS = r"""() => {
   G.reset();
   G.press('softkey:3', 'pfd'); G.press('softkey:9', 'pfd');
   expect(s.baro === 29.92 && Math.abs(G.standbyAlt() - s.trueAlt) < 1, `standby altimeter ${G.standbyAlt()} vs ${s.trueAlt}`);
+  // A hot day: OAT 20 °C up, density altitude 2,400 ft higher, more TAS.
+  {
+    const oat0 = G.oat(), tas0 = G.tas();
+    G.setIsaDev(20);
+    expect(Math.abs(G.oat() - oat0 - 20) < 1e-9 && G.densityAlt() === s.trueAlt + 2400 && G.tas() > tas0,
+      `ISA+20: OAT ${G.oat()}, DA ${G.densityAlt()}, TAS ${G.tas().toFixed(1)} vs ${tas0.toFixed(1)}`);
+    G.setIsaDev(0);
+  }
   // STD BARO until the knob turns; 29.92 dialled by hand is just 29.92IN.
   expect(s.baroStd, 'STD Baro softkey: STD BARO');
   G.turn('crs_baro', 'outer', 1); G.turn('crs_baro', 'outer', -1);
