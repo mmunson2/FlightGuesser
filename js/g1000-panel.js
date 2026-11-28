@@ -312,10 +312,41 @@ window.G1000_PANEL = (function () {
     };
 
     let operating = false;
+    // Holding a key that does something else when held (G.HOLD: COM
+    // transfer, CLR): after its time the hold acts, and the click that ends
+    // it is not a press.
+    let holding = null, heldUpAt = 0;
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      if (!operating || e.button !== 0) return;
+      const c = controlAt(e);
+      const key = c && KEYS[c.pid];
+      if (!key || !(key in G.HOLD) || !hasPower(c)) return;
+      holding = { id: e.pointerId, held: false };
+      const h = holding;
+      h.timer = setTimeout(() => {
+        h.held = true;
+        G.hold(key, c.display);
+        flash(c);
+        redraw(true);
+        lastSaid = name(c) + ' · hold';
+        onTurn?.(lastSaid);
+      }, G.HOLD[key] * 1000);
+    }, { capture: true });
+    const endHold = (e) => {
+      if (!holding || e.pointerId !== holding.id) return;
+      clearTimeout(holding.timer);
+      if (holding.held) heldUpAt = performance.now();
+      holding = null;
+    };
+    renderer.domElement.addEventListener('pointerup', endHold, { capture: true });
+    renderer.domElement.addEventListener('pointercancel', endHold);
+
     // Left click: press a key or softkey, push a knob. Returns the header
     // text for what was operated, or null if the click wasn't on a control.
     function click(e) {
       if (!operating) return null;
+      // The end of a hold: already done.
+      if (heldUpAt && performance.now() - heldUpAt < 300) { heldUpAt = 0; return lastSaid; }
       // The end of a drag that turned a knob: not a push.
       if (turnedAt && performance.now() - turnedAt < 50) return lastSaid;
       const c = controlAt(e);

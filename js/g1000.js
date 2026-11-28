@@ -562,6 +562,25 @@ window.G1000 = (function () {
         if (key.startsWith('softkey:')) return softkey(display, Number(key.slice(8)));
     }
   }
+  // Keys that do something else when held, and for how long (s): COM
+  // transfer puts 121.5 in the tuned COM's active frequency; CLR on the
+  // MFD goes back to the Navigation Map.
+  const HOLD = { com_transfer: 2, clr: 1 };
+  function hold(key, display = 'pfd') {
+    display = pfdIfReverted(display);
+    if (key === 'com_transfer') { state.com[state.comTune].act = 121.5; return; }
+    if (key === 'clr' && display === 'mfd') {
+      state.fms.win.mfd = null;
+      menus.close('mfd');
+      state.pan = null;
+      if (checklist.isOpen()) checklist.close();
+      state.menus.mfd = ['mfd'];
+      pages.goPage(0, 0);
+      return;
+    }
+    // Held anywhere else: as a press.
+    press(key, display);
+  }
   function nose(dir) {
     const a = state.afcs, r = a.ref;
     if (!a.fd) return;
@@ -955,7 +974,7 @@ window.G1000 = (function () {
     // The airplane's magnetic heading, as the HSI shows it.
     magHeading: () => toMag(state.hdg), HPA, SPEEDS, MENUS, LIVE, RANGES, fms, pages, menus, timer, alerts, systems, airportSize, fuelFlow,
     FAILURES: G1000_SYSTEMS.FAILURES, fail: (id, on) => systems.fail(id, on), DB_EXPIRES,
-    press, turn, push, fly, bearingDist, navSolution, indicatedAlt, standbyAlt, tas, gs, track, navModeName,
+    press, turn, push, fly, hold, HOLD, bearingDist, navSolution, indicatedAlt, standbyAlt, tas, gs, track, navModeName,
     windInfo, bearingTo, dmeInfo, oat, densityAlt, mapUp, pan, panTarget, checklist, gma,
     // Sets the wind: from (true), knots.
     setWind: (dir, spd) => { state.wind = { dir: wrap360(dir), spd: Math.max(0, spd) }; },

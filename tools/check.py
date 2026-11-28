@@ -448,6 +448,13 @@ G1000_CHECKS = r"""() => {
   const stby = s.com[0].stby;
   G.press('com_transfer');
   expect(s.com[0].act === stby, 'COM transfer');
+  // Held: 121.5 in the tuned COM's active.
+  G.hold('com_transfer');
+  expect(s.com[0].act === 121.5 && s.com[0].stby !== 121.5, `COM transfer held: ${s.com[0].act}`);
+  // CLR held on the MFD: back to the Navigation Map, windows closed.
+  G.pages.goPage(1, 0); G.press('fpl', 'mfd');
+  G.hold('clr', 'mfd');
+  expect(G.pages.pageKey() === 'MAP:0' && !s.fms.win.mfd, `CLR held: ${G.pages.pageKey()}, window ${s.fms.win.mfd?.type}`);
   s.nav[0].stby = 117.95;
   G.turn('nav', 'outer', 1);
   expect(s.nav[0].stby === 108.95, `NAV outer wrap: ${s.nav[0].stby}`);
